@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiniEngine-KinectVisualizer
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MiniEngine", "MiniEngine\MiniEngine.vcxproj", "{0F8AE16C-7913-4786-8379-B8018AF82843}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGBDStreamer", "RGBDStreamer\RGBDStreamer.vcxproj", "{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -26,6 +28,12 @@ Global
 		{0F8AE16C-7913-4786-8379-B8018AF82843}.Profile|x64.Build.0 = Profile|x64
 		{0F8AE16C-7913-4786-8379-B8018AF82843}.Release|x64.ActiveCfg = Release|x64
 		{0F8AE16C-7913-4786-8379-B8018AF82843}.Release|x64.Build.0 = Release|x64
+		{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}.Debug|x64.ActiveCfg = Debug|x64
+		{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}.Debug|x64.Build.0 = Debug|x64
+		{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}.Profile|x64.ActiveCfg = Profile|x64
+		{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}.Profile|x64.Build.0 = Profile|x64
+		{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}.Release|x64.ActiveCfg = Release|x64
+		{1ECC86A1-F932-4E8F-837E-D573A0E6BC7F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
