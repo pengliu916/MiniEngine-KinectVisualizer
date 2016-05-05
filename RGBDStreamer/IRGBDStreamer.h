@@ -34,12 +34,12 @@ public:
 	virtual void GetColorReso( uint16_t& Width, uint16_t& Height) const = 0;
 	virtual void GetDepthReso( uint16_t& Width, uint16_t& Height ) const = 0;
 	virtual void GetInfraredReso( uint16_t& Width, uint16_t& Height ) const = 0;
-	virtual void StartStream( bool EnableColor, bool EnableDepth, bool EnableInfrared ) = 0;
+	virtual void StartStream() = 0;
 	virtual void StopStream() = 0;
 	virtual void GetFrames( FrameData&ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame ) = 0;
 };
 
 class RGBDSTREAMDLL_API StreamFactory {
 public:
-	static IRGBDStreamer* createFromKinect2();
+	static IRGBDStreamer* createFromKinect2( bool EnableColor, bool EnableDepth, bool EnableInfrared );
 };
