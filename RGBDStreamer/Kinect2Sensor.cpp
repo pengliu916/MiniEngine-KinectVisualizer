@@ -244,21 +244,21 @@ HRESULT Kinect2Sensor::ProcessingFrames( IMultiSourceFrameArrivedEventArgs* pArg
 
 	IMultiSourceFrame *pFrame = nullptr;
 	VRET( pFrameReference->AcquireFrame( &pFrame ) );
-	if (_DepthEnabled)
-	{
-		IDepthFrameReference* pDepthFrameReference = nullptr;
-		VRET( pFrame->get_DepthFrameReference( &pDepthFrameReference ) );
-		W( ProcessDepthFrame( pDepthFrameReference ) );
-		SafeRelease( pDepthFrameReference );
-	}
-	if (_ColorEnabled)
+	if (SUCCEEDED(hr) && _ColorEnabled)
 	{
 		IColorFrameReference* pColorFrameReference = nullptr;
 		VRET( pFrame->get_ColorFrameReference( &pColorFrameReference ) );
 		W( ProcessColorFrame( pColorFrameReference ) );
 		SafeRelease( pColorFrameReference );
 	}
-	if (_InfraredEnabled)
+	if (SUCCEEDED( hr ) && _DepthEnabled)
+	{
+		IDepthFrameReference* pDepthFrameReference = nullptr;
+		VRET( pFrame->get_DepthFrameReference( &pDepthFrameReference ) );
+		W( ProcessDepthFrame( pDepthFrameReference ) );
+		SafeRelease( pDepthFrameReference );
+	}
+	if (SUCCEEDED( hr ) && _InfraredEnabled)
 	{
 		IInfraredFrameReference* pInfraredFrameReference = nullptr;
 		VRET( pFrame->get_InfraredFrameReference( &pInfraredFrameReference ) );
