@@ -26,9 +26,7 @@ protected:
 	IMultiSourceFrameReader*	_pMultiSourceFrameReader;
 
 	// Frame data
-	FrameData					_pColorFrame[STREAM_BUFFER_COUNT];
-	FrameData					_pDepthFrame[STREAM_BUFFER_COUNT];
-	FrameData					_pInfraredFrame[STREAM_BUFFER_COUNT];
+	FrameData					_pFrames[kNumBufferTypes][STREAM_BUFFER_COUNT];
 
 	// Frame size
 	uint16_t					_ColorWidth = 0;

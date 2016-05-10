@@ -197,9 +197,9 @@ void Kinect2Sensor::StopStream()
 void Kinect2Sensor::GetFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame )
 {
 	_ReadingIdx.store( _LatestReadableIdx.load( memory_order_acquire ), memory_order_release );
-	ColorFrame = _pColorFrame[_ReadingIdx];
-	DepthFrame = _pDepthFrame[_ReadingIdx];
-	InfraredFrame = _pInfraredFrame[_ReadingIdx];
+	ColorFrame = _pFrames[kColor][_ReadingIdx];
+	DepthFrame = _pFrames[kDepth][_ReadingIdx];
+	InfraredFrame = _pFrames[kInfrared][_ReadingIdx];
 }
 
 void Kinect2Sensor::FrameAcquireLoop()
@@ -224,7 +224,7 @@ void Kinect2Sensor::FrameAcquireLoop()
 		{
 		case WAIT_TIMEOUT:
 			hr = E_FAIL;
-			OutputDebugString( L"Wait Kinet Frame Timeout\n" );
+			OutputDebugString( L"Wait Kinect Frame Timeout\n" );
 			continue;
 		case WAIT_OBJECT_0:
 			IMultiSourceFrameArrivedEventArgs *pFrameArgs = nullptr;
@@ -237,7 +237,7 @@ void Kinect2Sensor::FrameAcquireLoop()
 
 HRESULT Kinect2Sensor::ProcessingFrames( IMultiSourceFrameArrivedEventArgs* pArgs )
 {
-	HRESULT hr;
+	HRESULT hr = S_OK;
 	IMultiSourceFrameReference *pFrameReference = nullptr;
 
 	VRET( pArgs->get_FrameReference( &pFrameReference ) );
@@ -278,6 +278,7 @@ HRESULT Kinect2Sensor::ProcessingFrames( IMultiSourceFrameArrivedEventArgs* pArg
 				return hr;
 		}
 	}
+	return hr;
 }
 
 HRESULT Kinect2Sensor::ProcessDepthFrame( IDepthFrameReference* pDepthFrameRef )
@@ -297,8 +298,8 @@ HRESULT Kinect2Sensor::ProcessDepthFrame( IDepthFrameReference* pDepthFrameRef )
 	_DepthWidth = nDepthWidth;
 	_DepthHeight = nDepthHeight;
 	size_t bufferSize = nDepthHeight*nDepthWidth * sizeof( uint16_t );
-	FrameData& CurFrame = _pDepthFrame[_WritingIdx];
-	CurFrame.Size = bufferSize;
+	FrameData& CurFrame = _pFrames[kDepth][_WritingIdx];
+	CurFrame.Size = (uint32_t)bufferSize;
 	CurFrame.CaptureTimeStamp = DepTimeStamp;
 	CurFrame.Width = nDepthWidth;
 	CurFrame.Height = nDepthHeight;
@@ -327,14 +328,14 @@ HRESULT Kinect2Sensor::ProcessColorFrame( IColorFrameReference* pColorFrameRef )
 	_ColorWidth = nColorWidth;
 	_ColorHeight = nColorHeight;
 	size_t bufferSize = nColorHeight*nColorWidth * 4 * sizeof( uint8_t );
-	FrameData& CurFrame = _pColorFrame[_WritingIdx];
-	CurFrame.Size = bufferSize;
+	FrameData& CurFrame = _pFrames[kColor][_WritingIdx];
+	CurFrame.Size = (uint32_t)bufferSize;
 	CurFrame.CaptureTimeStamp = ColTimeStamp;
 	CurFrame.Width = nColorWidth;
 	CurFrame.Height = nColorHeight;
 	if (CurFrame.pData == nullptr)
 		CurFrame.pData = (uint8_t*)std::malloc( bufferSize );
-	V( pColorFrame->CopyConvertedFrameDataToArray( bufferSize, reinterpret_cast<BYTE*>(CurFrame.pData), ColorImageFormat_Rgba ) );
+	V( pColorFrame->CopyConvertedFrameDataToArray( (UINT)bufferSize, reinterpret_cast<BYTE*>(CurFrame.pData), ColorImageFormat_Rgba ) );
 	SafeRelease( pColorFrameDescription );
 	SafeRelease( pColorFrame );
 	return hr;
@@ -357,8 +358,8 @@ HRESULT Kinect2Sensor::ProcessInfraredFrame( IInfraredFrameReference* pInfraredF
 	_InfraredWidth = nInfraredWidth;
 	_InfraredHeight = nInfraredHeight;
 	size_t bufferSize = nInfraredHeight * nInfraredWidth * sizeof( uint16_t );
-	FrameData& CurFrame = _pInfraredFrame[_WritingIdx];
-	CurFrame.Size = bufferSize;
+	FrameData& CurFrame = _pFrames[kInfrared][_WritingIdx];
+	CurFrame.Size = (uint32_t)bufferSize;
 	CurFrame.CaptureTimeStamp = InfTimeStamp;
 	CurFrame.Width = nInfraredWidth;
 	CurFrame.Height = nInfraredHeight;
