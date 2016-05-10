@@ -294,7 +294,8 @@ HRESULT Kinect2Sensor::ProcessDepthFrame( IDepthFrameReference* pDepthFrameRef )
 	V( pDepthFrame->get_FrameDescription( &pDepthFrameDescription ) );
 	V( pDepthFrameDescription->get_Width( &nDepthWidth ) );
 	V( pDepthFrameDescription->get_Height( &nDepthHeight ) );
-	assert( nDepthWidth == _DepthWidth ); assert( nDepthHeight == _DepthHeight );
+	_DepthWidth = nDepthWidth;
+	_DepthHeight = nDepthHeight;
 	size_t bufferSize = nDepthHeight*nDepthWidth * sizeof( uint16_t );
 	FrameData& CurFrame = _pDepthFrame[_WritingIdx];
 	CurFrame.Size = bufferSize;
@@ -323,7 +324,8 @@ HRESULT Kinect2Sensor::ProcessColorFrame( IColorFrameReference* pColorFrameRef )
 	V( pColorFrame->get_FrameDescription( &pColorFrameDescription ) );
 	V( pColorFrameDescription->get_Width( &nColorWidth ) );
 	V( pColorFrameDescription->get_Height( &nColorHeight ) );
-	assert( nColorWidth == _ColorWidth ); assert( nColorHeight == _ColorHeight );
+	_ColorWidth = nColorWidth;
+	_ColorHeight = nColorHeight;
 	size_t bufferSize = nColorHeight*nColorWidth * 4 * sizeof( uint8_t );
 	FrameData& CurFrame = _pColorFrame[_WritingIdx];
 	CurFrame.Size = bufferSize;
@@ -352,7 +354,8 @@ HRESULT Kinect2Sensor::ProcessInfraredFrame( IInfraredFrameReference* pInfraredF
 	V( pInfraredFrame->get_FrameDescription( &pInfraredFrameDescription ) );
 	V( pInfraredFrameDescription->get_Width( &nInfraredWidth ) );
 	V( pInfraredFrameDescription->get_Height( &nInfraredHeight ) );
-	assert( nInfraredWidth == _InfraredWidth ); assert( nInfraredHeight == _InfraredHeight );
+	_InfraredWidth = nInfraredWidth;
+	_InfraredHeight = nInfraredHeight;
 	size_t bufferSize = nInfraredHeight * nInfraredWidth * sizeof( uint16_t );
 	FrameData& CurFrame = _pInfraredFrame[_WritingIdx];
 	CurFrame.Size = bufferSize;

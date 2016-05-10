@@ -31,12 +31,12 @@ protected:
 	FrameData					_pInfraredFrame[STREAM_BUFFER_COUNT];
 
 	// Frame size
-	uint16_t					_ColorWidth = 1920;
-	uint16_t					_ColorHeight = 1080;
-	uint16_t					_DepthWidth = 512;
-	uint16_t					_DepthHeight = 424;
-	uint16_t					_InfraredWidth = 512;
-	uint16_t					_InfraredHeight = 424;
+	uint16_t					_ColorWidth = 0;
+	uint16_t					_ColorHeight = 0;
+	uint16_t					_DepthWidth = 0;
+	uint16_t					_DepthHeight = 0;
+	uint16_t					_InfraredWidth = 0;
+	uint16_t					_InfraredHeight = 0;
 
 	// Channel enabled
 	bool						_DepthEnabled = false;
