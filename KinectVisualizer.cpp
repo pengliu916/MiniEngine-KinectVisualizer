@@ -7,8 +7,9 @@ using namespace Microsoft::WRL;
 
 namespace
 {
-	bool _UseCSForCopy = false;
-	bool _CorrectDistortion = false;
+	bool _UseCSForCopy = true;
+	bool _CorrectDistortion = true;
+	bool _UseTranspose = true;
 }
 
 KinectVisualizer::KinectVisualizer( uint32_t width, uint32_t height, std::wstring name )
@@ -17,6 +18,14 @@ KinectVisualizer::KinectVisualizer( uint32_t width, uint32_t height, std::wstrin
 	m_height = height;
 	m_pKinect2 = StreamFactory::createFromKinect2( true, true, true );
 	m_pKinect2->StartStream();
+
+	auto center = XMVectorSet( 0.0f, 0.0f, 0.0f, 0.0f );
+	auto radius = m_camOrbitRadius;
+	auto minRadius = m_camMinOribtRadius;
+	auto maxRadius = m_camMaxOribtRadius;
+	auto longAngle = -DirectX::XM_PIDIV2;
+	auto latAngle = DirectX::XM_PIDIV2;
+	m_Camera.View( center, radius, minRadius, maxRadius, longAngle, latAngle );
 }
 
 
@@ -36,54 +45,56 @@ HRESULT KinectVisualizer::OnCreateResource()
 {
 	HRESULT hr;
 
-	uint16_t Width, Height;
+	uint16_t DepWidth, DepHeight;
 	do
 	{
-		m_pKinect2->GetDepthReso( Width, Height );
-	} while (Width == 0 || Height == 0);
+		m_pKinect2->GetDepthReso( DepWidth, DepHeight );
+	} while (DepWidth == 0 || DepHeight == 0);
 
-	m_KinectCB.DepthInfraredReso = XMFLOAT2( Width, Height );
+	m_KinectCB.DepthInfraredReso = XMFLOAT2( DepWidth, DepHeight );
 
-	m_pFrameAlloc[IRGBDStreamer::kDepth] = new LinearFrameAllocator( Width * Height, sizeof( uint16_t ), DXGI_FORMAT_R16_UINT );
+	m_pFrameAlloc[IRGBDStreamer::kDepth] = new LinearFrameAllocator( DepWidth * DepHeight, sizeof( uint16_t ), DXGI_FORMAT_R16_UINT );
 	m_pKinectBuffer[IRGBDStreamer::kDepth] = m_pFrameAlloc[IRGBDStreamer::kDepth]->RequestFrameBuffer();
-	m_Texture[IRGBDStreamer::kDepth].Create( L"Depth Buffer", Width, Height, 1, DXGI_FORMAT_R11G11B10_FLOAT );
+	m_Texture[IRGBDStreamer::kDepth].Create( L"Depth Buffer", DepWidth, DepHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT );
+	m_Texture[3].Create( L"Depth Buffer", DepWidth, DepHeight, 1, DXGI_FORMAT_R16_UINT );
 
-	m_pFrameAlloc[IRGBDStreamer::kInfrared] = new LinearFrameAllocator( Width * Height, sizeof( uint16_t ), DXGI_FORMAT_R16_UINT );
+	m_pFrameAlloc[IRGBDStreamer::kInfrared] = new LinearFrameAllocator( DepWidth * DepHeight, sizeof( uint16_t ), DXGI_FORMAT_R16_UINT );
 	m_pKinectBuffer[IRGBDStreamer::kInfrared] = m_pFrameAlloc[IRGBDStreamer::kInfrared]->RequestFrameBuffer();
-	m_Texture[IRGBDStreamer::kInfrared].Create( L"Infrared Buffer", Width, Height, 1, DXGI_FORMAT_R11G11B10_FLOAT );
+	m_Texture[IRGBDStreamer::kInfrared].Create( L"Infrared Buffer", DepWidth, DepHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT );
 
 	m_DepthInfraredViewport = {};
-	m_DepthInfraredViewport.Width = Width;
-	m_DepthInfraredViewport.Height = Height;
+	m_DepthInfraredViewport.Width = DepWidth;
+	m_DepthInfraredViewport.Height = DepHeight;
 	m_DepthInfraredViewport.MaxDepth = 1.0f;
 	m_DepthInfraredScissorRect = {};
-	m_DepthInfraredScissorRect.right = Width;
-	m_DepthInfraredScissorRect.bottom = Height;
+	m_DepthInfraredScissorRect.right = DepWidth;
+	m_DepthInfraredScissorRect.bottom = DepHeight;
 
+	uint16_t ColWidth, ColHeight;
 	do
 	{
-		m_pKinect2->GetColorReso( Width, Height );
-	} while (Width == 0 || Height == 0);
+		m_pKinect2->GetColorReso( ColWidth, ColHeight );
+	} while (ColWidth == 0 || ColHeight == 0);
 
-	m_KinectCB.ColorReso = XMFLOAT2( Width, Height );
+	m_KinectCB.ColorReso = XMFLOAT2( ColWidth, ColHeight );
 
-	m_pFrameAlloc[IRGBDStreamer::kColor] = new LinearFrameAllocator( Width * Height, sizeof( uint32_t ), DXGI_FORMAT_R8G8B8A8_UINT );
+	m_pFrameAlloc[IRGBDStreamer::kColor] = new LinearFrameAllocator( ColWidth * ColHeight, sizeof( uint32_t ), DXGI_FORMAT_R8G8B8A8_UINT );
 	m_pKinectBuffer[IRGBDStreamer::kColor] = m_pFrameAlloc[IRGBDStreamer::kColor]->RequestFrameBuffer();
-	m_Texture[IRGBDStreamer::kColor].Create( L"Color Buffer", Width, Height, 1, DXGI_FORMAT_R11G11B10_FLOAT );
+	m_Texture[IRGBDStreamer::kColor].Create( L"Color Buffer", ColWidth, ColHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT );
 
 	m_ColorViewport = {};
-	m_ColorViewport.Width = Width;
-	m_ColorViewport.Height = Height;
+	m_ColorViewport.Width = ColWidth;
+	m_ColorViewport.Height = ColHeight;
 	m_ColorViewport.MaxDepth = 1.0f;
 	m_ColorScissorRect = {};
-	m_ColorScissorRect.right = Width;
-	m_ColorScissorRect.bottom = Height;
+	m_ColorScissorRect.right = ColWidth;
+	m_ColorScissorRect.bottom = ColHeight;
 
 	// Create rootsignature
 	m_RootSignature.Reset( 3 );
 	m_RootSignature[0].InitAsConstantBuffer( 0 );
 	m_RootSignature[1].InitAsDescriptorRange( D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, IRGBDStreamer::kNumBufferTypes );
-	m_RootSignature[2].InitAsDescriptorRange( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, IRGBDStreamer::kNumBufferTypes );
+	m_RootSignature[2].InitAsDescriptorRange( D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, IRGBDStreamer::kNumBufferTypes + 1 );
 	m_RootSignature.Finalize( D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS );
@@ -163,14 +174,25 @@ HRESULT KinectVisualizer::OnCreateResource()
 	DXGI_FORMAT RTformat[] =
 	{
 		m_Texture[IRGBDStreamer::kDepth].GetFormat(),
-		m_Texture[IRGBDStreamer::kInfrared].GetFormat()
+		m_Texture[IRGBDStreamer::kInfrared].GetFormat(),
+		m_Texture[3].GetFormat()
 	};
-	m_DepthInfraredPSO.SetRenderTargetFormats( 2, RTformat, DXGI_FORMAT_UNKNOWN );
+	m_DepthInfraredPSO.SetRenderTargetFormats( 3, RTformat, DXGI_FORMAT_UNKNOWN );
 	m_DepthInfraredUndistortedPSO = m_DepthInfraredPSO;
 	m_DepthInfraredUndistortedPSO.SetPixelShader( CopyDepthInfraredUndistortedPS->GetBufferPointer(), CopyDepthInfraredUndistortedPS->GetBufferSize() );
 	m_DepthInfraredUndistortedPSO.Finalize();
 	m_DepthInfraredPSO.SetPixelShader( CopyDepthInfraredPS->GetBufferPointer(), CopyDepthInfraredPS->GetBufferSize() );
 	m_DepthInfraredPSO.Finalize();
+
+	// Create resource for pointcloudrenderer
+	m_PointCloudRenderer.OnCreateResource();
+	m_PointCloudRenderer.UpdateCB( XMFLOAT2( ColWidth, ColHeight ), XMFLOAT2( DepWidth, DepHeight ),
+		XMFLOAT4(KINECT2_COLOR_C.x, KINECT2_COLOR_C.y, KINECT2_COLOR_F.x, KINECT2_COLOR_F.y), 
+		XMFLOAT4(KINECT2_DEPTH_C.x, KINECT2_DEPTH_C.y, KINECT2_DEPTH_F.x, KINECT2_DEPTH_F.y),
+		KINECT2_DEPTH2COLOR_MAT );
+
+	OnSizeChanged();
+
 	return S_OK;
 }
 
@@ -194,6 +216,21 @@ void KinectVisualizer::OnUpdate()
 	{
 		ImGui::Checkbox( "Use Compute Shader", &_UseCSForCopy );
 		ImGui::Checkbox( "Use Undistortion", &_CorrectDistortion );
+		ImGui::Separator();
+		ImGui::Text( "PointCloud Settings" );
+		ImGui::RadioButton( "Points", (int*)&m_PointCloudRenderer.m_RenderMode, PointCloudRenderer::RenderMode::kPointCloud ); ImGui::SameLine();
+		ImGui::RadioButton( "Surface", (int*)&m_PointCloudRenderer.m_RenderMode, PointCloudRenderer::RenderMode::kSurface); ImGui::SameLine();
+		ImGui::RadioButton( "Shaded", (int*)&m_PointCloudRenderer.m_RenderMode, PointCloudRenderer::RenderMode::kShadedSurface);
+		static float offset[3] = {	m_PointCloudRenderer.m_CBData.Offset.x,
+									m_PointCloudRenderer.m_CBData.Offset.y,
+									m_PointCloudRenderer.m_CBData.Offset.z};
+		ImGui::DragFloat3( "PC Offset", offset, 0.1f );
+		if(m_PointCloudRenderer.m_RenderMode != PointCloudRenderer::kPointCloud)
+			ImGui::SliderFloat( "MaxQuadDepthDiff", &m_PointCloudRenderer.m_CBData.MaxQuadDepDiff, 0.01f, 0.15f );
+		m_PointCloudRenderer.m_CBData.Offset.x = offset[0];
+		m_PointCloudRenderer.m_CBData.Offset.y = offset[1];
+		m_PointCloudRenderer.m_CBData.Offset.z = offset[2];
+
 		float width = ImGui::GetContentRegionAvail().x;
 		std::string names[] = {"Color Image","Depth Image","Infrared Image"};
 		for (int i = 0; i < IRGBDStreamer::kNumBufferTypes; ++i)
@@ -240,7 +277,7 @@ void KinectVisualizer::OnRender( CommandContext & EngineContext )
 	{
 		ComputeContext& Context = EngineContext.GetComputeContext();
 		{
-			GPU_PROFILE( Context, L"Read RGBD" );
+			GPU_PROFILE( Context, L"Read&Present RGBD" );
 
 			Context.SetRootSignature( m_RootSignature );
 			Context.SetPipelineState( _CorrectDistortion ? m_DepthInfraredUndistortedCSPSO : m_DepthInfraredCSPSO );
@@ -253,6 +290,7 @@ void KinectVisualizer::OnRender( CommandContext & EngineContext )
 			Context.SetDynamicDescriptors( 2, 0, 1, &m_Texture[IRGBDStreamer::kDepth].GetUAV() );
 			Context.SetDynamicDescriptors( 2, 1, 1, &m_Texture[IRGBDStreamer::kInfrared].GetUAV() );
 			Context.SetDynamicDescriptors( 2, 2, 1, &m_Texture[IRGBDStreamer::kColor].GetUAV() );
+			Context.SetDynamicDescriptors( 2, 3, 1, &m_Texture[3].GetUAV() );
 
 			Context.Dispatch1D( m_Texture[IRGBDStreamer::kDepth].GetWidth()*m_Texture[IRGBDStreamer::kDepth].GetHeight(), THREAD_PER_GROUP );
 
@@ -262,13 +300,14 @@ void KinectVisualizer::OnRender( CommandContext & EngineContext )
 			Context.TransitionResource( m_Texture[IRGBDStreamer::kColor], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 			Context.TransitionResource( m_Texture[IRGBDStreamer::kDepth], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 			Context.TransitionResource( m_Texture[IRGBDStreamer::kInfrared], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
+			Context.TransitionResource( m_Texture[3], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 		}
 	}
 	else
 	{
 		GraphicsContext& Context = EngineContext.GetGraphicsContext();
 		{
-			GPU_PROFILE( Context, L"Read RGBD" );
+			GPU_PROFILE( Context, L"Read&Present RGBD" );
 
 			Context.SetRootSignature( m_RootSignature );
 			Context.SetPipelineState( _CorrectDistortion ? m_DepthInfraredUndistortedPSO : m_DepthInfraredPSO );
@@ -279,7 +318,7 @@ void KinectVisualizer::OnRender( CommandContext & EngineContext )
 			Context.SetDynamicDescriptors( 1, 1, 1, &m_pKinectBuffer[IRGBDStreamer::kInfrared]->GetSRV() );
 			Context.SetDynamicDescriptors( 1, 2, 1, &m_pKinectBuffer[IRGBDStreamer::kColor]->GetSRV() );
 
-			Context.SetRenderTargets( 2, &m_Texture[IRGBDStreamer::kDepth] );
+			Context.SetRenderTargets( 3, &m_Texture[IRGBDStreamer::kDepth] );
 			Context.SetViewports( 1, &m_DepthInfraredViewport );
 			Context.SetScisors( 1, &m_DepthInfraredScissorRect );
 			Context.Draw( 3 );
@@ -293,8 +332,16 @@ void KinectVisualizer::OnRender( CommandContext & EngineContext )
 			Context.TransitionResource( m_Texture[IRGBDStreamer::kColor], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 			Context.TransitionResource( m_Texture[IRGBDStreamer::kDepth], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 			Context.TransitionResource( m_Texture[IRGBDStreamer::kInfrared], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
+			Context.TransitionResource( m_Texture[3], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE );
 		}
 	}
+	XMMATRIX view = m_Camera.View();
+	XMMATRIX proj = m_Camera.Projection();
+	XMFLOAT4 viewPos;
+	XMStoreFloat4( &viewPos, m_Camera.Eye());
+	m_PointCloudRenderer.m_CBData.LightPos = viewPos;
+	m_PointCloudRenderer.OnRender( EngineContext.GetGraphicsContext(), &m_Texture[3], &m_Texture[IRGBDStreamer::kColor],
+		XMMatrixMultiply( view, proj ) );
 }
 
 void KinectVisualizer::OnDestroy()
@@ -308,5 +355,37 @@ void KinectVisualizer::OnDestroy()
 
 bool KinectVisualizer::OnEvent( MSG * msg )
 {
+	switch (msg->message)
+	{
+	case WM_MOUSEWHEEL:
+	{
+		auto delta = GET_WHEEL_DELTA_WPARAM( msg->wParam );
+		m_Camera.ZoomRadius( -0.01f*delta );
+	}
+	case WM_POINTERDOWN:
+	case WM_POINTERUPDATE:
+	case WM_POINTERUP:
+	{
+		auto pointerId = GET_POINTERID_WPARAM( msg->wParam );
+		POINTER_INFO pointerInfo;
+		if (GetPointerInfo( pointerId, &pointerInfo )) {
+			if (msg->message == WM_POINTERDOWN) {
+				// Compute pointer position in render units
+				POINT p = pointerInfo.ptPixelLocation;
+				ScreenToClient( Core::g_hwnd, &p );
+				RECT clientRect;
+				GetClientRect( Core::g_hwnd, &clientRect );
+				p.x = p.x * Core::g_config.swapChainDesc.Width / (clientRect.right - clientRect.left);
+				p.y = p.y * Core::g_config.swapChainDesc.Height / (clientRect.bottom - clientRect.top);
+				// Camera manipulation
+				m_Camera.AddPointer( pointerId );
+			}
+		}
+
+		// Otherwise send it to the camera controls
+		m_Camera.ProcessPointerFrames( pointerId, &pointerInfo );
+		if (msg->message == WM_POINTERUP) m_Camera.RemovePointer( pointerId );
+	}
+	}
 	return false;
 }

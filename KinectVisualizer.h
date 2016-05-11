@@ -4,6 +4,8 @@
 #include "LinearFrameAllocator.h"
 #include "KinectVisualizer_SharedHeader.inl"
 
+#include "PointCloudRenderer.h"
+
 class KinectVisualizer :public Core::IDX12Framework
 {
 public:
@@ -18,21 +20,23 @@ public:
 	virtual void OnDestroy();
 	virtual bool OnEvent( MSG* msg );
 
+	PointCloudRenderer		m_PointCloudRenderer;
+
 protected:
 	uint16_t m_width;
 	uint16_t m_height;
 	
 	// For camera
 	OrbitCamera				m_Camera;
-	float					m_camOrbitRadius = 80.f;
-	float					m_camMaxOribtRadius = 10000.f;
-	float					m_camMinOribtRadius = 1.f;
+	float					m_camOrbitRadius = 10.f;
+	float					m_camMaxOribtRadius = 50.f;
+	float					m_camMinOribtRadius = 0.1f;
 	
 	IRGBDStreamer*			m_pKinect2;
 
 	RenderCB				m_KinectCB;
 
-	ColorBuffer				m_Texture[IRGBDStreamer::kNumBufferTypes]; // 0 Color, 1 Depth, 2 Infrared
+	ColorBuffer				m_Texture[IRGBDStreamer::kNumBufferTypes + 1]; // 0 ColorVisualize, 1 DepthVisualize, 2 InfraredVisualize, 3 Depth
 	LinearFrameAllocator*	m_pFrameAlloc[IRGBDStreamer::kNumBufferTypes];
 	KinectBuffer*			m_pKinectBuffer[IRGBDStreamer::kNumBufferTypes];
 

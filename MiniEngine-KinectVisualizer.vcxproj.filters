@@ -4,15 +4,20 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="KinectVisualizer.h" />
     <ClInclude Include="LinearFrameAllocator.h" />
+    <ClInclude Include="PointCloudRenderer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="KinectVisualizer.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="LinearFrameAllocator.cpp" />
+    <ClCompile Include="PointCloudRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="KinectVisualizer_SharedHeader.inl" />
     <CustomBuild Include="KinectVisualizer.hlsl" />
+    <CustomBuild Include="Kinect2CalibData.inl" />
+    <CustomBuild Include="PointCloudRenderer.hlsl" />
+    <CustomBuild Include="PointCloudRenderer_SharedHeader.inl" />
   </ItemGroup>
 </Project>

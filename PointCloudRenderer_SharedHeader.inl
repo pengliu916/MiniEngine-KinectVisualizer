@@ -21,10 +21,21 @@ typedef DirectX::XMMATRIX matrix;
 #include "Kinect2CalibData.inl"
 
 #if __cplusplus || ( __hlsl )
-CBUFFER_ALIGN STRUCT( cbuffer ) RenderCB REGISTER( b0 )
+CBUFFER_ALIGN STRUCT( cbuffer ) CBuffer REGISTER( b0 )
 {
-	float2      ColorReso;
-	float2      DepthInfraredReso;
+	matrix		ViewProjMat;
+	float2		ColorReso;
+	float2		DepthInfraredReso;
+	float4		ColorCxyFxy;
+	float4		DepthCxyFxy;
+	matrix		Depth2Color;
+	float4		Offset;
+	float4		LightPos;
+	float4		LightAttn;
+	float4		AmbientCol;
+	float		MaxQuadDepDiff;
+	float		niu[3];
+
 #if __cplusplus
 	void * operator new(size_t i)
 	{

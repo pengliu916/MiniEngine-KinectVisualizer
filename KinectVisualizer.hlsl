@@ -1,4 +1,5 @@
 #include "KinectVisualizer_SharedHeader.inl"
+#include "Kinect2CalibData.inl"
 
 static const float2 df = KINECT2_DEPTH_F;
 static const float2 dc = KINECT2_DEPTH_C;
@@ -25,8 +26,9 @@ Buffer<uint4> ColBuffer : register(t2);
 
 struct PSOutput
 {
-	float4 DepOut : SV_Target0;
+	float4 DepVisaulOut : SV_Target0;
 	float4 InfraredOut : SV_Target1;
+	uint DepthOut : SV_Target2;
 };
 
 PSOutput ps_copy_depth_infrared_main( float4 position : SV_Position, float2 Tex : TexCoord0 )
@@ -46,9 +48,9 @@ PSOutput ps_copy_depth_infrared_main( float4 position : SV_Position, float2 Tex 
 	id = (uint)new_xy.y * DepthInfraredReso.x + (uint)new_xy.x;
 #endif // CorrectDistortion
 
-	output.DepOut = (DepBuffer[id] % 255) / 255.f;
+	output.DepVisaulOut = (DepBuffer[id] % 255) / 255.f;
 	output.InfraredOut = pow((InfBuffer[id]) / 65535.f,0.32f);
-
+	output.DepthOut = DepBuffer[id];
 	return output;
 }
 
@@ -76,9 +78,11 @@ float4 ps_copy_color_main( float4 position : SV_Position, float2 Tex : TexCoord0
 Buffer<uint> DepBuffer : register(t0);
 Buffer<uint> InfBuffer : register(t1);
 Buffer<uint4> ColBuffer : register(t2);
-RWTexture2D<float4> DepthTex : register(u0);
+RWTexture2D<float4> DepthVisualTex : register(u0);
 RWTexture2D<float4> InfraredTex : register(u1);
 RWTexture2D<float4> ColorTex : register(u2);
+RWTexture2D<uint> DepthTex : register(u3);
+
 [numthreads( THREAD_PER_GROUP, 1, 1 )]
 void cs_copy_depth_infrared_main( uint3 Gid : SV_GroupID, uint GI : SV_GroupIndex, uint3 GTid : SV_GroupThreadID, uint3 DTid : SV_DispatchThreadID )
 {
@@ -96,8 +100,9 @@ void cs_copy_depth_infrared_main( uint3 Gid : SV_GroupID, uint GI : SV_GroupInde
 	id = (uint)new_xy.y * DepthInfraredReso.x + (uint)new_xy.x;
 #endif // CorrectDistortion
 
-	DepthTex[out_xy] = (DepBuffer[id].xxxx % 255) / 255.f;
+	DepthVisualTex[out_xy] = (DepBuffer[id].xxxx % 255) / 255.f;
 	InfraredTex[out_xy] = pow(InfBuffer[id].xxxx / 65535.f,0.32f);
+	DepthTex[out_xy] = DepBuffer[id];
 }
 [numthreads( THREAD_PER_GROUP, 1, 1 )]
 void cs_copy_color_main( uint3 Gid : SV_GroupID, uint GI : SV_GroupIndex, uint3 GTid : SV_GroupThreadID, uint3 DTid : SV_DispatchThreadID )
