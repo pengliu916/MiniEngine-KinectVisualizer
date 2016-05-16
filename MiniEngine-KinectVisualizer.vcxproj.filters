@@ -5,6 +5,9 @@
     <ClInclude Include="KinectVisualizer.h" />
     <ClInclude Include="LinearFrameAllocator.h" />
     <ClInclude Include="PointCloudRenderer.h" />
+    <ClInclude Include="SeparableFilter.h">
+      <Filter>SeparableFilter</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
@@ -12,6 +15,9 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="LinearFrameAllocator.cpp" />
     <ClCompile Include="PointCloudRenderer.cpp" />
+    <ClCompile Include="SeparableFilter.cpp">
+      <Filter>SeparableFilter</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="KinectVisualizer_SharedHeader.inl" />
@@ -19,5 +25,19 @@
     <CustomBuild Include="Kinect2CalibData.inl" />
     <CustomBuild Include="PointCloudRenderer.hlsl" />
     <CustomBuild Include="PointCloudRenderer_SharedHeader.inl" />
+    <CustomBuild Include="SeparableFilter.hlsl">
+      <Filter>SeparableFilter</Filter>
+    </CustomBuild>
+    <CustomBuild Include="BilateralFilter.hlsl">
+      <Filter>SeparableFilter</Filter>
+    </CustomBuild>
+    <CustomBuild Include="SeparableFilter_SharedHeader.inl">
+      <Filter>SeparableFilter</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="SeparableFilter">
+      <UniqueIdentifier>{c5d905be-b49b-4997-8c10-3ac31aac6662}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>

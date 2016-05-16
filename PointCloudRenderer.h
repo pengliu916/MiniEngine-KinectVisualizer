@@ -18,7 +18,7 @@ public:
 		DirectX::XMFLOAT4 ColFC, DirectX::XMFLOAT4 DepFC, DirectX::XMMATRIX Dep2Col );
 	void OnRender( GraphicsContext& gfxContext, ColorBuffer* pDepthMap, ColorBuffer* pColorMap,
 		DirectX::XMMATRIX viewProj);
-
+	void RenderGui();
 	RenderMode m_RenderMode = kPointCloud;
 	CBuffer m_CBData;
 

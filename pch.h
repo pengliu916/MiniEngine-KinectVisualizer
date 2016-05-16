@@ -5,6 +5,7 @@
 #include "Camera.h"
 #include "Utility.h"
 #include "GPU_Profiler.h"
+#include "GpuResource.h"
 #include "CmdListMngr.h"
 #include "CommandContext.h"
 #include "LinearAllocator.h"

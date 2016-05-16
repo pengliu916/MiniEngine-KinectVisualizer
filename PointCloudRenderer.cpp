@@ -126,3 +126,20 @@ void PointCloudRenderer::OnRender( GraphicsContext& gfxContext, ColorBuffer* pDe
 	gfxContext.SetScisor( Graphics::g_DisplayPlaneScissorRect );
 	gfxContext.Draw( pDepthMap->GetWidth() * pDepthMap->GetHeight() );
 }
+
+void PointCloudRenderer::RenderGui()
+{
+	if (ImGui::CollapsingHeader( "PointCloud Settings" ))
+	{
+		ImGui::RadioButton( "Points", (int*)&m_RenderMode, RenderMode::kPointCloud ); ImGui::SameLine();
+		ImGui::RadioButton( "Surface", (int*)&m_RenderMode, RenderMode::kSurface ); ImGui::SameLine();
+		ImGui::RadioButton( "Shaded", (int*)&m_RenderMode, RenderMode::kShadedSurface );
+		static float offset[3] = {m_CBData.Offset.x,m_CBData.Offset.y,m_CBData.Offset.z};
+		ImGui::DragFloat3( "PC Offset", offset, 0.1f );
+		if (m_RenderMode != PointCloudRenderer::kPointCloud)
+			ImGui::SliderFloat( "MaxQuadDepthDiff", &m_CBData.MaxQuadDepDiff, 0.01f, 0.15f );
+		m_CBData.Offset.x = offset[0];
+		m_CBData.Offset.y = offset[1];
+		m_CBData.Offset.z = offset[2];
+	}
+}

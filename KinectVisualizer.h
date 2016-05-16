@@ -5,6 +5,7 @@
 #include "KinectVisualizer_SharedHeader.inl"
 
 #include "PointCloudRenderer.h"
+#include "SeparableFilter.h"
 
 class KinectVisualizer :public Core::IDX12Framework
 {
@@ -21,6 +22,7 @@ public:
 	virtual bool OnEvent( MSG* msg );
 
 	PointCloudRenderer		m_PointCloudRenderer;
+	SeperableFilter			m_BilateralFilter;
 
 protected:
 	uint16_t m_width;
