@@ -3,28 +3,38 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="KinectVisualizer.h" />
-    <ClInclude Include="LinearFrameAllocator.h" />
-    <ClInclude Include="PointCloudRenderer.h" />
     <ClInclude Include="SeparableFilter.h">
       <Filter>SeparableFilter</Filter>
+    </ClInclude>
+    <ClInclude Include="LinearFrameAllocator.h">
+      <Filter>SensorTexGen</Filter>
+    </ClInclude>
+    <ClInclude Include="SensorTexGen.h">
+      <Filter>SensorTexGen</Filter>
+    </ClInclude>
+    <ClInclude Include="PointCloudRenderer.h">
+      <Filter>PointCloudRenderer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="KinectVisualizer.cpp" />
     <ClCompile Include="Main.cpp" />
-    <ClCompile Include="LinearFrameAllocator.cpp" />
-    <ClCompile Include="PointCloudRenderer.cpp" />
     <ClCompile Include="SeparableFilter.cpp">
       <Filter>SeparableFilter</Filter>
     </ClCompile>
+    <ClCompile Include="LinearFrameAllocator.cpp">
+      <Filter>SensorTexGen</Filter>
+    </ClCompile>
+    <ClCompile Include="SensorTexGen.cpp">
+      <Filter>SensorTexGen</Filter>
+    </ClCompile>
+    <ClCompile Include="PointCloudRenderer.cpp">
+      <Filter>PointCloudRenderer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="KinectVisualizer_SharedHeader.inl" />
-    <CustomBuild Include="KinectVisualizer.hlsl" />
-    <CustomBuild Include="Kinect2CalibData.inl" />
-    <CustomBuild Include="PointCloudRenderer.hlsl" />
-    <CustomBuild Include="PointCloudRenderer_SharedHeader.inl" />
+    <CustomBuild Include="CalibData.inl" />
     <CustomBuild Include="SeparableFilter.hlsl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
@@ -34,10 +44,28 @@
     <CustomBuild Include="SeparableFilter_SharedHeader.inl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
+    <CustomBuild Include="SensorTexGen_SharedHeader.inl">
+      <Filter>SensorTexGen</Filter>
+    </CustomBuild>
+    <CustomBuild Include="SensorTexGen.hlsl">
+      <Filter>SensorTexGen</Filter>
+    </CustomBuild>
+    <CustomBuild Include="PointCloudRenderer_SharedHeader.inl">
+      <Filter>PointCloudRenderer</Filter>
+    </CustomBuild>
+    <CustomBuild Include="PointCloudRenderer.hlsl">
+      <Filter>PointCloudRenderer</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SeparableFilter">
       <UniqueIdentifier>{c5d905be-b49b-4997-8c10-3ac31aac6662}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SensorTexGen">
+      <UniqueIdentifier>{2c3e05dc-2828-43b9-a826-bf54e5c816c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="PointCloudRenderer">
+      <UniqueIdentifier>{927e22d2-e0ee-4d72-8f6c-0f292bdaaab8}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

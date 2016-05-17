@@ -18,7 +18,7 @@ typedef DirectX::XMMATRIX matrix;
 #define STRUCT(x) struct
 #endif
 
-#include "Kinect2CalibData.inl"
+#include "CalibData.inl"
 
 #if __cplusplus || ( __hlsl )
 CBUFFER_ALIGN STRUCT( cbuffer ) RenderCB REGISTER( b0 )

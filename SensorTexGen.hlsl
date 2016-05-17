@@ -1,4 +1,4 @@
-#include "KinectVisualizer_SharedHeader.inl"
+#include "SensorTexGen_SharedHeader.inl"
 #include "CalibData.inl"
 
 #if QuadVS
