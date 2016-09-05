@@ -20,31 +20,28 @@ typedef DirectX::XMMATRIX matrix;
 
 #include "CalibData.inl"
 
-#if __cplusplus || ( __hlsl )
-CBUFFER_ALIGN STRUCT( cbuffer ) CBuffer REGISTER( b0 )
-{
-	matrix		ViewProjMat;
-	float2		ColorReso;
-	float2		DepthInfraredReso;
-	float4		ColorCxyFxy;
-	float4		DepthCxyFxy;
-	matrix		Depth2Color;
-	float4		Offset;
-	float4		LightPos;
-	float4		LightAttn;
-	float4		AmbientCol;
-	float		MaxQuadDepDiff;
-	float		niu[3];
+#if __cplusplus || (__hlsl)
+CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0) {
+    matrix ViewProjMat;
+    float2 ColorReso;
+    float2 DepthInfraredReso;
+    float4 ColorCxyFxy;
+    float4 DepthCxyFxy;
+    matrix Depth2Color;
+    float4 Offset;
+    float4 LightPos;
+    float4 LightAttn;
+    float4 AmbientCol;
+    float MaxQuadDepDiff;
+    float niu[3];
 
 #if __cplusplus
-	void * operator new(size_t i)
-	{
-		return _aligned_malloc( i, 16 );
-	};
-	void operator delete(void* p)
-	{
-		_aligned_free( p );
-	};
+    void * operator new(size_t i) {
+        return _aligned_malloc(i, 16);
+    };
+    void operator delete(void* p) {
+        _aligned_free(p);
+    };
 #endif // __cplusplus
 };
 #endif // __cplusplus || (__hlsl && Pixel_Shader)
