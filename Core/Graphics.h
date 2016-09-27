@@ -20,6 +20,7 @@ namespace Graphics
 		uint16_t						allocatorReady[4] = {};
 		uint16_t						cpuStallCountPerFrame = 0;
 		double							cpuStallTimePerFrame = 0;
+		uint64_t						lastFrameEndFence = 0;
 	};
 
 	extern Stats									g_stats;
@@ -42,9 +43,11 @@ namespace Graphics
 	extern D3D12_RECT								g_DisplayPlaneScissorRect;
 
 	extern SamplerDesc								g_SamplerLinearClampDesc;
-	extern SamplerDescriptor						g_SamplerLinearClamp;
 	extern SamplerDesc								g_SamplerLinearWrapDesc;
+	extern SamplerDesc								g_SamplerAnisoWrapDesc;
+	extern SamplerDescriptor						g_SamplerLinearClamp;
 	extern SamplerDescriptor						g_SamplerLinearWrap;
+	extern SamplerDescriptor						g_SamplerAnisoWrap;
 
 	extern D3D12_RASTERIZER_DESC					g_RasterizerDefault;
 	extern D3D12_RASTERIZER_DESC					g_RasterizerDefaultCW;

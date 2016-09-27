@@ -84,6 +84,7 @@ protected:
 	uint32_t m_Height;
 	uint32_t m_ArraySize;
 	DXGI_FORMAT m_Format;
+	std::wstring m_Name;
 };
 
 //--------------------------------------------------------------------------------------
@@ -92,10 +93,16 @@ protected:
 class ColorBuffer : public PixelBuffer
 {
 public:
-	ColorBuffer( DirectX::XMVECTOR ClearColor = DirectX::XMVectorSet( 0.0f, 0.0f, 0.0f, 0.0f ) );
+	ColorBuffer( DirectX::XMVECTOR ClearColor = DirectX::XMVectorSet( 0.0f, 0.0f, 0.0f, 0.0f ) )
+		: m_ClearColor(ClearColor), m_NumMipMaps(0) {
+		m_SRVHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		m_RTVHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		std::memset(m_UAVHandle, 0xFF, sizeof(m_UAVHandle));
+	}
 	void CreateFromSwapChain( const std::wstring& Name, ID3D12Resource* BaseResource );
 	void Create( const std::wstring& Name, uint32_t Width, uint32_t Height, uint32_t NumMips,
 		DXGI_FORMAT Format, D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN );
+	void GuiShow();
 	const D3D12_CPU_DESCRIPTOR_HANDLE& GetSRV() const { return m_SRVHandle; }
 	const D3D12_CPU_DESCRIPTOR_HANDLE& GetRTV() const { return m_RTVHandle; }
 	const D3D12_CPU_DESCRIPTOR_HANDLE& GetUAV() const { return m_UAVHandle[0]; }
@@ -115,6 +122,8 @@ protected:
 	D3D12_CPU_DESCRIPTOR_HANDLE m_RTVHandle;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_UAVHandle[12];
 	uint32_t m_NumMipMaps;
+	bool m_GuiOpen = true;
+	bool m_GuiNativeReso = false;
 };
 
 //--------------------------------------------------------------------------------------
@@ -123,9 +132,19 @@ protected:
 class DepthBuffer : public PixelBuffer
 {
 public:
-	DepthBuffer( FLOAT ClearDepth = .0f, UINT8 ClearStencil = 0 );
+	DepthBuffer::DepthBuffer(FLOAT ClearDepth = .0f, UINT8 ClearStencil = 0 )
+		:m_ClearDepth(ClearDepth), m_ClearStencil(ClearStencil) {
+		m_DSVHandle[0].ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		m_DSVHandle[1].ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		m_DSVHandle[2].ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		m_DSVHandle[3].ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		m_DepthSRVHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+		m_StencilSRVHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
+	}
 	void Create( const std::wstring& Name, uint32_t Width, uint32_t Height, DXGI_FORMAT format,
-		D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN );
+		D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN);
+	void Create(const std::wstring& Name, uint32_t Width, uint32_t Height, uint32_t NumSamples,
+		DXGI_FORMAT format, D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN);
 	const D3D12_CPU_DESCRIPTOR_HANDLE& GetDSV() const { return m_DSVHandle[0]; }
 	const D3D12_CPU_DESCRIPTOR_HANDLE& GetDSV_DepthReadOnly() const { return m_DSVHandle[1]; }
 	const D3D12_CPU_DESCRIPTOR_HANDLE& GetDSV_StencilReadOnly() const { return m_DSVHandle[2]; }
@@ -142,6 +161,38 @@ protected:
 	D3D12_CPU_DESCRIPTOR_HANDLE m_DSVHandle[4];
 	D3D12_CPU_DESCRIPTOR_HANDLE m_DepthSRVHandle;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_StencilSRVHandle;
+};
+
+//--------------------------------------------------------------------------------------
+// VolumeTexture
+//--------------------------------------------------------------------------------------
+class VolumeTexture : public GpuResource
+{
+public:
+	VolumeTexture();
+	void Create( const std::wstring& Name, uint32_t Width, uint32_t Height, uint32_t Depth, DXGI_FORMAT Format);
+	uint32_t GetWidth() const { return m_Width; }
+	uint32_t GetHeight() const { return m_Height; }
+	uint32_t GetDepth() const { return m_Depth; }
+	const DXGI_FORMAT& GetFormat() const { return m_Format; }
+
+	const D3D12_CPU_DESCRIPTOR_HANDLE& GetSRV() const { return m_SRVHandle; }
+	const D3D12_CPU_DESCRIPTOR_HANDLE& GetUAV() const { return m_UAVHandle; }
+
+protected:
+	D3D12_RESOURCE_DESC DescribeTex3D( uint32_t Width, uint32_t Height, uint32_t Depth,
+		DXGI_FORMAT Format);
+	void CreateDerivedViews();
+
+	DXGI_FORMAT GetBaseFormat();
+	DXGI_FORMAT GetUAVFormat();
+
+	uint32_t m_Width;
+	uint32_t m_Height;
+	uint32_t m_Depth;
+	DXGI_FORMAT m_Format;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_SRVHandle;
+	D3D12_CPU_DESCRIPTOR_HANDLE m_UAVHandle;
 };
 
 //--------------------------------------------------------------------------------------
