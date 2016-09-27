@@ -1,40 +1,18 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClInclude Include="pch.h" />
     <ClInclude Include="KinectVisualizer.h" />
+    <ClCompile Include="KinectVisualizer.cpp" />
+    <ClCompile Include="Main.cpp" />
+    <ClInclude Include="pch.h" />
+    <ClCompile Include="pch.cpp" />
+    <CustomBuild Include="CalibData.inl" />
     <ClInclude Include="SeparableFilter.h">
       <Filter>SeparableFilter</Filter>
     </ClInclude>
-    <ClInclude Include="LinearFrameAllocator.h">
-      <Filter>SensorTexGen</Filter>
-    </ClInclude>
-    <ClInclude Include="SensorTexGen.h">
-      <Filter>SensorTexGen</Filter>
-    </ClInclude>
-    <ClInclude Include="PointCloudRenderer.h">
-      <Filter>PointCloudRenderer</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="pch.cpp" />
-    <ClCompile Include="KinectVisualizer.cpp" />
-    <ClCompile Include="Main.cpp" />
     <ClCompile Include="SeparableFilter.cpp">
       <Filter>SeparableFilter</Filter>
     </ClCompile>
-    <ClCompile Include="LinearFrameAllocator.cpp">
-      <Filter>SensorTexGen</Filter>
-    </ClCompile>
-    <ClCompile Include="SensorTexGen.cpp">
-      <Filter>SensorTexGen</Filter>
-    </ClCompile>
-    <ClCompile Include="PointCloudRenderer.cpp">
-      <Filter>PointCloudRenderer</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="CalibData.inl" />
     <CustomBuild Include="SeparableFilter.hlsl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
@@ -44,12 +22,30 @@
     <CustomBuild Include="SeparableFilter_SharedHeader.inl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
+    <ClInclude Include="LinearFrameAllocator.h">
+      <Filter>SensorTexGen</Filter>
+    </ClInclude>
+    <ClInclude Include="SensorTexGen.h">
+      <Filter>SensorTexGen</Filter>
+    </ClInclude>
+    <ClCompile Include="LinearFrameAllocator.cpp">
+      <Filter>SensorTexGen</Filter>
+    </ClCompile>
+    <ClCompile Include="SensorTexGen.cpp">
+      <Filter>SensorTexGen</Filter>
+    </ClCompile>
     <CustomBuild Include="SensorTexGen_SharedHeader.inl">
       <Filter>SensorTexGen</Filter>
     </CustomBuild>
     <CustomBuild Include="SensorTexGen.hlsl">
       <Filter>SensorTexGen</Filter>
     </CustomBuild>
+    <ClInclude Include="PointCloudRenderer.h">
+      <Filter>PointCloudRenderer</Filter>
+    </ClInclude>
+    <ClCompile Include="PointCloudRenderer.cpp">
+      <Filter>PointCloudRenderer</Filter>
+    </ClCompile>
     <CustomBuild Include="PointCloudRenderer_SharedHeader.inl">
       <Filter>PointCloudRenderer</Filter>
     </CustomBuild>

@@ -53,7 +53,7 @@ HRESULT SeperableFilter::OnCreateResoure(DXGI_FORMAT BufferFormat)
     macro[2].Definition = "1";
     char kernelSizeStr[8];
     for (int i = 0; i < kNumKernelDiameter; ++i) {
-        sprintf(kernelSizeStr, "%d", i);
+        sprintf_s(kernelSizeStr, 8, "%d", i);
         macro[4].Definition = kernelSizeStr;
         macro[3].Definition = "0";
         V(Graphics::CompileShaderFromFile(

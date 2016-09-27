@@ -113,7 +113,7 @@ void SensorTexGen::OnCreateResource()
 
     char tempChar[8];
     for (int i = 0; i < kNumDataMode; ++i) {
-        sprintf(tempChar, "%d", i);
+        sprintf_s(tempChar, 8, "%d", i);
         macro[4].Definition = tempChar; // CorrectDistortion
         macro[2].Definition = "1"; // CopyPS
         for (int j = 0; j < kNumDepthMode; ++j) {
