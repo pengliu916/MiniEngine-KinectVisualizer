@@ -16,7 +16,7 @@ public:
 	virtual void GetInfraredReso( uint16_t& Width, uint16_t& Height ) const override;
 	virtual void StartStream() override;
 	virtual void StopStream() override;
-	virtual void GetFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame ) override;
+	virtual bool GetNewFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame ) override;
 
 protected:
 	// Current Kinect

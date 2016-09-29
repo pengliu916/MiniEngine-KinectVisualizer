@@ -194,12 +194,15 @@ void Kinect2Sensor::StopStream()
 	}
 }
 
-void Kinect2Sensor::GetFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame )
+bool Kinect2Sensor::GetNewFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame )
 {
-	_ReadingIdx.store( _LatestReadableIdx.load( memory_order_acquire ), memory_order_release );
-	ColorFrame = _pFrames[kColor][_ReadingIdx];
-	DepthFrame = _pFrames[kDepth][_ReadingIdx];
-	InfraredFrame = _pFrames[kInfrared][_ReadingIdx];
+	uint8_t preReadingIdx = _ReadingIdx.load(memory_order_acquire);
+	uint8_t newReadingIdx = _LatestReadableIdx.load(memory_order_acquire);
+	_ReadingIdx.store( newReadingIdx, memory_order_release );
+	ColorFrame = _pFrames[kColor][newReadingIdx];
+	DepthFrame = _pFrames[kDepth][newReadingIdx];
+	InfraredFrame = _pFrames[kInfrared][newReadingIdx];
+	return preReadingIdx != newReadingIdx;
 }
 
 void Kinect2Sensor::FrameAcquireLoop()

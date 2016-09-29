@@ -45,7 +45,8 @@ public:
 	virtual void GetInfraredReso( uint16_t& Width, uint16_t& Height ) const = 0;
 	virtual void StartStream() = 0;
 	virtual void StopStream() = 0;
-	virtual void GetFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame ) = 0;
+	// if new frame is not ready, all buffer contain previous frame and function will return false, otherwise return true
+	virtual bool GetNewFrames( FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame ) = 0;
 };
 
 class RGBDSTREAMDLL_API StreamFactory {
