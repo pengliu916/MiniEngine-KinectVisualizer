@@ -1,5 +1,3 @@
-#define THREAD_PER_GROUP 32
-
 // Do not modify below this line
 #if __cplusplus
 #define CBUFFER_ALIGN __declspec(align(16))
@@ -11,20 +9,18 @@
 #define REGISTER(x) :register(x)
 #define STRUCT(x) x
 #else 
-typedef DirectX::XMFLOAT2 float2;
-typedef DirectX::XMFLOAT4 float4;
-typedef DirectX::XMMATRIX matrix;
+typedef DirectX::XMUINT2 uint2;
+typedef uint32_t uint;
 #define REGISTER(x)
 #define STRUCT(x) struct
 #endif
 
-#include "CalibData.inl"
-
 #if __cplusplus || (__hlsl)
-CBUFFER_ALIGN STRUCT(cbuffer) RenderCB REGISTER(b0)
+CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
 {
-    float2 ColorReso;
-    float2 DepthInfraredReso;
+    uint2 u2Reso;
+    float fGaussianVar; // Let edge distance threshold as 2*deviation
+    float Niu;
 #if __cplusplus
     void * operator new(size_t i) {
         return _aligned_malloc(i, 16);

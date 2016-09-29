@@ -7,49 +7,70 @@
     <ClInclude Include="pch.h" />
     <ClCompile Include="pch.cpp" />
     <CustomBuild Include="CalibData.inl" />
-    <ClInclude Include="SeparableFilter.h">
+    <ClInclude Include="SeparableFilter\SeparableFilter.h">
       <Filter>SeparableFilter</Filter>
     </ClInclude>
-    <ClCompile Include="SeparableFilter.cpp">
+    <ClCompile Include="SeparableFilter\SeparableFilter.cpp">
       <Filter>SeparableFilter</Filter>
     </ClCompile>
-    <CustomBuild Include="SeparableFilter.hlsl">
+    <CustomBuild Include="SeparableFilter\SeparableFilter_BilateralFilter_cs.hlsl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
-    <CustomBuild Include="BilateralFilter.hlsl">
+    <CustomBuild Include="SeparableFilter\SeparableFilter_BilateralFilter_ps.hlsl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
-    <CustomBuild Include="SeparableFilter_SharedHeader.inl">
+    <CustomBuild Include="SeparableFilter\SeparableFilter_SingleTriangleQuad_vs.hlsl">
       <Filter>SeparableFilter</Filter>
     </CustomBuild>
-    <ClInclude Include="LinearFrameAllocator.h">
+    <CustomBuild Include="SeparableFilter\SeparableFilter.inl">
+      <Filter>SeparableFilter</Filter>
+    </CustomBuild>
+    <ClInclude Include="SensorTexGen\LinearFrameAllocator.h">
       <Filter>SensorTexGen</Filter>
     </ClInclude>
-    <ClInclude Include="SensorTexGen.h">
+    <ClCompile Include="SensorTexGen\LinearFrameAllocator.cpp">
+      <Filter>SensorTexGen</Filter>
+    </ClCompile>
+    <ClInclude Include="SensorTexGen\SensorTexGen.h">
       <Filter>SensorTexGen</Filter>
     </ClInclude>
-    <ClCompile Include="LinearFrameAllocator.cpp">
+    <ClCompile Include="SensorTexGen\SensorTexGen.cpp">
       <Filter>SensorTexGen</Filter>
     </ClCompile>
-    <ClCompile Include="SensorTexGen.cpp">
-      <Filter>SensorTexGen</Filter>
-    </ClCompile>
-    <CustomBuild Include="SensorTexGen_SharedHeader.inl">
+    <CustomBuild Include="SensorTexGen\SensorTexGen.inl">
       <Filter>SensorTexGen</Filter>
     </CustomBuild>
-    <CustomBuild Include="SensorTexGen.hlsl">
+    <CustomBuild Include="SensorTexGen\SensorTexGen.hlsli">
       <Filter>SensorTexGen</Filter>
     </CustomBuild>
-    <ClInclude Include="PointCloudRenderer.h">
+    <CustomBuild Include="SensorTexGen\SensorTexGen_Copy_cs.hlsl">
+      <Filter>SensorTexGen</Filter>
+    </CustomBuild>
+    <CustomBuild Include="SensorTexGen\SensorTexGen_Copy_ps.hlsl">
+      <Filter>SensorTexGen</Filter>
+    </CustomBuild>
+    <CustomBuild Include="SensorTexGen\SensorTexGen_SingleTriangleQuad_vs.hlsl">
+      <Filter>SensorTexGen</Filter>
+    </CustomBuild>
+    <ClInclude Include="PointCloudRenderer\PointCloudRenderer.h">
       <Filter>PointCloudRenderer</Filter>
     </ClInclude>
-    <ClCompile Include="PointCloudRenderer.cpp">
+    <ClCompile Include="PointCloudRenderer\PointCloudRenderer.cpp">
       <Filter>PointCloudRenderer</Filter>
     </ClCompile>
-    <CustomBuild Include="PointCloudRenderer_SharedHeader.inl">
+    <CustomBuild Include="PointCloudRenderer\PointCloudRenderer.inl">
       <Filter>PointCloudRenderer</Filter>
     </CustomBuild>
-    <CustomBuild Include="PointCloudRenderer.hlsl">
+    <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_PassThrough_vs.hlsl">
+      <Filter>PointCloudRenderer</Filter>
+    </CustomBuild>
+    <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_PointCloud_vs.hlsl">
+      <Filter>PointCloudRenderer</Filter>
+    </CustomBuild>
+    <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_TexColor_ps.hlsl">
+      <Filter>PointCloudRenderer</Filter>
+    </CustomBuild>
+    <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_TriangleCloud_gs.hlsl">
       <Filter>PointCloudRenderer</Filter>
     </CustomBuild>
   </ItemGroup>

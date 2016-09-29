@@ -1,8 +1,8 @@
 #pragma once
 #include "DX12Framework.h"
-#include "SensorTexGen.h"
-#include "PointCloudRenderer.h"
-#include "SeparableFilter.h"
+#include "SensorTexGen\SensorTexGen.h"
+#include "PointCloudRenderer\PointCloudRenderer.h"
+#include "SeparableFilter\SeparableFilter.h"
 
 class KinectVisualizer :public Core::IDX12Framework
 {
@@ -18,17 +18,17 @@ public:
     virtual void OnDestroy();
     virtual bool OnEvent(MSG* msg);
 
-    PointCloudRenderer m_PointCloudRenderer;
-    SeperableFilter m_BilateralFilter;
-    SensorTexGen m_SensorTexGen;
+private:
+    PointCloudRenderer _pointCloudRenderer;
+    SeperableFilter _bilateralFilter;
+    SensorTexGen _sensorTexGen;
 
-protected:
-    uint16_t m_width;
-    uint16_t m_height;
+    uint16_t _width;
+    uint16_t _height;
 
     // For camera
-    OrbitCamera m_Camera;
-    float m_camOrbitRadius = 10.f;
-    float m_camMaxOribtRadius = 50.f;
-    float m_camMinOribtRadius = 0.1f;
+    OrbitCamera _camera;
+    float _camOrbitRadius = 7.f;
+    float _camMaxOribtRadius = 50.f;
+    float _camMinOribtRadius = 0.1f;
 };
