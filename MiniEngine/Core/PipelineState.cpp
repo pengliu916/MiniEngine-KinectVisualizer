@@ -32,6 +32,16 @@ void PSO::DestroyAll()
 	s_ComputePSOHashMap.clear();
 }
 
+size_t PSO::GetGfxPSOCount()
+{
+	return s_GraphicsPSOHashMap.size();
+}
+
+size_t PSO::GetCptPSOCount()
+{
+	return s_ComputePSOHashMap.size();
+}
+
 void PSO::SetRootSignature( const RootSignature& BindMappings )
 {
 	m_RootSignature = &BindMappings;

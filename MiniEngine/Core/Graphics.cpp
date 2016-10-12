@@ -599,7 +599,14 @@ namespace Graphics
 			ImGui::Columns(1);
 			ImGui::Separator();
 
-			ImGui::Text( "RenderThread Stall Count: %d/frame  Time:%4.2fms", Graphics::g_stats.cpuStallCountPerFrame, Graphics::g_stats.cpuStallTimePerFrame );
+			ImGui::Columns(2);
+			ImGui::Separator();
+			ImGui::Text("GfxPSO: %d", PSO::GetGfxPSOCount()); ImGui::NextColumn();
+			ImGui::Text("CptPSO: %d", PSO::GetCptPSOCount());
+
+			ImGui::Columns(1);
+			ImGui::Separator();
+			ImGui::Text("RenderThread Stall Count: %d/frame  Time:%4.2fms", Graphics::g_stats.cpuStallCountPerFrame, Graphics::g_stats.cpuStallTimePerFrame);
 			Graphics::g_stats.cpuStallCountPerFrame = 0;
 			Graphics::g_stats.cpuStallTimePerFrame = 0;
 		}

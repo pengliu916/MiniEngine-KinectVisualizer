@@ -25,6 +25,8 @@ public:
 
 	static void Initialize();
 	static void DestroyAll();
+	static size_t GetGfxPSOCount();
+	static size_t GetCptPSOCount();
 
 	void SetRootSignature( const RootSignature& BindMappings );
 	const RootSignature& GetRootSignature() const;
