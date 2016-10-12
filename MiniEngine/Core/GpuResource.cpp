@@ -509,21 +509,40 @@ void VolumeTexture::Create( const std::wstring& Name, uint32_t Width, uint32_t H
 #else
 	m_pResource->SetName(Name.c_str());
 #endif
-	CreateDerivedViews();
+	CreateDerivedViews(Format);
 }
 
-void VolumeTexture::CreateDerivedViews()
+void VolumeTexture::CreateDerivedViews( DXGI_FORMAT Format )
 {
+	D3D12_RENDER_TARGET_VIEW_DESC RTVDesc = {};
+	D3D12_UNORDERED_ACCESS_VIEW_DESC UAVDesc = {};
+	D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
+	RTVDesc.Format = Format;
+	RTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
+	RTVDesc.Texture3D.WSize = -1;
+	RTVDesc.Texture3D.FirstWSlice = 0;
+	RTVDesc.Texture3D.MipSlice = 0;
+	UAVDesc.Format = GetUAVFormat(Format);
+	UAVDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
+	UAVDesc.Texture3D.WSize = -1;
+	UAVDesc.Texture3D.FirstWSlice = 0;
+	UAVDesc.Texture3D.MipSlice = 0;
+	SRVDesc.Format = Format;
+	SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+	SRVDesc.Texture3D.MipLevels = 1;
+	SRVDesc.Texture3D.MostDetailedMip = 0;
+	SRVDesc.Texture3D.ResourceMinLODClamp = 0;
 	ID3D12Resource* Resource = m_pResource.Get();
 	if (m_SRVHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN)
 		m_SRVHandle = Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
-	Graphics::g_device->CreateShaderResourceView( Resource, nullptr, m_SRVHandle );
+	Graphics::g_device->CreateShaderResourceView( Resource, &SRVDesc, m_SRVHandle );
 	if (m_RTVHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN)
 		m_RTVHandle = Graphics::g_pRTVDescriptorHeap->Append().GetCPUHandle();
-	Graphics::g_device->CreateRenderTargetView( Resource, nullptr, m_RTVHandle );
+	Graphics::g_device->CreateRenderTargetView( Resource, &RTVDesc, m_RTVHandle );
 	if (m_UAVHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN)
 		m_UAVHandle = Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
-	Graphics::g_device->CreateUnorderedAccessView( Resource, nullptr, nullptr, m_UAVHandle );
+	Graphics::g_device->CreateUnorderedAccessView( Resource, nullptr, &UAVDesc, m_UAVHandle );
 }
 
 //--------------------------------------------------------------------------------------

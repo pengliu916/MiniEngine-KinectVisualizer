@@ -195,7 +195,7 @@ protected:
 		_BitScanReverse((unsigned long*)&HighBit, Width | Height);
 		return HighBit + 1;
 	}
-	void CreateDerivedViews();
+	void CreateDerivedViews(DXGI_FORMAT Format);
 
 	DirectX::XMVECTOR m_ClearColor;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_SRVHandle;
