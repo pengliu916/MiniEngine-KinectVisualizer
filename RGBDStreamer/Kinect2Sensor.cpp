@@ -22,8 +22,6 @@
 #include "IRGBDStreamer.h"
 #include "Kinect2Sensor.h"
 
-#pragma comment (lib, "kinect20.lib")
-
 #define __FILENAME__ (wcsrchr (_T(__FILE__), L'\\') \
 ? wcsrchr (_T(__FILE__), L'\\') + 1 : _T(__FILE__))
 #if defined(DEBUG) || defined(_DEBUG)

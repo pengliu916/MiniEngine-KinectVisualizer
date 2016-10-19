@@ -3,8 +3,6 @@
   <ItemGroup>
     <ClInclude Include="IRGBDStreamer.h" />
     <ClInclude Include="Kinect2Sensor.h" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="Kinect2Sensor.cpp" />
   </ItemGroup>
 </Project>
