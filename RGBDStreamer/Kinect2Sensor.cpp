@@ -147,12 +147,11 @@ Kinect2Sensor::Kinect2Sensor(
     bool enableColor, bool enableDepth, bool enableInfrared)
 {
     HRESULT hr = S_OK;
+    _hFrameArrivalEvent = NULL;
     _depthEnabled = enableDepth;
     _colorEnabled = enableColor;
     _infraredEnabled = enableInfrared;
     _streaming.store(false, memory_order_relaxed);
-    _hFrameArrivalEvent =
-        (WAITABLE_HANDLE)CreateEvent(NULL, FALSE, FALSE, NULL);
     V(Initialize());
     return;
 }
@@ -164,7 +163,6 @@ Kinect2Sensor::~Kinect2Sensor()
         _backGroundThread.join();
     }
     Shutdown();
-    CloseHandle((HANDLE)_hFrameArrivalEvent);
 }
 
 void
