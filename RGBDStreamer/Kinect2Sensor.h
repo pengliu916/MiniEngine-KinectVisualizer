@@ -30,14 +30,6 @@ protected:
     // Frame data
     FrameData _pFrames[kNumBufferTypes][STREAM_BUFFER_COUNT];
 
-    // Frame size
-    uint16_t _colorWidth = 0;
-    uint16_t _colorHeight = 0;
-    uint16_t _depthWidth = 0;
-    uint16_t _depthHeight = 0;
-    uint16_t _infraredWidth = 0;
-    uint16_t _infraredHeight = 0;
-
     // Channel enabled
     bool _depthEnabled = false;
     bool _colorEnabled = false;
@@ -47,6 +39,19 @@ protected:
     void Shutdown();
 
 private:
+    class thread_guard
+    {
+    public:
+        thread_guard(std::thread& _t) :t(std::move(_t)) {}
+        thread_guard(std::thread&& _t) :t(std::move(_t)) {}
+        ~thread_guard() { if (t.joinable())t.join(); }
+
+        thread_guard(thread_guard const&) = delete;
+        thread_guard& operator=(thread_guard const&) = delete;
+    private:
+        std::thread t;
+    };
+
     // Buffer control
     uint8_t _writingIdx = 1;
     std::atomic<uint8_t> _latestReadableIdx = 0;
@@ -54,7 +59,7 @@ private:
 
     // Background thread control
     std::atomic_bool _streaming;
-    std::thread _backGroundThread;
+    std::unique_ptr<thread_guard> _backGroundThread;
 
     // Frame arrival event handle
     WAITABLE_HANDLE _hFrameArrivalEvent;

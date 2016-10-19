@@ -58,63 +58,65 @@
 #endif //#ifndef WRET
 #endif //#if defined(DEBUG) || defined(_DEBUG)
 
-inline HRESULT
-Trace(const wchar_t* strFile, DWORD dwLine, HRESULT hr, const wchar_t* strMsg)
-{
-    wchar_t szBuffer[512];
-    int offset = 0;
-    if (strFile) {
-        offset += wsprintf(szBuffer, L"line %u in file %s\n", dwLine, strFile);
+namespace {
+    // Frame size
+    const uint16_t _colorWidth = 1920;
+    const uint16_t _colorHeight = 1080;
+    const uint16_t _depthWidth = 512;
+    const uint16_t _depthHeight = 424;
+    const uint16_t _infraredWidth = 512;
+    const uint16_t _infraredHeight = 424;
+
+    const uint32_t _colorBufSize =
+        _colorWidth * _colorHeight * 4 * sizeof(uint8_t);
+    const uint32_t _depthBufSize =
+        _depthWidth * _depthHeight * sizeof(uint16_t);
+    const uint32_t _infraredBufSize =
+        _infraredWidth * _infraredHeight * sizeof(uint16_t);
+
+    inline HRESULT Trace(const wchar_t* strFile,
+        DWORD dwLine, HRESULT hr, const wchar_t* strMsg) {
+        wchar_t szBuffer[512];
+        int offset = 0;
+        if (strFile) {
+            offset += wsprintf(szBuffer,
+                L"line %u in file %s\n", dwLine, strFile);
+        }
+        offset +=
+            wsprintf(szBuffer + offset, L"Calling: %s failed!\n ", strMsg);
+        _com_error err(hr);
+        wsprintf(szBuffer + offset, err.ErrorMessage());
+        OutputDebugString(szBuffer);
+        return hr;
     }
-    offset += wsprintf(szBuffer + offset, L"Calling: %s failed!\n ", strMsg);
-    _com_error err(hr);
-    wsprintf(szBuffer + offset, err.ErrorMessage());
-    OutputDebugString(szBuffer);
-    return hr;
-}
 
-using namespace std;
+    void SetThreadName(const char* name) {
+        // http://msdn.microsoft.com/en-us/library/xcb2z8hs(v=vs.110).aspx
+    #pragma pack(push,8)
+        typedef struct tagTHREADNAME_INFO {
+            DWORD dwType; // must be 0x1000
+            LPCSTR szName; // pointer to name (in user addr space)
+            DWORD dwThreadID; // thread ID (-1=caller thread)
+            DWORD dwFlags; // reserved for future use, must be zero
+        } THREADNAME_INFO;
+    #pragma pack(pop)
 
-// Safe release for interfaces
-template<class Interface>
-inline void
-SafeRelease(Interface *& pInterfaceToRelease)
-{
-    if (pInterfaceToRelease != NULL) {
-        pInterfaceToRelease->Release();
-        pInterfaceToRelease = NULL;
+        THREADNAME_INFO info;
+        info.dwType = 0x1000;
+        info.szName = name;
+        info.dwThreadID = (DWORD)-1;
+        info.dwFlags = 0;
+        __try {
+            RaiseException(0x406D1388, 0,
+                sizeof(info) / sizeof(ULONG_PTR), (ULONG_PTR*)&info);
+        } __except (EXCEPTION_CONTINUE_EXECUTION) {}
     }
 }
-
-void
-SetThreadName(const char* name)
-{
-    // http://msdn.microsoft.com/en-us/library/xcb2z8hs(v=vs.110).aspx
-#pragma pack(push,8)
-    typedef struct tagTHREADNAME_INFO {
-        DWORD dwType; // must be 0x1000
-        LPCSTR szName; // pointer to name (in user addr space)
-        DWORD dwThreadID; // thread ID (-1=caller thread)
-        DWORD dwFlags; // reserved for future use, must be zero
-    } THREADNAME_INFO;
-#pragma pack(pop)
-
-    THREADNAME_INFO info;
-    info.dwType = 0x1000;
-    info.szName = name;
-    info.dwThreadID = (DWORD)-1;
-    info.dwFlags = 0;
-    __try {
-        RaiseException(
-            0x406D1388, 0, sizeof(info) / sizeof(ULONG_PTR), (ULONG_PTR*)&info);
-    } __except (EXCEPTION_CONTINUE_EXECUTION){}
-}
-
 HRESULT
 Kinect2Sensor::Initialize()
 {
-    HRESULT hr = S_OK;
-    VRET(GetDefaultKinectSensor(&_pKinect2Sensor));
+    HRESULT hr;
+    WRET(GetDefaultKinectSensor(&_pKinect2Sensor));
 
     int SourceType = FrameSourceTypes_None;
 
@@ -122,10 +124,10 @@ Kinect2Sensor::Initialize()
     if (_depthEnabled) SourceType |= FrameSourceTypes_Depth;
     if (_infraredEnabled) SourceType |= FrameSourceTypes_Infrared;
 
-    VRET(_pKinect2Sensor->Open());
-    VRET(_pKinect2Sensor->OpenMultiSourceFrameReader(
+    WRET(_pKinect2Sensor->Open());
+    WRET(_pKinect2Sensor->OpenMultiSourceFrameReader(
         SourceType, &_pMultiSourceFrameReader));
-    VRET(_pMultiSourceFrameReader->SubscribeMultiSourceFrameArrived(
+    WRET(_pMultiSourceFrameReader->SubscribeMultiSourceFrameArrived(
         &_hFrameArrivalEvent));
     return hr;
 }
@@ -133,13 +135,18 @@ Kinect2Sensor::Initialize()
 void
 Kinect2Sensor::Shutdown()
 {
-    _pMultiSourceFrameReader->UnsubscribeMultiSourceFrameArrived(
-        _hFrameArrivalEvent);
-    SafeRelease(_pMultiSourceFrameReader);
-    if (_pKinect2Sensor) {
+    if (_pMultiSourceFrameReader) {
+        _pMultiSourceFrameReader->UnsubscribeMultiSourceFrameArrived(
+            _hFrameArrivalEvent);
+        _pMultiSourceFrameReader->Release();
+        _pMultiSourceFrameReader = nullptr;
+    }
+    BOOLEAN opened = false;
+    if ( _pKinect2Sensor && 
+        SUCCEEDED(_pKinect2Sensor->get_IsOpen(&opened)) && opened) {
         _pKinect2Sensor->Close();
         _pKinect2Sensor->Release();
-        _pKinect2Sensor = NULL;
+        _pKinect2Sensor = nullptr;
     }
 }
 
@@ -151,18 +158,23 @@ Kinect2Sensor::Kinect2Sensor(
     _depthEnabled = enableDepth;
     _colorEnabled = enableColor;
     _infraredEnabled = enableInfrared;
-    _streaming.store(false, memory_order_relaxed);
+    _streaming.store(false, std::memory_order_relaxed);
     V(Initialize());
     return;
 }
 
 Kinect2Sensor::~Kinect2Sensor()
 {
-    _streaming.store(false, memory_order_relaxed);
-    if (_backGroundThread.joinable()) {
-        _backGroundThread.join();
-    }
+    _streaming.store(false, std::memory_order_relaxed);
     Shutdown();
+    for (uint8_t i = 0; i < kNumBufferTypes; ++i) {
+        for (uint8_t j = 0; j < 2; ++j) {
+            if (_pFrames[i][j].pData) {
+                delete _pFrames[i][j].pData;
+                _pFrames[i][j].pData = nullptr;
+            }
+        }
+    }
 }
 
 void
@@ -186,18 +198,19 @@ Kinect2Sensor::GetInfraredReso(uint16_t& width, uint16_t& height) const
 void
 Kinect2Sensor::StartStream()
 {
-    if (!_streaming.load(memory_order_relaxed)) {
-        _streaming.store(true, memory_order_release);
-        thread t(&Kinect2Sensor::FrameAcquireLoop, this);
-        _backGroundThread = move(t);
+    if (!_streaming.load(std::memory_order_relaxed)) {
+        _streaming.store(true, std::memory_order_release);
+        _backGroundThread = std::unique_ptr<thread_guard>(
+            new thread_guard(std::thread(
+                &Kinect2Sensor::FrameAcquireLoop, this)));
     }
 }
 
 void
 Kinect2Sensor::StopStream()
 {
-    if (_streaming.load(memory_order_relaxed)) {
-        _streaming.store(false, memory_order_relaxed);
+    if (_streaming.load(std::memory_order_relaxed)) {
+        _streaming.store(false, std::memory_order_relaxed);
     }
 }
 
@@ -205,9 +218,9 @@ bool
 Kinect2Sensor::GetNewFrames(
     FrameData& ColorFrame, FrameData& DepthFrame, FrameData& InfraredFrame)
 {
-    uint8_t preReadingIdx = _readingIdx.load(memory_order_acquire);
-    uint8_t newReadingIdx = _latestReadableIdx.load(memory_order_acquire);
-    _readingIdx.store(newReadingIdx, memory_order_release);
+    uint8_t preReadingIdx = _readingIdx.load(std::memory_order_acquire);
+    uint8_t newReadingIdx = _latestReadableIdx.load(std::memory_order_acquire);
+    _readingIdx.store(newReadingIdx, std::memory_order_release);
     ColorFrame = _pFrames[kColor][newReadingIdx];
     DepthFrame = _pFrames[kDepth][newReadingIdx];
     InfraredFrame = _pFrames[kInfrared][newReadingIdx];
@@ -224,10 +237,10 @@ Kinect2Sensor::FrameAcquireLoop()
     INT64 InfTimeStampPreFrame = 0;
 
     HRESULT hr = S_OK;
-    while (_streaming.load(memory_order_consume)) {
+    while (_streaming.load(std::memory_order_consume)) {
         while (FAILED(hr)) {
             Shutdown();
-            this_thread::sleep_for(1s);
+            std::this_thread::sleep_for(std::chrono::seconds(2));
             hr = Initialize();
         }
         int idx = WaitForSingleObject(
@@ -261,28 +274,28 @@ Kinect2Sensor::ProcessingFrames(IMultiSourceFrameArrivedEventArgs* pArgs)
         IColorFrameReference* pColorFrameReference = nullptr;
         VRET(pFrame->get_ColorFrameReference(&pColorFrameReference));
         W(ProcessColorFrame(pColorFrameReference));
-        SafeRelease(pColorFrameReference);
+        pColorFrameReference->Release();
     }
     if (SUCCEEDED(hr) && _depthEnabled) {
         IDepthFrameReference* pDepthFrameReference = nullptr;
         VRET(pFrame->get_DepthFrameReference(&pDepthFrameReference));
         W(ProcessDepthFrame(pDepthFrameReference));
-        SafeRelease(pDepthFrameReference);
+        pDepthFrameReference->Release();
     }
     if (SUCCEEDED(hr) && _infraredEnabled) {
         IInfraredFrameReference* pInfraredFrameReference = nullptr;
         VRET(pFrame->get_InfraredFrameReference(&pInfraredFrameReference));
         W(ProcessInfraredFrame(pInfraredFrameReference));
-        SafeRelease(pInfraredFrameReference);
+        pInfraredFrameReference->Release();
     }
     pFrameReference->Release();
 
     if (SUCCEEDED(hr)) {
-        _latestReadableIdx.store(_writingIdx, memory_order_release);
+        _latestReadableIdx.store(_writingIdx, std::memory_order_release);
         _writingIdx = (_writingIdx + 1) % STREAM_BUFFER_COUNT;
-        while (_readingIdx.load(memory_order_acquire) == _writingIdx) {
+        while (_readingIdx.load(std::memory_order_acquire) == _writingIdx) {
             std::this_thread::yield();
-            if (_streaming.load(memory_order_consume) == false) {
+            if (_streaming.load(std::memory_order_consume) == false) {
                 return hr;
             }
         }
@@ -293,99 +306,63 @@ Kinect2Sensor::ProcessingFrames(IMultiSourceFrameArrivedEventArgs* pArgs)
 HRESULT
 Kinect2Sensor::ProcessDepthFrame(IDepthFrameReference* pDepthFrameRef)
 {
-    IFrameDescription* pDepthFrameDescription = NULL;
     INT64 DepTimeStamp = 0;
-    int nDepthWidth = 0;
-    int nDepthHeight = 0;
     IDepthFrame* pDepthFrame = NULL;
     HRESULT hr = S_OK;
     WRET(pDepthFrameRef->AcquireFrame(&pDepthFrame));
     V(pDepthFrameRef->get_RelativeTime(&DepTimeStamp));
     // get depth frame data
-    V(pDepthFrame->get_FrameDescription(&pDepthFrameDescription));
-    V(pDepthFrameDescription->get_Width(&nDepthWidth));
-    V(pDepthFrameDescription->get_Height(&nDepthHeight));
-    _depthWidth = nDepthWidth;
-    _depthHeight = nDepthHeight;
-    size_t bufferSize = nDepthHeight*nDepthWidth * sizeof(uint16_t);
     FrameData& CurFrame = _pFrames[kDepth][_writingIdx];
-    CurFrame.Size = (uint32_t)bufferSize;
+    CurFrame.Size = _depthBufSize;
     CurFrame.captureTimeStamp = DepTimeStamp;
-    CurFrame.width = nDepthWidth;
-    CurFrame.height = nDepthHeight;
-    if (CurFrame.pData == nullptr) {
-        CurFrame.pData = (uint8_t*)std::malloc(bufferSize);
+    if (!CurFrame.pData) {
+        CurFrame.pData = (uint8_t*)std::malloc(_depthBufSize);
     }
-    V(pDepthFrame->CopyFrameDataToArray((UINT)(bufferSize / 2),
+    V(pDepthFrame->CopyFrameDataToArray((UINT)(_depthBufSize / 2),
         reinterpret_cast<UINT16*>(CurFrame.pData)));
-    SafeRelease(pDepthFrameDescription);
-    SafeRelease(pDepthFrame);
+    pDepthFrame->Release();
     return hr;
 }
 
 HRESULT
 Kinect2Sensor::ProcessColorFrame(IColorFrameReference* pColorFrameRef)
 {
-    IFrameDescription* pColorFrameDescription = NULL;
     INT64 ColTimeStamp = 0;
-    int nColorWidth = 0;
-    int nColorHeight = 0;
     IColorFrame* pColorFrame = NULL;
     HRESULT hr = S_OK;
     WRET(pColorFrameRef->AcquireFrame(&pColorFrame));
     V(pColorFrameRef->get_RelativeTime(&ColTimeStamp));
     // get color frame data
-    V(pColorFrame->get_FrameDescription(&pColorFrameDescription));
-    V(pColorFrameDescription->get_Width(&nColorWidth));
-    V(pColorFrameDescription->get_Height(&nColorHeight));
-    _colorWidth = nColorWidth;
-    _colorHeight = nColorHeight;
-    size_t bufferSize = nColorHeight*nColorWidth * 4 * sizeof(uint8_t);
     FrameData& CurFrame = _pFrames[kColor][_writingIdx];
-    CurFrame.Size = (uint32_t)bufferSize;
+    CurFrame.Size = _colorBufSize;
     CurFrame.captureTimeStamp = ColTimeStamp;
-    CurFrame.width = nColorWidth;
-    CurFrame.height = nColorHeight;
-    if (CurFrame.pData == nullptr) {
-        CurFrame.pData = (uint8_t*)std::malloc(bufferSize);
+    if (!CurFrame.pData) {
+        CurFrame.pData = (uint8_t*)std::malloc(_colorBufSize);
     }
-    V(pColorFrame->CopyConvertedFrameDataToArray((UINT)bufferSize,
+    V(pColorFrame->CopyConvertedFrameDataToArray((UINT)_colorBufSize,
         reinterpret_cast<BYTE*>(CurFrame.pData), ColorImageFormat_Rgba));
-    SafeRelease(pColorFrameDescription);
-    SafeRelease(pColorFrame);
+    pColorFrame->Release();
     return hr;
 }
 
 HRESULT
 Kinect2Sensor::ProcessInfraredFrame(IInfraredFrameReference* pInfraredFrameRef)
 {
-    IFrameDescription* pInfraredFrameDescription = NULL;
     INT64 InfTimeStamp = 0;
-    int nInfraredWidth = 0;
-    int nInfraredHeight = 0;
     IInfraredFrame* pInfraredFrame = NULL;
     HRESULT hr = S_OK;
     VRET(pInfraredFrameRef->AcquireFrame(&pInfraredFrame));
     V(pInfraredFrameRef->get_RelativeTime(&InfTimeStamp));
     // get Infrared frame data
-    V(pInfraredFrame->get_FrameDescription(&pInfraredFrameDescription));
-    V(pInfraredFrameDescription->get_Width(&nInfraredWidth));
-    V(pInfraredFrameDescription->get_Height(&nInfraredHeight));
-    _infraredWidth = nInfraredWidth;
-    _infraredHeight = nInfraredHeight;
-    size_t bufferSize = nInfraredHeight * nInfraredWidth * sizeof(uint16_t);
     FrameData& CurFrame = _pFrames[kInfrared][_writingIdx];
-    CurFrame.Size = (uint32_t)bufferSize;
+    CurFrame.Size = _infraredBufSize;
     CurFrame.captureTimeStamp = InfTimeStamp;
-    CurFrame.width = nInfraredWidth;
-    CurFrame.height = nInfraredHeight;
-    if (CurFrame.pData == nullptr) {
-        CurFrame.pData = (uint8_t*)std::malloc(bufferSize);
+    if (!CurFrame.pData) {
+        CurFrame.pData = (uint8_t*)std::malloc(_infraredBufSize);
     }
-    V(pInfraredFrame->CopyFrameDataToArray((UINT)(bufferSize / 2),
+    V(pInfraredFrame->CopyFrameDataToArray((UINT)(_infraredBufSize / 2),
         reinterpret_cast<UINT16*>(CurFrame.pData)));
-    SafeRelease(pInfraredFrameDescription);
-    SafeRelease(pInfraredFrame);
+    pInfraredFrame->Release();
     return hr;
 }
 

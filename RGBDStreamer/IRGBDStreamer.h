@@ -13,8 +13,6 @@
 struct RGBDSTREAMDLL_API FrameData
 {
     uint64_t captureTimeStamp = 0;
-    uint16_t width = 0;
-    uint16_t height = 0;
     uint8_t* pData = nullptr;
     uint32_t Size = 0;
 
@@ -22,8 +20,6 @@ struct RGBDSTREAMDLL_API FrameData
     {
         captureTimeStamp = 0;
         Size = 0;
-        width = 0;
-        height = 0;
     }
 };
 
