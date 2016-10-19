@@ -209,8 +209,18 @@ void
 SensorTexGen::OnDestory()
 {
     for (int i = 0; i < IRGBDStreamer::kNumBufferTypes; ++i) {
-        _pFrameAlloc[i]->Destory();
-        delete _pFrameAlloc[i];
+        if (_pFrameAlloc[i]) {
+            _pFrameAlloc[i]->Destory();
+            delete _pFrameAlloc[i];
+			_pFrameAlloc[i] = nullptr;
+        }
+    }
+    for (int i = 0; i < kNumTargetTex; ++i) {
+        _outTex[i].Destroy();
+    }
+    if (_pKinect2) {
+        delete _pKinect2;
+		_pKinect2 = nullptr;
     }
 }
 
@@ -414,22 +424,22 @@ SensorTexGen::_RetirePreviousFrameKinectBuffer()
 bool
 SensorTexGen::_PrepareAndFillinKinectBuffers()
 {
+    bool results = true;;
     FrameData frames[IRGBDStreamer::kNumBufferTypes];
     if (!_pKinect2->GetNewFrames(frames[IRGBDStreamer::kColor],
         frames[IRGBDStreamer::kDepth], frames[IRGBDStreamer::kInfrared])) {
-        return false;
+        results = false;
     }
-    bool results;
     if (_colorMode == kColor) {
-        results = _FillinKinectBuffer(
+        results &= _FillinKinectBuffer(
             IRGBDStreamer::kColor, frames[IRGBDStreamer::kColor]);
     }
-    if (results && _depthMode != kNoDepth) {
-        results = _FillinKinectBuffer(
+    if (_depthMode != kNoDepth) {
+        results &= _FillinKinectBuffer(
             IRGBDStreamer::kDepth, frames[IRGBDStreamer::kDepth]);
     }
-    if (results && _depthMode == kDepthWithVisualWithInfrared) {
-        results = _FillinKinectBuffer(
+    if (_depthMode == kDepthWithVisualWithInfrared) {
+        results &= _FillinKinectBuffer(
             IRGBDStreamer::kInfrared, frames[IRGBDStreamer::kInfrared]);
     }
     return results;
@@ -439,10 +449,10 @@ bool
 SensorTexGen::_FillinKinectBuffer(
     IRGBDStreamer::BufferType bufType, const FrameData& frame)
 {
+    _pKinectBuf[bufType] = _pFrameAlloc[bufType]->RequestFrameBuffer();
     if (!frame.pData) {
         return false;
     }
-    _pKinectBuf[bufType] = _pFrameAlloc[bufType]->RequestFrameBuffer();
     uint8_t* ptr =
         reinterpret_cast<uint8_t*>(_pKinectBuf[bufType]->GetMappedPtr());
     std::memcpy(ptr, frame.pData, frame.Size);

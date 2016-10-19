@@ -13,6 +13,7 @@ public:
     PointCloudRenderer();
     ~PointCloudRenderer();
     HRESULT OnCreateResource();
+    void OnDestory();
     void UpdateLightPos(const DirectX::XMFLOAT4& pos);
     void UpdateCB(const DirectX::XMFLOAT2& colReso, 
         const DirectX::XMFLOAT2& depReso, const DirectX::XMFLOAT4& colFC, 

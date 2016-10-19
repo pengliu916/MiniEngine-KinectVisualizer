@@ -17,6 +17,7 @@ public:
     SeperableFilter();
     ~SeperableFilter();
     HRESULT OnCreateResoure(DXGI_FORMAT bufferFormat);
+    void OnDestory();
     void UpdateCB(DirectX::XMUINT2 reso);
     void OnRender(GraphicsContext& gfxContext, const ColorBuffer* pInputTex);
     void RenderGui();

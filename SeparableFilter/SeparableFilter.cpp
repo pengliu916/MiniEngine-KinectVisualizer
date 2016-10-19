@@ -91,6 +91,11 @@ HRESULT SeperableFilter::OnCreateResoure(DXGI_FORMAT bufferFormat)
     return hr;
 }
 
+void SeperableFilter::OnDestory()
+{
+    _intermediateBuf.Destroy();
+}
+
 void SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
 {
     if (_dataCB.u2Reso.x != reso.x || _dataCB.u2Reso.y != reso.y) {

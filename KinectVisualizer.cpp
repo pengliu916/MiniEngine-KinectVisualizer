@@ -110,6 +110,8 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
 
 void KinectVisualizer::OnDestroy()
 {
+    _pointCloudRenderer.OnDestory();
+    _bilateralFilter.OnDestory();
     _sensorTexGen.OnDestory();
 }
 

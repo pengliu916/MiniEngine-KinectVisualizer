@@ -112,6 +112,11 @@ PointCloudRenderer::OnCreateResource()
 }
 
 void
+PointCloudRenderer::OnDestory()
+{
+}
+
+void
 PointCloudRenderer::UpdateLightPos(const DirectX::XMFLOAT4& pos)
 {
     _cbData.f4LightPos = pos;
