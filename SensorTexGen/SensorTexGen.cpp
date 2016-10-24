@@ -41,22 +41,20 @@ SensorTexGen::OnCreateResource()
 {
     HRESULT hr = S_OK;
     uint16_t depWidth, depHeight;
-    do {
-        _pKinect2->GetDepthReso(depWidth, depHeight);
-    } while (depWidth == 0 || depHeight == 0);
+    _pKinect2->GetDepthReso(depWidth, depHeight);
 
     _cbKinect.f2DepthInfraredReso = XMFLOAT2(depWidth, depHeight);
 
     _pFrameAlloc[IRGBDStreamer::kDepth] = new LinearFrameAllocator(
         depWidth * depHeight, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
-    _outTex[kDepthVisualTex].Create(L"Depth Visual Tex", 
+    _outTex[kDepthVisualTex].Create(L"Depth Visual Tex",
         depWidth, depHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT);
-    _outTex[kDepthTex].Create(L"Depth Raw Tex", 
+    _outTex[kDepthTex].Create(L"Depth Raw Tex",
         depWidth, depHeight, 1, DXGI_FORMAT_R16_UINT);
 
     _pFrameAlloc[IRGBDStreamer::kInfrared] = new LinearFrameAllocator(
         depWidth * depHeight, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
-    _outTex[kInfraredTex].Create(L"Infrared Tex", 
+    _outTex[kInfraredTex].Create(L"Infrared Tex",
         depWidth, depHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT);
 
     _depthInfraredViewport = {};
@@ -68,15 +66,13 @@ SensorTexGen::OnCreateResource()
     _depthInfraredScissorRect.bottom = depHeight;
 
     uint16_t colWidth, colHeight;
-    do {
-        _pKinect2->GetColorReso(colWidth, colHeight);
-    } while (colWidth == 0 || colHeight == 0);
+    _pKinect2->GetColorReso(colWidth, colHeight);
 
     _cbKinect.f2ColorReso = XMFLOAT2(colWidth, colHeight);
 
     _pFrameAlloc[IRGBDStreamer::kColor] = new LinearFrameAllocator(
         colWidth * colHeight, sizeof(uint32_t), DXGI_FORMAT_R8G8B8A8_UINT);
-    _outTex[kColorTex].Create(L"Color Tex", 
+    _outTex[kColorTex].Create(L"Color Tex",
         colWidth, colHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT);
 
     for (uint16_t i = 0; i < kNumTargetTex; ++i) {
@@ -119,8 +115,8 @@ SensorTexGen::OnCreateResource()
         {nullptr, nullptr}
     };
     V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        _T("SensorTexGen_SingleTriangleQuad_vs.hlsl")).c_str(), macro, 
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1", 
+        _T("SensorTexGen_SingleTriangleQuad_vs.hlsl")).c_str(), macro,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1",
         compileFlags, 0, &quadVS));
 
     char tempChar[8];
@@ -129,18 +125,18 @@ SensorTexGen::OnCreateResource()
         macro[1].Definition = tempChar; // UNDISTORTION
         for (int j = 0; j < kNumDepthMode; ++j) {
             switch (j) {
-                case kDepthWithVisualWithInfrared:
-                    macro[3].Definition = "1"; // INFRARED_TEX
-                case kDepthVisualTex:
-                    macro[2].Definition = "1"; // VISUALIZED_DEPTH_TEX
+            case kDepthWithVisualWithInfrared:
+                macro[3].Definition = "1"; // INFRARED_TEX
+            case kDepthVisualTex:
+                macro[2].Definition = "1"; // VISUALIZED_DEPTH_TEX
             }
             V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
                 _T("SensorTexGen_Copy_ps.hlsl")).c_str(), macro,
-                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1", 
+                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1",
                 compileFlags, 0, &copyDepthPS[j][i]));
             V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
                 _T("SensorTexGen_Copy_cs.hlsl")).c_str(), macro,
-                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1", 
+                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
                 compileFlags, 0, &copyDepthCS[j][i]));
 
             macro[2].Definition = "0"; // VISUALIZED_DEPTH_TEX
@@ -149,11 +145,11 @@ SensorTexGen::OnCreateResource()
         macro[4].Definition = "1"; // COLOR_TEX
         V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
             _T("SensorTexGen_Copy_ps.hlsl")).c_str(), macro,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1", 
+            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1",
             compileFlags, 0, &copyColorPS[0][i]));
         V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
             _T("SensorTexGen_Copy_cs.hlsl")).c_str(), macro,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1", 
+            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
             compileFlags, 0, &copyColorCS[0][i]));
         macro[4].Definition = "0"; // COLOR_TEX
     }
@@ -178,18 +174,18 @@ SensorTexGen::OnCreateResource()
             quadVS->GetBufferPointer(), quadVS->GetBufferSize());
         _gfxColorPSO[0][i].SetRenderTargetFormats(
             1, &_outTex[kColorTex].GetFormat(), DXGI_FORMAT_UNKNOWN);
-        _gfxColorPSO[0][i].SetPixelShader(copyColorPS[0][i]->GetBufferPointer(), 
+        _gfxColorPSO[0][i].SetPixelShader(copyColorPS[0][i]->GetBufferPointer(),
             copyColorPS[0][i]->GetBufferSize());
         _cptColorPSO[0][i].SetRootSignature(_rootSignature);
         _cptColorPSO[0][i].SetComputeShader(
-            copyColorCS[0][i]->GetBufferPointer(), 
+            copyColorCS[0][i]->GetBufferPointer(),
             copyColorCS[0][i]->GetBufferSize());
         _cptColorPSO[0][i].Finalize();
 
         for (int j = 0; j < kNumDepthMode; ++j) {
             _gfxDepthPSO[j][i] = _gfxColorPSO[0][i];
             _gfxDepthPSO[j][i].SetPixelShader(
-                copyDepthPS[j][i]->GetBufferPointer(), 
+                copyDepthPS[j][i]->GetBufferPointer(),
                 copyDepthPS[j][i]->GetBufferSize());
             _gfxDepthPSO[j][i].SetRenderTargetFormats(
                 j + 1, RTformat, DXGI_FORMAT_UNKNOWN);
@@ -197,7 +193,7 @@ SensorTexGen::OnCreateResource()
 
             _cptDepthPSO[j][i].SetRootSignature(_rootSignature);
             _cptDepthPSO[j][i].SetComputeShader(
-                copyDepthCS[j][i]->GetBufferPointer(), 
+                copyDepthCS[j][i]->GetBufferPointer(),
                 copyDepthCS[j][i]->GetBufferSize());
             _cptDepthPSO[j][i].Finalize();
         }
@@ -212,7 +208,7 @@ SensorTexGen::OnDestory()
         if (_pFrameAlloc[i]) {
             _pFrameAlloc[i]->Destory();
             delete _pFrameAlloc[i];
-			_pFrameAlloc[i] = nullptr;
+            _pFrameAlloc[i] = nullptr;
         }
     }
     for (int i = 0; i < kNumTargetTex; ++i) {
@@ -220,7 +216,7 @@ SensorTexGen::OnDestory()
     }
     if (_pKinect2) {
         delete _pKinect2;
-		_pKinect2 = nullptr;
+        _pKinect2 = nullptr;
     }
 }
 
@@ -269,12 +265,12 @@ SensorTexGen::OnRender(CommandContext& EngineContext)
             ctx.TransitionResource(_outTex[kColorTex],
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         }
-        ctx.SetPipelineState( _cptDepthPSO[_depthMode][_processMode]);
+        ctx.SetPipelineState(_cptDepthPSO[_depthMode][_processMode]);
         ctx.Dispatch1D(_outTex[kDepthTex].GetWidth() *
             _outTex[kDepthTex].GetHeight(), THREAD_PER_GROUP);
 
         if (_colorMode != kNoColor) {
-            ctx.SetPipelineState( _cptColorPSO[_colorMode][_processMode]);
+            ctx.SetPipelineState(_cptColorPSO[_colorMode][_processMode]);
             ctx.Dispatch1D(_outTex[kColorTex].GetWidth() *
                 _outTex[kColorTex].GetHeight(), THREAD_PER_GROUP);
         }
@@ -361,11 +357,11 @@ SensorTexGen::RenderGui()
                 uint32_t OrigTexHeight = _outTex[i].GetHeight();
 
                 ImGui::AlignFirstTextHeightToWidgets();
-                ImGui::Text("Native Reso:%dx%d", OrigTexWidth, OrigTexHeight); 
+                ImGui::Text("Native Reso:%dx%d", OrigTexWidth, OrigTexHeight);
                 ImGui::SameLine();
-                ImGui::Checkbox(("Show " + _texNames[i]).c_str(), 
+                ImGui::Checkbox(("Show " + _texNames[i]).c_str(),
                     &showImage[i]);
-                ImGui::Image(tex_id, 
+                ImGui::Image(tex_id,
                     ImVec2(width, width*OrigTexHeight / OrigTexWidth));
             }
         }
@@ -393,7 +389,7 @@ SensorTexGen::GetDepthInfrareReso(uint16_t& width, uint16_t& height) const
 }
 
 ColorBuffer*
-SensorTexGen::GetOutTex(TargetTexture target) 
+SensorTexGen::GetOutTex(TargetTexture target)
 {
     return &_outTex[target];
 }
@@ -405,16 +401,19 @@ SensorTexGen::_RetirePreviousFrameKinectBuffer()
         _pFrameAlloc[IRGBDStreamer::kColor]->DiscardBuffer(
             Graphics::g_stats.lastFrameEndFence,
             _pKinectBuf[IRGBDStreamer::kColor]);
+        _pKinectBuf[IRGBDStreamer::kColor] = nullptr;
     }
     if (_preDepthMode != kNoDepth && _pKinectBuf[IRGBDStreamer::kDepth]) {
         _pFrameAlloc[IRGBDStreamer::kDepth]->DiscardBuffer(
             Graphics::g_stats.lastFrameEndFence,
             _pKinectBuf[IRGBDStreamer::kDepth]);
+        _pKinectBuf[IRGBDStreamer::kDepth] = nullptr;
         if (_preDepthMode == kDepthWithVisualWithInfrared &&
             _pKinectBuf[IRGBDStreamer::kInfrared]) {
             _pFrameAlloc[IRGBDStreamer::kInfrared]->DiscardBuffer(
                 Graphics::g_stats.lastFrameEndFence,
                 _pKinectBuf[IRGBDStreamer::kInfrared]);
+            _pKinectBuf[IRGBDStreamer::kInfrared] = nullptr;
         }
     }
     _preColorMode = _colorMode;
@@ -424,7 +423,7 @@ SensorTexGen::_RetirePreviousFrameKinectBuffer()
 bool
 SensorTexGen::_PrepareAndFillinKinectBuffers()
 {
-    bool results = true;;
+    bool results = true;
     FrameData frames[IRGBDStreamer::kNumBufferTypes];
     if (!_pKinect2->GetNewFrames(frames[IRGBDStreamer::kColor],
         frames[IRGBDStreamer::kDepth], frames[IRGBDStreamer::kInfrared])) {

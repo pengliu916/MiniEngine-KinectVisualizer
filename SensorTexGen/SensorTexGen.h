@@ -50,9 +50,9 @@ private:
     ColorBuffer _outTex[kNumTargetTex];
     D3D12_CPU_DESCRIPTOR_HANDLE _outTextureRTV[kNumTargetTex];
 
-    IRGBDStreamer* _pKinect2;
-    LinearFrameAllocator* _pFrameAlloc[IRGBDStreamer::kNumBufferTypes];
-    KinectBuffer* _pKinectBuf[IRGBDStreamer::kNumBufferTypes];
+    IRGBDStreamer* _pKinect2 = nullptr;
+    LinearFrameAllocator* _pFrameAlloc[IRGBDStreamer::kNumBufferTypes] = {};
+    KinectBuffer* _pKinectBuf[IRGBDStreamer::kNumBufferTypes] = {};
     RenderCB _cbKinect;
 
     D3D12_VIEWPORT _depthInfraredViewport = {};
