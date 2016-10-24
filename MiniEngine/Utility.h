@@ -144,7 +144,7 @@ Trace(const wchar_t* strFile, DWORD dwLine, HRESULT hr, const wchar_t* strMsg)
 #endif
 
 #if defined(RELEASE)
-#define ASSERT(isTrue)
+#define ASSERT(isTrue) (void)(isTrue)
 #else
 #define ASSERT(isTrue) \
 if(!(bool)(isTrue)){ \
