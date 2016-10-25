@@ -19,7 +19,7 @@ using namespace DirectX;
 
 namespace {
     double m_GPUTickDelta;
-    uint8_t m_timerCount;
+    uint8_t m_timerCount = 1;
     unordered_map<wstring, uint8_t> m_timerNameIdxMap;
     wstring* m_timerNameArray;
     XMFLOAT4* m_timerColorArray;
@@ -35,8 +35,6 @@ namespace {
     GraphicsPSO m_GraphPSO;
 
     CRITICAL_SECTION m_critialSection;
-
-    uint8_t m_ResolveStampIdx = GPU_Profiler::MAX_TIMER_COUNT;
 
     vector<uint8_t> m_ActiveTimer;
 
@@ -76,7 +74,7 @@ GPU_Profiler::Initialize()
 
     m_timerColorArray = new XMFLOAT4[MAX_TIMER_COUNT];
 
-    m_RectData = new RectAttr[MAX_TIMER_COUNT + 5];
+    m_RectData = new RectAttr[MAX_TIMER_COUNT];
 
     m_ActiveTimer.reserve(MAX_TIMER_COUNT);
 
@@ -204,13 +202,9 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
 
     // based on previous frame end timestamp, creat an active timer idx vector
     m_ActiveTimer.clear();
-    uint64_t preEndTime =
-        m_ResolveStampIdx == MAX_TIMER_COUNT
-        ? 0 
-        : m_timeStampBufferCopy[m_ResolveStampIdx * 2 + 1];
-    for (uint8_t idx = 0; idx < m_timerCount; ++idx) {
-        if (m_timeStampBufferCopy[idx * 2] > preEndTime &&
-            idx != m_ResolveStampIdx) {
+    uint64_t preEndTime = m_timeStampBufferCopy[0];
+    for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
+        if (m_timeStampBufferCopy[idx * 2] > preEndTime) {
             m_ActiveTimer.push_back(idx);
         }
     }
@@ -218,9 +212,12 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
     sort(m_ActiveTimer.begin(), m_ActiveTimer.end(), compStartTime);
 
     {
-        GPU_PROFILE(EngineContext, L"ResolveQuery");
+        //EngineContext.PIXEndEvent();
+        EngineContext.InsertTimeStamp(m_queryHeap, 1);
         EngineContext.ResolveTimeStamps(
             m_readbackBuffer, m_queryHeap, 2 * m_timerCount);
+        //EngineContext.PIXBeginEvent(L"Frame Start");
+        EngineContext.InsertTimeStamp(m_queryHeap, 0);
     }
     m_fence = EngineContext.Flush();
 }
@@ -286,7 +283,7 @@ GPU_Profiler::DrawStats(GraphicsContext& gfxContext)
     gfxContext.SetRootSignature(m_RootSignature);
     gfxContext.SetPipelineState(m_GraphPSO);
     gfxContext.SetDynamicSRV(
-        0, sizeof(RectAttr) * (m_timerCount + 5), m_RectData);
+        0, sizeof(RectAttr) * m_timerCount, m_RectData);
     gfxContext.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     gfxContext.SetRenderTargets(
         1, &Graphics::g_pDisplayPlanes[Graphics::g_CurrentDPIdx].GetRTV());
@@ -343,11 +340,6 @@ GPUProfileScope::GPUProfileScope(CommandContext& Context, const wchar_t* szName)
     auto iter = m_timerNameIdxMap.find(szName);
     if (iter == m_timerNameIdxMap.end()) {
         CriticalSectionScope lock(&m_critialSection);
-        if (m_ResolveStampIdx == GPU_Profiler::MAX_TIMER_COUNT) {
-            if (wcscmp(szName, L"ResolveQuery") == 0) {
-                m_ResolveStampIdx = m_timerCount;
-            }
-        }
         m_idx = m_timerCount;
         m_timerNameArray[m_idx] = szName;
         m_timerColorArray[m_idx] = XMFLOAT4(
