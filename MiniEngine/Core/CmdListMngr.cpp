@@ -239,6 +239,11 @@ CmdListMngr::Create(ID3D12Device* pDevice)
 {
     ASSERT(pDevice != nullptr);
     m_pDevice = pDevice;
+#ifndef RELEASE
+    // Prevent the GPU from overclocking or underclocking to get
+    // consistent timings
+    pDevice->SetStablePowerState(TRUE);
+#endif
     m_GraphicsQueue.Create(pDevice);
     m_ComputeQueue.Create(pDevice);
     m_CopyQueue.Create(pDevice);
