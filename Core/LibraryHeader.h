@@ -4,8 +4,11 @@
 
 #pragma once
 
+#define D3D12_GPU_VIRTUAL_ADDRESS_NULL      ((D3D12_GPU_VIRTUAL_ADDRESS)0)
+#define D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN   ((D3D12_GPU_VIRTUAL_ADDRESS)-1)
+
 #ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN	// Exclude rarely-used stuff from Windows headers.
+#define WIN32_LEAN_AND_MEAN // Exclude rarely-used stuff from Windows headers.
 #endif
 
 #include <windows.h>
