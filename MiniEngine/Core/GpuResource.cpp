@@ -914,3 +914,49 @@ Texture::operator!()
 {
     return m_hCpuDescriptorHandle.ptr == 0;
 }
+
+void
+ReadBackBuffer::Create(
+    const std::wstring& Name, uint32_t NumElements, uint32_t ElementSize)
+{
+    m_UsageState = D3D12_RESOURCE_STATE_COPY_DEST;
+
+    D3D12_HEAP_PROPERTIES heapProps;
+    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapProps.CreationNodeMask = 1;
+    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heapProps.Type = D3D12_HEAP_TYPE_READBACK;
+    heapProps.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC bufferDesc;
+    bufferDesc.Alignment = 0;
+    bufferDesc.DepthOrArraySize = 1;
+    bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    bufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+    bufferDesc.Height = 1;
+    bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bufferDesc.MipLevels = 1;
+    bufferDesc.SampleDesc.Count = 1;
+    bufferDesc.SampleDesc.Quality = 0;
+    bufferDesc.Width = NumElements * ElementSize;
+
+    HRESULT hr;
+    V(Graphics::g_device->CreateCommittedResource(
+        &heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc,
+        m_UsageState, nullptr,
+        IID_PPV_ARGS(m_pResource.ReleaseAndGetAddressOf())));
+    m_pResource->SetName(Name.c_str());
+}
+
+void
+ReadBackBuffer::Map(const D3D12_RANGE *pReadRange, void **ppData)
+{
+    m_pResource->Map(0, pReadRange, ppData);
+}
+
+void
+ReadBackBuffer::Unmap(const D3D12_RANGE *pReadRange)
+{
+    m_pResource->Unmap(0, pReadRange);
+}

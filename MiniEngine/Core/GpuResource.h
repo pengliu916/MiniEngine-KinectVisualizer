@@ -379,3 +379,16 @@ public:
 protected:
     D3D12_CPU_DESCRIPTOR_HANDLE m_hCpuDescriptorHandle;
 };
+
+//------------------------------------------------------------------------------
+// ReadBackBuffer
+//------------------------------------------------------------------------------
+class ReadBackBuffer : public GpuResource
+{
+public:
+    ReadBackBuffer() {}
+    void Create(const std::wstring& Name, uint32_t NumElements,
+        uint32_t ElementSize);
+    void Map(const D3D12_RANGE *pReadRange, void **ppData);
+    void Unmap(const D3D12_RANGE *pReadRange);
+};
