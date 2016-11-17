@@ -14,5 +14,5 @@ void main(in uint VertID : SV_VertexID,
     float4 pos_col = mul(mDepth2Color, pos);
     Tex = pos_col.xy / pos_col.z * f4ColorCxyFxy.zw + f4ColorCxyFxy.xy;
     pos = pos * float4(1.f, -1.f, 1.f, 1.f) + f4Offset;
-    Pos = mul(mViewProj, pos);
+    Pos = mul(mProjView, pos);
 }

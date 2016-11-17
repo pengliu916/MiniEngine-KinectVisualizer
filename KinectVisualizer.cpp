@@ -96,16 +96,17 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
         _bilateralFilter.OnRender(EngineContext.GetGraphicsContext(), 
             _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex));
     }
-
-    XMMATRIX view = _camera.View();
-    XMMATRIX proj = _camera.Projection();
+    // Camera return row major matrix, so will be transposed version in this
+    // application since we use column major
+    XMMATRIX view_T = _camera.View();
+    XMMATRIX proj_T = _camera.Projection();
     XMFLOAT4 viewPos;
     XMStoreFloat4(&viewPos, _camera.Eye());
     _pointCloudRenderer.UpdateLightPos(viewPos);
     _pointCloudRenderer.OnRender(EngineContext.GetGraphicsContext(),
         _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
         _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
-        XMMatrixMultiply(view, proj));
+        XMMatrixMultiply(view_T,proj_T));
 }
 
 void KinectVisualizer::OnDestroy()

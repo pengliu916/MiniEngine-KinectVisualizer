@@ -62,7 +62,7 @@ void main(point uint VertID[1] : POSITION0,
         float4 pos_col = mul(mDepth2Color, Pos[i]);
         Tex[i] = pos_col.xy / pos_col.z * f4ColorCxyFxy.zw + f4ColorCxyFxy.xy;
         Pos[i] = Pos[i] * float4(1.f, -1.f, 1.f, 1.f) + f4Offset;
-        projectedPos[i] = mul(mViewProj, Pos[i]);
+        projectedPos[i] = mul(mProjView, Pos[i]);
     }
 #if SHADED
     float3 nor[4] = {Pos[1].xyz - Pos[0].xyz, Pos[2].xyz - Pos[0].xyz,

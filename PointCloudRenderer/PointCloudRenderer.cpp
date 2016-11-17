@@ -137,7 +137,7 @@ PointCloudRenderer::UpdateCB(const DirectX::XMFLOAT2& colReso,
 void
 PointCloudRenderer::OnRender(GraphicsContext& gfxContext, 
     const ColorBuffer* pDepthMap, const ColorBuffer* pColorMap,
-    const DirectX::XMMATRIX& viewProj)
+    const DirectX::XMMATRIX& mProjView_T)
 {
     GPU_PROFILE(gfxContext, L"HeightMap Render");
 
@@ -149,7 +149,8 @@ PointCloudRenderer::OnRender(GraphicsContext& gfxContext,
         D3D12_RESOURCE_STATE_RENDER_TARGET);
     gfxContext.TransitionResource(Graphics::g_SceneDepthBuffer,
         D3D12_RESOURCE_STATE_DEPTH_WRITE, true);
-    _cbData.mViewProj = viewProj;
+    // Row major to Column major
+    _cbData.mProjView = mProjView_T;
     gfxContext.ClearColor(Graphics::g_SceneColorBuffer);
     gfxContext.ClearDepth(Graphics::g_SceneDepthBuffer);
     gfxContext.SetDynamicConstantBufferView(

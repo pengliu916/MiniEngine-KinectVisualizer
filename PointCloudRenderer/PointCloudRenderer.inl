@@ -22,7 +22,7 @@ typedef DirectX::XMMATRIX matrix;
 
 #if __cplusplus || (__hlsl)
 CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0) {
-    matrix mViewProj;
+    matrix mProjView;
     float2 f2ColorReso;
     float2 f2DepthInfraredReso;
     float4 f4ColorCxyFxy;
