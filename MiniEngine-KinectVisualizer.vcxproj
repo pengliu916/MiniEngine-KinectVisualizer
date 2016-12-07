@@ -119,6 +119,10 @@
     <ClCompile Include="SensorTexGen\SensorTexGen.cpp" />
     <ClInclude Include="SeparableFilter\SeparableFilter.h" />
     <ClCompile Include="SeparableFilter\SeparableFilter.cpp" />
+    <ClInclude Include="TSDFVolume\ManagedBuf.h" />
+    <ClCompile Include="TSDFVolume\ManagedBuf.cpp" />
+    <ClInclude Include="TSDFVolume\TSDFVolume.h" />
+    <ClCompile Include="TSDFVolume\TSDFVolume.cpp" />
     <ClInclude Include="pch.h" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -150,6 +154,19 @@
     <CustomBuild Include="SeparableFilter\SeparableFilter_BilateralFilter_ps.hlsl" />
     <CustomBuild Include="SeparableFilter\SeparableFilter_SingleTriangleQuad_vs.hlsl" />
     <CustomBuild Include="SeparableFilter\SeparableFilter.inl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume.hlsli" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume.inl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_BlockQueueCreate_cs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_BlockQueueResolve_cs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_BlocksUpdate_cs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_OccupiedQueueUpdate_cs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_RayCast_ps.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_RayCast_vs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_ps.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_vs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeUpdate_cs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeReset_cs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_VoxelUpdate.hlsli" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

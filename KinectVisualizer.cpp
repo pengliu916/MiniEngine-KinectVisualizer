@@ -7,7 +7,15 @@ using namespace DirectX;
 using namespace Microsoft::WRL;
 
 namespace {
-    bool _BilateralFilter = false;
+    enum OnShow {
+        kTSDFVolume = 0,
+        kPointCloud,
+        kNumItem
+    };
+    OnShow _itemOnShow = kTSDFVolume;
+    DirectX::XMMATRIX _depthViewInv_T =
+        DirectX::XMMatrixTranslation(0, 0, 3);
+    bool _useBilateralFilter = false;
 }
 
 KinectVisualizer::KinectVisualizer(
@@ -56,6 +64,9 @@ HRESULT KinectVisualizer::OnCreateResource()
     // Create resource for BilateralFilter
     _bilateralFilter.OnCreateResoure(DXGI_FORMAT_R16_UINT);
     _bilateralFilter.UpdateCB(XMUINT2(depWidth, depHeight));
+
+    _tsdfVolume.OnCreateResource();
+
     OnSizeChanged();
 
     return S_OK;
@@ -68,6 +79,9 @@ HRESULT KinectVisualizer::OnSizeChanged()
 
     float fAspectRatio = width / (FLOAT)height;
     _camera.Projection(XM_PIDIV2 / 2, fAspectRatio);
+
+    _tsdfVolume.OnResize();
+
     return S_OK;
 }
 
@@ -76,11 +90,24 @@ void KinectVisualizer::OnUpdate()
     _camera.ProcessInertia();
     static bool showPanel = true;
     if (ImGui::Begin("KinectVisualizer", &showPanel)) {
-        ImGui::Checkbox("Bilateral Filter", &_BilateralFilter);
-        if (_BilateralFilter) {
+        ImGui::Checkbox("Bilateral Filter", &_useBilateralFilter);
+        if (_useBilateralFilter) {
             _bilateralFilter.RenderGui();
         }
-        _pointCloudRenderer.RenderGui();
+        ImGui::RadioButton("TSDFVolume", (int*)&_itemOnShow, kTSDFVolume);
+        ImGui::RadioButton("PointCloud", (int*)&_itemOnShow, kPointCloud);
+        switch (_itemOnShow)
+        {
+        case kPointCloud:
+            if (ImGui::CollapsingHeader("Point Cloud")) {
+                _pointCloudRenderer.RenderGui();
+            }
+            break;
+        case kTSDFVolume:
+            _tsdfVolume.OnUpdate();
+            _tsdfVolume.RenderGui();
+            break;
+        }
         _sensorTexGen.RenderGui();
     }
     ImGui::End();
@@ -88,68 +115,84 @@ void KinectVisualizer::OnUpdate()
 
 void KinectVisualizer::OnRender(CommandContext & EngineContext)
 {
+    XMMATRIX mView_T = _camera.View();
+    XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
+    XMMATRIX mProj_T = _camera.Projection();
+    XMMATRIX mProjView_T = XMMatrixMultiply(mView_T, mProj_T);
+    XMFLOAT4 viewPos;
+    XMStoreFloat4(&viewPos, _camera.Eye());
+
     EngineContext.BeginResourceTransition(Graphics::g_SceneColorBuffer,
         D3D12_RESOURCE_STATE_RENDER_TARGET);
     EngineContext.BeginResourceTransition(Graphics::g_SceneDepthBuffer,
         D3D12_RESOURCE_STATE_DEPTH_WRITE);
-    if (_sensorTexGen.OnRender(EngineContext) && _BilateralFilter) {
-        _bilateralFilter.OnRender(EngineContext.GetGraphicsContext(), 
+    bool newData = _sensorTexGen.OnRender(EngineContext);
+    if (newData && _useBilateralFilter) {
+        _bilateralFilter.OnRender(EngineContext.GetGraphicsContext(),
             _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex));
     }
-    // Camera return row major matrix, so will be transposed version in this
-    // application since we use column major
-    XMMATRIX view_T = _camera.View();
-    XMMATRIX proj_T = _camera.Projection();
-    XMFLOAT4 viewPos;
-    XMStoreFloat4(&viewPos, _camera.Eye());
-    _pointCloudRenderer.UpdateLightPos(viewPos);
-    _pointCloudRenderer.OnRender(EngineContext.GetGraphicsContext(),
-        _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
-        _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
-        XMMatrixMultiply(view_T,proj_T));
+    switch (_itemOnShow)
+    {
+    case kTSDFVolume:
+        _tsdfVolume.OnIntegrate(EngineContext,
+            _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
+            _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
+            _depthViewInv_T);
+        _tsdfVolume.OnRender(
+            EngineContext, mProj_T, mView_T, viewPos);
+        break;
+    case kPointCloud:
+        _pointCloudRenderer.UpdateLightPos(viewPos);
+        _pointCloudRenderer.OnRender(EngineContext.GetGraphicsContext(),
+            _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
+            _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
+            mProjView_T);
+        break;
+    default:
+        break;
+    }
+
 }
 
 void KinectVisualizer::OnDestroy()
 {
-    _pointCloudRenderer.OnDestory();
-    _bilateralFilter.OnDestory();
     _sensorTexGen.OnDestory();
 }
 
 bool KinectVisualizer::OnEvent(MSG * msg)
 {
     switch (msg->message) {
-        case WM_MOUSEWHEEL: {
-            auto delta = GET_WHEEL_DELTA_WPARAM(msg->wParam);
-            _camera.ZoomRadius(-0.01f*delta);
-        }
-        case WM_POINTERDOWN:
-        case WM_POINTERUPDATE:
-        case WM_POINTERUP: {
-            auto pointerId = GET_POINTERID_WPARAM(msg->wParam);
-            POINTER_INFO pointerInfo;
-            if (GetPointerInfo(pointerId, &pointerInfo)) {
-                if (msg->message == WM_POINTERDOWN) {
-                    // Compute pointer position in render units
-                    POINT p = pointerInfo.ptPixelLocation;
-                    ScreenToClient(Core::g_hwnd, &p);
-                    RECT clientRect;
-                    GetClientRect(Core::g_hwnd, &clientRect);
-                    p.x = p.x * Core::g_config.swapChainDesc.Width / 
-                        (clientRect.right - clientRect.left);
-                    p.y = p.y * Core::g_config.swapChainDesc.Height / 
-                        (clientRect.bottom - clientRect.top);
-                    // Camera manipulation
-                    _camera.AddPointer(pointerId);
-                }
+    case WM_MOUSEWHEEL: {
+        auto delta = GET_WHEEL_DELTA_WPARAM(msg->wParam);
+        _camera.ZoomRadius(-0.01f*delta);
+    }
+    case WM_POINTERDOWN:
+    case WM_POINTERUPDATE:
+    case WM_POINTERUP: {
+        auto pointerId = GET_POINTERID_WPARAM(msg->wParam);
+        POINTER_INFO pointerInfo;
+        if (GetPointerInfo(pointerId, &pointerInfo)) {
+            if (msg->message == WM_POINTERDOWN) {
+                // Compute pointer position in render units
+                POINT p = pointerInfo.ptPixelLocation;
+                ScreenToClient(Core::g_hwnd, &p);
+                RECT clientRect;
+                GetClientRect(Core::g_hwnd, &clientRect);
+                p.x = p.x * Core::g_config.swapChainDesc.Width /
+                    (clientRect.right - clientRect.left);
+                p.y = p.y * Core::g_config.swapChainDesc.Height /
+                    (clientRect.bottom - clientRect.top);
+                // Camera manipulation
+                _camera.AddPointer(pointerId);
             }
+        }
 
-            // Otherwise send it to the camera controls
-            _camera.ProcessPointerFrames(pointerId, &pointerInfo);
-            if (msg->message == WM_POINTERUP) {
-                _camera.RemovePointer(pointerId);
-            }
+        // Otherwise send it to the camera controls
+        _camera.ProcessPointerFrames(pointerId, &pointerInfo);
+        if (msg->message == WM_POINTERUP) {
+            _camera.RemovePointer(pointerId);
         }
+    }
     }
     return false;
 }

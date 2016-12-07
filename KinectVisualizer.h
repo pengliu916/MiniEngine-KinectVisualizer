@@ -3,6 +3,7 @@
 #include "SensorTexGen\SensorTexGen.h"
 #include "PointCloudRenderer\PointCloudRenderer.h"
 #include "SeparableFilter\SeparableFilter.h"
+#include "TSDFVolume\TSDFVolume.h"
 
 class KinectVisualizer :public Core::IDX12Framework
 {
@@ -20,6 +21,7 @@ public:
 
 private:
     PointCloudRenderer _pointCloudRenderer;
+    TSDFVolume _tsdfVolume;
     SeperableFilter _bilateralFilter;
     SensorTexGen _sensorTexGen;
 

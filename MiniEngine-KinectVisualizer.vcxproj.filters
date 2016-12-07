@@ -73,6 +73,57 @@
     <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_TriangleCloud_gs.hlsl">
       <Filter>PointCloudRenderer</Filter>
     </CustomBuild>
+    <ClInclude Include="TSDFVolume\TSDFVolume.h">
+      <Filter>TSDFVolume</Filter>
+    </ClInclude>
+    <ClCompile Include="TSDFVolume\TSDFVolume.cpp">
+      <Filter>TSDFVolume</Filter>
+    </ClCompile>
+    <ClInclude Include="TSDFVolume\ManagedBuf.h">
+      <Filter>TSDFVolume</Filter>
+    </ClInclude>
+    <ClCompile Include="TSDFVolume\ManagedBuf.cpp">
+      <Filter>TSDFVolume</Filter>
+    </ClCompile>
+    <CustomBuild Include="TSDFVolume\TSDFVolume.hlsli">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume.inl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_BlockQueueCreate_cs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_BlockQueueResolve_cs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_BlocksUpdate_cs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_OccupiedQueueUpdate_cs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_RayCast_ps.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_RayCast_vs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_ps.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_vs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeUpdate_cs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeReset_cs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_VoxelUpdate.hlsli">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SeparableFilter">
@@ -83,6 +134,9 @@
     </Filter>
     <Filter Include="PointCloudRenderer">
       <UniqueIdentifier>{927e22d2-e0ee-4d72-8f6c-0f292bdaaab8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="TSDFVolume">
+      <UniqueIdentifier>{fc3c37fe-9186-40ac-80f6-ae5c115dcdf2}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
