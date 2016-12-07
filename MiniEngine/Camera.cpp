@@ -66,6 +66,9 @@ OrbitCamera::Projection(float fov, float aspect)
 {
     // fov is horizontal field of view
     mProjection = XMMatrixPerspectiveFovRH(fov, aspect, 10000.0f, 0.1f);
+    // Modified the projection matrix to use Reversed Z and infinite far plane
+    mProjection.r[2] = {0.f, 0.f, 0.f, -1.f};
+    mProjection.r[3] = {0.f, 0.f, 1.f, 0.f};
     _UpdateData();
 }
 
