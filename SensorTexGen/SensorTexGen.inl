@@ -12,6 +12,7 @@
 #define STRUCT(x) x
 #else 
 typedef DirectX::XMFLOAT2 float2;
+typedef DirectX::XMFLOAT3 float3;
 typedef DirectX::XMFLOAT4 float4;
 typedef DirectX::XMMATRIX matrix;
 #define REGISTER(x)
@@ -25,6 +26,9 @@ CBUFFER_ALIGN STRUCT(cbuffer) RenderCB REGISTER(b0)
 {
     float2 f2ColorReso;
     float2 f2DepthInfraredReso;
+    float4 f4S;
+    float fBgDist;
+    float3 f3NIU;
 #if __cplusplus
     void * operator new(size_t i) {
         return _aligned_malloc(i, 16);

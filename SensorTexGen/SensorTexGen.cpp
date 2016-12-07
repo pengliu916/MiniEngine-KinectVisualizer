@@ -5,6 +5,9 @@ using namespace DirectX;
 using namespace Microsoft::WRL;
 
 namespace {
+    const UINT kDepthMode = SensorTexGen::kNumDepthMode;
+    const UINT kColorMode = SensorTexGen::kNumColorMode;
+    const UINT kDataMode = SensorTexGen::kNumDataMode;
     bool _useCS = true;
     bool _streaming = true;
     bool _perFrameUpdate = true;
@@ -12,14 +15,115 @@ namespace {
     {"Depth Raw","Depth Visualized","Infrared Gamma","Color Raw"};
 
     RootSignature _rootSignature;
-    GraphicsPSO
-        _gfxDepthPSO[SensorTexGen::kNumDepthMode][SensorTexGen::kNumDataMode];
-    GraphicsPSO
-        _gfxColorPSO[SensorTexGen::kNumColorMode][SensorTexGen::kNumDataMode];
-    ComputePSO
-        _cptDepthPSO[SensorTexGen::kNumDepthMode][SensorTexGen::kNumDataMode];
-    ComputePSO
-        _cptColorPSO[SensorTexGen::kNumColorMode][SensorTexGen::kNumDataMode];
+    GraphicsPSO _gfxDepthPSO[kDepthMode][kDataMode];
+    GraphicsPSO _gfxColorPSO[kColorMode][kDataMode];
+    ComputePSO _cptDepthPSO[kDepthMode][kDataMode];
+    ComputePSO _cptColorPSO[kColorMode][kDataMode];
+
+    DXGI_FORMAT RTformat[] = {
+        DXGI_FORMAT_R16_UINT, // For kDepth
+        DXGI_FORMAT_R11G11B10_FLOAT, // For kDepthVisualTex
+        DXGI_FORMAT_R11G11B10_FLOAT, // For kInfraredTex
+        DXGI_FORMAT_R11G11B10_FLOAT, // For kColorTex
+    };
+
+    void _CreatePSOs()
+    {
+        HRESULT hr;
+        // Create PSO
+        ComPtr<ID3DBlob> quadVS;
+        ComPtr<ID3DBlob> copyDepthPS[kDepthMode][kDataMode];
+        ComPtr<ID3DBlob> copyColorPS[kColorMode][kDataMode];
+        ComPtr<ID3DBlob> copyDepthCS[kDepthMode][kDataMode];
+        ComPtr<ID3DBlob> copyColorCS[kColorMode][kDataMode];
+        uint32_t compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+        D3D_SHADER_MACRO macro[] = {
+            {"__hlsl", "1"}, // 0
+            {"UNDISTORTION", "0"}, // 1
+            {"VISUALIZED_DEPTH_TEX", "0"}, // 2
+            {"INFRARED_TEX", "0"}, // 3
+            {"COLOR_TEX", "0"}, // 4
+            {nullptr, nullptr}
+        };
+        V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+            _T("SensorTexGen_SingleTriangleQuad_vs.hlsl")).c_str(), macro,
+            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1",
+            compileFlags, 0, &quadVS));
+
+        char tempChar[8];
+        for (int i = 0; i < kDataMode; ++i) {
+            sprintf_s(tempChar, 8, "%d", i);
+            macro[1].Definition = tempChar; // UNDISTORTION
+            for (int j = 0; j < kDepthMode; ++j) {
+                switch (j) {
+                case SensorTexGen::kDepthWithVisualWithInfrared:
+                    macro[3].Definition = "1"; // INFRARED_TEX
+                case SensorTexGen::kDepthVisualTex:
+                    macro[2].Definition = "1"; // VISUALIZED_DEPTH_TEX
+                }
+                V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+                    _T("SensorTexGen_Copy_ps.hlsl")).c_str(), macro,
+                    D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1",
+                    compileFlags, 0, &copyDepthPS[j][i]));
+                V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+                    _T("SensorTexGen_Copy_cs.hlsl")).c_str(), macro,
+                    D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
+                    compileFlags, 0, &copyDepthCS[j][i]));
+
+                macro[2].Definition = "0"; // VISUALIZED_DEPTH_TEX
+                macro[3].Definition = "0"; // INFRARED_TEX
+            }
+            macro[4].Definition = "1"; // COLOR_TEX
+            V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+                _T("SensorTexGen_Copy_ps.hlsl")).c_str(), macro,
+                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1",
+                compileFlags, 0, &copyColorPS[0][i]));
+            V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+                _T("SensorTexGen_Copy_cs.hlsl")).c_str(), macro,
+                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
+                compileFlags, 0, &copyColorCS[0][i]));
+            macro[4].Definition = "0"; // COLOR_TEX
+        }
+
+        for (int i = 0; i < kDataMode; ++i) {
+            _gfxColorPSO[0][i].SetRootSignature(_rootSignature);
+            _gfxColorPSO[0][i].SetRasterizerState(Graphics::g_RasterizerTwoSided);
+            _gfxColorPSO[0][i].SetBlendState(Graphics::g_BlendDisable);
+            _gfxColorPSO[0][i].SetDepthStencilState(Graphics::g_DepthStateDisabled);
+            _gfxColorPSO[0][i].SetSampleMask(0xFFFFFFFF);
+            _gfxColorPSO[0][i].SetInputLayout(0, nullptr);
+            _gfxColorPSO[0][i].SetPrimitiveTopologyType(
+                D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+            _gfxColorPSO[0][i].SetVertexShader(
+                quadVS->GetBufferPointer(), quadVS->GetBufferSize());
+            _gfxColorPSO[0][i].SetRenderTargetFormats(
+                1, &RTformat[3], DXGI_FORMAT_UNKNOWN);
+            _gfxColorPSO[0][i].SetPixelShader(copyColorPS[0][i]->GetBufferPointer(),
+                copyColorPS[0][i]->GetBufferSize());
+            _cptColorPSO[0][i].SetRootSignature(_rootSignature);
+            _cptColorPSO[0][i].SetComputeShader(
+                copyColorCS[0][i]->GetBufferPointer(),
+                copyColorCS[0][i]->GetBufferSize());
+            _cptColorPSO[0][i].Finalize();
+
+            for (int j = 0; j < kDepthMode; ++j) {
+                _gfxDepthPSO[j][i] = _gfxColorPSO[0][i];
+                _gfxDepthPSO[j][i].SetPixelShader(
+                    copyDepthPS[j][i]->GetBufferPointer(),
+                    copyDepthPS[j][i]->GetBufferSize());
+                _gfxDepthPSO[j][i].SetRenderTargetFormats(
+                    j + 1, RTformat, DXGI_FORMAT_UNKNOWN);
+                _gfxDepthPSO[j][i].Finalize();
+
+                _cptDepthPSO[j][i].SetRootSignature(_rootSignature);
+                _cptDepthPSO[j][i].SetComputeShader(
+                    copyDepthCS[j][i]->GetBufferPointer(),
+                    copyDepthCS[j][i]->GetBufferSize());
+                _cptDepthPSO[j][i].Finalize();
+            }
+            _gfxColorPSO[0][i].Finalize();
+        }
+    }
 }
 
 SensorTexGen::SensorTexGen(
@@ -30,6 +134,8 @@ SensorTexGen::SensorTexGen(
     _pKinect2 = StreamFactory::createFromKinect2(
         enableColor, enableDepth, enableInfrared);
     _pKinect2->StartStream();
+    _cbKinect.f4S = float4(0.f, 0.f, 3.f, 0.5f);
+    _cbKinect.fBgDist = 5.f;
 }
 
 SensorTexGen::~SensorTexGen()
@@ -98,107 +204,8 @@ SensorTexGen::OnCreateResource()
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
-
-    // Create PSO
-    ComPtr<ID3DBlob> quadVS;
-    ComPtr<ID3DBlob> copyDepthPS[kNumDepthMode][kNumDataMode];
-    ComPtr<ID3DBlob> copyColorPS[kNumColorMode][kNumDataMode];
-    ComPtr<ID3DBlob> copyDepthCS[kNumDepthMode][kNumDataMode];
-    ComPtr<ID3DBlob> copyColorCS[kNumColorMode][kNumDataMode];
-    uint32_t compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
-    D3D_SHADER_MACRO macro[] = {
-        {"__hlsl", "1"}, // 0
-        {"UNDISTORTION", "0"}, // 1
-        {"VISUALIZED_DEPTH_TEX", "0"}, // 2
-        {"INFRARED_TEX", "0"}, // 3
-        {"COLOR_TEX", "0"}, // 4
-        {nullptr, nullptr}
-    };
-    V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        _T("SensorTexGen_SingleTriangleQuad_vs.hlsl")).c_str(), macro,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1",
-        compileFlags, 0, &quadVS));
-
-    char tempChar[8];
-    for (int i = 0; i < kNumDataMode; ++i) {
-        sprintf_s(tempChar, 8, "%d", i);
-        macro[1].Definition = tempChar; // UNDISTORTION
-        for (int j = 0; j < kNumDepthMode; ++j) {
-            switch (j) {
-            case kDepthWithVisualWithInfrared:
-                macro[3].Definition = "1"; // INFRARED_TEX
-            case kDepthVisualTex:
-                macro[2].Definition = "1"; // VISUALIZED_DEPTH_TEX
-            }
-            V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-                _T("SensorTexGen_Copy_ps.hlsl")).c_str(), macro,
-                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1",
-                compileFlags, 0, &copyDepthPS[j][i]));
-            V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-                _T("SensorTexGen_Copy_cs.hlsl")).c_str(), macro,
-                D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
-                compileFlags, 0, &copyDepthCS[j][i]));
-
-            macro[2].Definition = "0"; // VISUALIZED_DEPTH_TEX
-            macro[3].Definition = "0"; // INFRARED_TEX
-        }
-        macro[4].Definition = "1"; // COLOR_TEX
-        V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-            _T("SensorTexGen_Copy_ps.hlsl")).c_str(), macro,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "ps_5_1",
-            compileFlags, 0, &copyColorPS[0][i]));
-        V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-            _T("SensorTexGen_Copy_cs.hlsl")).c_str(), macro,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
-            compileFlags, 0, &copyColorCS[0][i]));
-        macro[4].Definition = "0"; // COLOR_TEX
-    }
-
-    DXGI_FORMAT RTformat[] = {
-        _outTex[kDepthTex].GetFormat(),
-        _outTex[kDepthVisualTex].GetFormat(),
-        _outTex[kInfraredTex].GetFormat(),
-        _outTex[kColorTex].GetFormat()
-    };
-
-    for (int i = 0; i < kNumDataMode; ++i) {
-        _gfxColorPSO[0][i].SetRootSignature(_rootSignature);
-        _gfxColorPSO[0][i].SetRasterizerState(Graphics::g_RasterizerTwoSided);
-        _gfxColorPSO[0][i].SetBlendState(Graphics::g_BlendDisable);
-        _gfxColorPSO[0][i].SetDepthStencilState(Graphics::g_DepthStateDisabled);
-        _gfxColorPSO[0][i].SetSampleMask(0xFFFFFFFF);
-        _gfxColorPSO[0][i].SetInputLayout(0, nullptr);
-        _gfxColorPSO[0][i].SetPrimitiveTopologyType(
-            D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-        _gfxColorPSO[0][i].SetVertexShader(
-            quadVS->GetBufferPointer(), quadVS->GetBufferSize());
-        _gfxColorPSO[0][i].SetRenderTargetFormats(
-            1, &_outTex[kColorTex].GetFormat(), DXGI_FORMAT_UNKNOWN);
-        _gfxColorPSO[0][i].SetPixelShader(copyColorPS[0][i]->GetBufferPointer(),
-            copyColorPS[0][i]->GetBufferSize());
-        _cptColorPSO[0][i].SetRootSignature(_rootSignature);
-        _cptColorPSO[0][i].SetComputeShader(
-            copyColorCS[0][i]->GetBufferPointer(),
-            copyColorCS[0][i]->GetBufferSize());
-        _cptColorPSO[0][i].Finalize();
-
-        for (int j = 0; j < kNumDepthMode; ++j) {
-            _gfxDepthPSO[j][i] = _gfxColorPSO[0][i];
-            _gfxDepthPSO[j][i].SetPixelShader(
-                copyDepthPS[j][i]->GetBufferPointer(),
-                copyDepthPS[j][i]->GetBufferSize());
-            _gfxDepthPSO[j][i].SetRenderTargetFormats(
-                j + 1, RTformat, DXGI_FORMAT_UNKNOWN);
-            _gfxDepthPSO[j][i].Finalize();
-
-            _cptDepthPSO[j][i].SetRootSignature(_rootSignature);
-            _cptDepthPSO[j][i].SetComputeShader(
-                copyDepthCS[j][i]->GetBufferPointer(),
-                copyDepthCS[j][i]->GetBufferSize());
-            _cptDepthPSO[j][i].Finalize();
-        }
-        _gfxColorPSO[0][i].Finalize();
-    }
+    
+    _CreatePSOs();
 }
 
 void
@@ -223,6 +230,12 @@ SensorTexGen::OnDestory()
 bool
 SensorTexGen::OnRender(CommandContext& EngineContext)
 {
+    static float fAnimTime = 0;
+    fAnimTime += Core::g_deltaTime;
+    float fx = sin(fAnimTime * 0.8f) * 0.8f;
+    float fy = cos(fAnimTime * 0.8f) * 0.8f;
+    _cbKinect.f4S.x = fx;
+    _cbKinect.f4S.y = fy;
     if (!_streaming) {
         return false;
     }
@@ -336,6 +349,12 @@ SensorTexGen::RenderGui()
 {
     static bool showImage[kNumTargetTex] = {};
     if (ImGui::CollapsingHeader("Sensor Tex Generator")) {
+        if (ImGui::Button("Recompile Shaders")) {
+            _CreatePSOs();
+        }
+        ImGui::Separator();
+        ImGui::SliderFloat("BGDist", &_cbKinect.fBgDist, 0.5f, 5.f);
+        ImGui::Separator();
         ImGui::Checkbox("Streaming Data", &_streaming);
         ImGui::Checkbox("Update EveryFrame", &_perFrameUpdate);
         ImGui::Checkbox("Use Compute Shader", &_useCS);
