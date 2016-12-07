@@ -6,7 +6,7 @@ class GraphicsContext;
 namespace GPU_Profiler
 {
     const uint8_t MAX_TIMER_NAME_LENGTH = 32;
-    const uint8_t MAX_TIMER_COUNT = 32;
+    const uint8_t MAX_TIMER_COUNT = 128;
 
     void Initialize();
     HRESULT CreateResource();
