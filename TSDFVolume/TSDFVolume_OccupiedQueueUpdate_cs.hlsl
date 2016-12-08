@@ -1,11 +1,5 @@
 
 #include "TSDFVolume.inl"
-// IndirectJobParam layout:
-// 0:FreeQueueStart, 4:FreeQueueCtr, 8:AddqueueStart, 12:AddqueueCtr
-#define FREEQUEUE_STARTOFFSET 0
-#define FREEQUEUE_JOBCOUNT 4
-#define ADDQUEUE_STARTOFFSET 8
-#define ADDQUEUE_JOBCOUNT 12
 
 #if PREPARE // Split new/free queue into 2 part
 RWByteAddressBuffer buf_uavNewOccupiedBlockBufCtr : register(u0);

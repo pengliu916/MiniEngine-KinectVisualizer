@@ -20,6 +20,14 @@
 
 #define BLOCKFREEDMASK 0x40000000
 
+// IndirectJobParam layout:
+// 0:FreeQueueStart, 4:FreeQueueCtr, 8:AddqueueStart, 12:AddqueueCtr
+#define FREEQUEUE_STARTOFFSET 0
+#define FREEQUEUE_JOBCOUNT 4
+#define ADDQUEUE_STARTOFFSET 8
+#define ADDQUEUE_JOBCOUNT 12
+#define ACTIVERENDERBLOCK_COUNT 16
+
 // The length of cube triangles-strip vertices
 #define CUBE_TRIANGLESTRIP_LENGTH 14
 // The length of cube line-strip vertices

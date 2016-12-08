@@ -110,8 +110,6 @@ void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
         if (any(i3BlockIdx != i3NewBlockIdx)) {
             i3BlockIdx = i3NewBlockIdx;
             bActiveBlock = tex_srvRenderBlockVol[i3BlockIdx];
-//                ((tex_srvFuseBlockVol[i3BlockIdx] & BLOCKSTATEMASK_OCCUPIED)
-//                    < uTGPerFuseBlock);
         }
         if (!bActiveBlock) {
             float3 f3Offset =

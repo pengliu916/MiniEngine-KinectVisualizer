@@ -75,7 +75,7 @@ private:
     uint3 _submittedReso;
 
     // Threadgroup size in use
-    ThreadGroup _TGSize = k512;
+    ThreadGroup _TGSize = k64;
 
     // per instance buffer resource
     // Texture3Ds for TSDF and its weight
@@ -89,7 +89,7 @@ private:
     // [26-31] num of empty threadgroup block
     VolumeTexture _fuseBlockVol;
     // Voxel block ratio
-    int _fuseBlockVoxelRatio = 8;
+    int _fuseBlockVoxelRatio = 4;
 
     // 8 bit Texture3D for spacial structure for rendering
     VolumeTexture _renderBlockVol;
@@ -121,13 +121,13 @@ private:
     // [2-11] x idx
     // [12-21] y idx
     // [22-31] z idx
-    StructuredBuffer _newOccupiedBlocksBuf;
+    StructuredBuffer _newFuseBlocksBuf;
     uint32_t _newOccupiedBlocksSize;
 
     // 32bit element buffer for freed blocks in _occupiedBlocksBuf
     // [0-8] not used
     // [9-31] idx in occupied buf
-    StructuredBuffer _freedOccupiedBlocksBuf;
+    StructuredBuffer _freedFuseBlocksBuf;
     uint32_t _freedOccupiedBlocksSize;
 
     // Buffer for scheduling job in OccupiedQueueUpdate

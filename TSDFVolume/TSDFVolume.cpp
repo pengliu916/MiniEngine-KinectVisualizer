@@ -6,6 +6,12 @@ using namespace Microsoft::WRL;
 using namespace std;
 
 #define frand() ((float)rand()/RAND_MAX)
+#define Bind(ctx, rootIdx, offset, count, resource) \
+ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
+
+#define BindCB(ctx, rootIdx, size, ptr) \
+ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
+
 namespace {
     const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     const D3D12_RESOURCE_STATES psSRV =
@@ -442,7 +448,7 @@ TSDFVolume::OnCreateResource()
     // Initial value for dispatch indirect args. args are thread group count
     // x, y, z. Since we only need 1 dimensional dispatch thread group, we
     // pre-populate 1, 1 for threadgroup Ys and Zs
-    __declspec(align(16)) const uint32_t initArgs[48] = {
+    __declspec(align(16)) const uint32_t initArgs[12] = {
         0, 1, 1, // for VolumeUpdate_Pass2, X = OccupiedBlocks / WARP_SIZE
         0, 1, 1, // for VolumeUpdate_Pass3, X = numUpdateBlock * TG/Block
         0, 1, 1, // for OccupiedBlockUpdate_Pass2, X = numFreeSlots / WARP_SIZE
@@ -459,8 +465,8 @@ TSDFVolume::OnCreateResource()
     _UpdateBlockSettings(_fuseBlockVoxelRatio, _renderBlockVoxelRatio, _TGSize);
 
     // Create Spacial Structure Buffer
-    _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
     _CreateRenderBlockVol(reso, _renderBlockVoxelRatio);
+    _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
 }
 
 void
@@ -471,8 +477,8 @@ TSDFVolume::OnDestory()
     _indirectParams.Destroy();
     _updateBlocksBuf.Destroy();
     _occupiedBlocksBuf.Destroy();
-    _newOccupiedBlocksBuf.Destroy();
-    _freedOccupiedBlocksBuf.Destroy();
+    _newFuseBlocksBuf.Destroy();
+    _freedFuseBlocksBuf.Destroy();
     _volBuf.Destroy();
     _fuseBlockVol.Destroy();
     _renderBlockVol.Destroy();
@@ -504,10 +510,8 @@ TSDFVolume::OnReset()
 {
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetContext");
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.SetDynamicConstantBufferView(
-        0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    cptCtx.SetDynamicConstantBufferView(
-        1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    BindCB(cptCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+    BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
     _CleanTSDFVols(cptCtx, _curBufInterface);
     _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
@@ -544,10 +548,8 @@ TSDFVolume::OnIntegrate(CommandContext& cmdCtx, ColorBuffer* pDepthTex,
         int2(pDepthTex->GetWidth(), pDepthTex->GetHeight());
     _cbPerCall.i2ColorReso =
         int2(pColorTex->GetWidth(), pColorTex->GetHeight());
-    cptCtx.SetDynamicConstantBufferView(
-        0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    cptCtx.SetDynamicConstantBufferView(
-        1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    BindCB(cptCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+    BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
     cmdCtx.TransitionResource(_renderBlockVol, UAV);
     cmdCtx.TransitionResource(*_curBufInterface.resource[0], UAV);
     cmdCtx.TransitionResource(*_curBufInterface.resource[1], UAV);
@@ -582,10 +584,8 @@ TSDFVolume::OnRender(CommandContext& cmdCtx,
     gfxCtx.ClearDepth(Graphics::g_SceneDepthBuffer);
 
     gfxCtx.SetRootSignature(_rootsig);
-    gfxCtx.SetDynamicConstantBufferView(
-        0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    gfxCtx.SetDynamicConstantBufferView(
-        1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+    BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
     gfxCtx.SetViewport(Graphics::g_DisplayPlaneViewPort);
     gfxCtx.SetScisor(Graphics::g_DisplayPlaneScissorRect);
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
@@ -703,22 +703,26 @@ TSDFVolume::RenderGui()
         static int renderBlockRatio = (int)_renderBlockVoxelRatio;
         ImGui::RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4);
         ImGui::NextColumn();
-        ImGui::RadioButton("8x8x8##Render", &renderBlockRatio, 8);
+        ImGui::RadioButton("4x4x4##Render", &renderBlockRatio, 4);
         ImGui::NextColumn();
         ImGui::RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8);
         ImGui::NextColumn();
-        ImGui::RadioButton("16x16x16##Render", &renderBlockRatio, 16);
+        ImGui::RadioButton("8x8x8##Render", &renderBlockRatio, 8);
         ImGui::NextColumn();
         ImGui::RadioButton("16x16x16##Fuse", &fuseBlockRatio, 16);
         ImGui::NextColumn();
+        ImGui::RadioButton("16x16x16##Render", &renderBlockRatio, 16);
+        ImGui::NextColumn(); ImGui::NextColumn();
         ImGui::RadioButton("32x32x32##Render", &renderBlockRatio, 32);
+
         if (fuseBlockRatio != _fuseBlockVoxelRatio) {
             if (!(fuseBlockRatio == 4 && _TGSize != k64) &&
                 fuseBlockRatio <= renderBlockRatio) {
                 _fuseBlockVoxelRatio = fuseBlockRatio;
                 _UpdateBlockSettings(_fuseBlockVoxelRatio,
                     _renderBlockVoxelRatio, _TGSize);
-                _CreateFuseBlockVolAndRelatedBuf(_curReso, _fuseBlockVoxelRatio);
+                _CreateFuseBlockVolAndRelatedBuf(
+                    _curReso, _fuseBlockVoxelRatio);
             } else {
                 fuseBlockRatio = _fuseBlockVoxelRatio;
             }
@@ -728,6 +732,10 @@ TSDFVolume::RenderGui()
                 _renderBlockVoxelRatio = renderBlockRatio;
                 _UpdateBlockSettings(_fuseBlockVoxelRatio,
                     _renderBlockVoxelRatio, _TGSize);
+                _CreateRenderBlockVol(
+                    _volBuf.GetReso(), _renderBlockVoxelRatio);
+                _CreateFuseBlockVolAndRelatedBuf(
+                    _curReso, _fuseBlockVoxelRatio);
             } else {
                 renderBlockRatio = _renderBlockVoxelRatio;
             }
@@ -797,6 +805,7 @@ TSDFVolume::_CreateFuseBlockVolAndRelatedBuf(
         reso.z / ratio, 1, DXGI_FORMAT_R32_UINT);
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetBlockVol");
     _CleanFuseBlockVol(cptCtx, true);
+    _CleanRenderBlockVol(cptCtx);
     cptCtx.Finish(true);
     
     _updateBlocksBuf.Destroy();
@@ -807,14 +816,14 @@ TSDFVolume::_CreateFuseBlockVolAndRelatedBuf(
     _occupiedBlockQueueSize = blockCount;
     _occupiedBlocksBuf.Create(L"OccupiedBlockQueue", _updateBlockQueueSize, 4);
     
-    _newOccupiedBlocksBuf.Destroy();
+    _newFuseBlocksBuf.Destroy();
     _newOccupiedBlocksSize = (uint32_t)(_occupiedBlockQueueSize * 0.3f);
-    _newOccupiedBlocksBuf.Create(L"NewOccupiedBlockBuf",
+    _newFuseBlocksBuf.Create(L"NewOccupiedBlockBuf",
         _newOccupiedBlocksSize, 4);
 
-    _freedOccupiedBlocksBuf.Destroy();
+    _freedFuseBlocksBuf.Destroy();
     _freedOccupiedBlocksSize = (uint32_t)(_occupiedBlockQueueSize * 0.3f);
-    _freedOccupiedBlocksBuf.Create(L"FreedOccupiedBlockBuf",
+    _freedFuseBlocksBuf.Create(L"FreedOccupiedBlockBuf",
         _freedOccupiedBlocksSize, 4);
 }
 
@@ -888,10 +897,10 @@ TSDFVolume::_ClearBlockQueues(ComputeContext& cptCtx)
     cptCtx.ResetCounter(_occupiedBlocksBuf);
     cptCtx.ClearUAV(_updateBlocksBuf);
     cptCtx.ResetCounter(_updateBlocksBuf);
-    cptCtx.ClearUAV(_newOccupiedBlocksBuf);
-    cptCtx.ResetCounter(_newOccupiedBlocksBuf);
-    cptCtx.ClearUAV(_freedOccupiedBlocksBuf);
-    cptCtx.ResetCounter(_freedOccupiedBlocksBuf);
+    cptCtx.ClearUAV(_newFuseBlocksBuf);
+    cptCtx.ResetCounter(_newFuseBlocksBuf);
+    cptCtx.ClearUAV(_freedFuseBlocksBuf);
+    cptCtx.ResetCounter(_freedFuseBlocksBuf);
 }
 
 void
@@ -904,7 +913,7 @@ TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
     if (updateCB) {
         _UpdateConstantBuffer<ComputeContext>(cptCtx);
     }
-    cptCtx.SetDynamicDescriptors(2, 0, 2, buf.UAV);
+    Bind(cptCtx, 2, 0, 2, buf.UAV);
     const uint3 xyz = _volParam->u3VoxelReso;
     cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
 }
@@ -918,7 +927,7 @@ TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB)
     if (updateCB) {
         _UpdateConstantBuffer<ComputeContext>(cptCtx);
     }
-    cptCtx.SetDynamicDescriptors(2, 1, 1, &_fuseBlockVol.GetUAV());
+    Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelFuseBlockRatio;
     cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
@@ -931,7 +940,7 @@ TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
     GPU_PROFILE(cptCtx, L"RenderBlockVol Reset");
     cptCtx.SetPipelineState(_cptRenderBlockVolResetPSO);
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.SetDynamicDescriptors(2, 0, 1, &_renderBlockVol.GetUAV());
+    Bind(cptCtx, 2, 0, 1, &_renderBlockVol.GetUAV());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _renderBlockVoxelRatio;
     cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
@@ -957,11 +966,10 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             cptCtx.TransitionResource(_occupiedBlocksBuf, csSRV);
             cptCtx.TransitionResource(_indirectParams, IARG);
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass1);
-            cptCtx.SetDynamicDescriptors(2, 0, 1, &_updateBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 1, 1, &_fuseBlockVol.GetUAV());
-            cptCtx.SetDynamicDescriptors(3, 0, 1, &_occupiedBlocksBuf.GetSRV());
-            cptCtx.SetDynamicDescriptors(
-                3, 1, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
+            Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetSRV());
+            Bind(cptCtx, 3, 1, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
             cptCtx.DispatchIndirect(_indirectParams, 0);
         }
         /*cptCtx.ResetCounter(_updateBlocksBuf);
@@ -976,9 +984,9 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
             // UAV barrier for _updateBlocksBuf is omit since the order of ops
             // on it does not matter before reading it during UpdateVoxel
-            cptCtx.SetDynamicDescriptors(2, 0, 1, &_updateBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 1, 1, &_fuseBlockVol.GetUAV());
-            cptCtx.SetDynamicDescriptors(3, 0, 1, &pDepthTex->GetSRV());
+            Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
+            Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &pDepthTex->GetSRV());
             cptCtx.Dispatch2D(
                 _cbPerCall.i2DepthReso.x, _cbPerCall.i2DepthReso.y);
         }
@@ -987,9 +995,8 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             GPU_PROFILE(cptCtx, L"UpdateQResolve");
             cptCtx.TransitionResource(_indirectParams, UAV);
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Resolve);
-            cptCtx.SetDynamicDescriptors(
-                3, 0, 1, &_updateBlocksBuf.GetCounterSRV(cmdCtx));
-            cptCtx.SetDynamicDescriptors(2, 0, 1, &_indirectParams.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &_updateBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 2, 0, 1, &_indirectParams.GetUAV());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
         // Update voxels in blocks from UpdateBlockQueue and create queues for
@@ -999,27 +1006,23 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             cptCtx.TransitionResource(_occupiedBlocksBuf, UAV);
             cptCtx.TransitionResource(_renderBlockVol, UAV);
             cptCtx.TransitionResource(_fuseBlockVol, UAV);
-            cptCtx.TransitionResource(_newOccupiedBlocksBuf, UAV);
-            cptCtx.TransitionResource(_freedOccupiedBlocksBuf, UAV);
+            cptCtx.TransitionResource(_newFuseBlocksBuf, UAV);
+            cptCtx.TransitionResource(_freedFuseBlocksBuf, UAV);
             cptCtx.TransitionResource(_updateBlocksBuf, csSRV);
             cptCtx.TransitionResource(_indirectParams, IARG);
             cptCtx.SetPipelineState(
                 _cptBlockVolUpdate_Pass3[buf.type][_TGSize]);
-            cptCtx.SetDynamicDescriptors(2, 0, 2, buf.UAV);
-            cptCtx.SetDynamicDescriptors(2, 2, 1, &_fuseBlockVol.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 3, 1,
-                &_newOccupiedBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 4, 1,
-                &_freedOccupiedBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 5, 1,
-                &_occupiedBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 6, 1,
-                &_renderBlockVol.GetUAV());
-            cptCtx.SetDynamicDescriptors(3, 0, 1, &pDepthTex->GetSRV());
+            Bind(cptCtx, 2, 0, 2, buf.UAV);
+            Bind(cptCtx, 2, 2, 1, &_fuseBlockVol.GetUAV());
+            Bind(cptCtx, 2, 3, 1, &_newFuseBlocksBuf.GetUAV());
+            Bind(cptCtx, 2, 4, 1, &_freedFuseBlocksBuf.GetUAV());
+            Bind(cptCtx, 2, 5, 1, &_occupiedBlocksBuf.GetUAV());
+            Bind(cptCtx, 2, 6, 1, &_renderBlockVol.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &pDepthTex->GetSRV());
             if (!_typedLoadSupported) {
-                cptCtx.SetDynamicDescriptors(3, 1, 2, buf.SRV);
+                Bind(cptCtx, 3, 1, 2, buf.SRV);
             }
-            cptCtx.SetDynamicDescriptors(3, 3, 1, &_updateBlocksBuf.GetSRV());
+            Bind(cptCtx, 3, 3, 1, &_updateBlocksBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 12);
         }
         // Read queue buffer counter back for debugging
@@ -1034,9 +1037,9 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             cptCtx.CopyBufferRegion(_debugBuf, 4,
                 _updateBlocksBuf.GetCounterBuffer(), 0, 4);
             cptCtx.CopyBufferRegion(_debugBuf, 8,
-                _newOccupiedBlocksBuf.GetCounterBuffer(), 0, 4);
+                _newFuseBlocksBuf.GetCounterBuffer(), 0, 4);
             cptCtx.CopyBufferRegion(_debugBuf, 12,
-                _freedOccupiedBlocksBuf.GetCounterBuffer(), 0, 4);
+                _freedFuseBlocksBuf.GetCounterBuffer(), 0, 4);
             _readBackFence = cptCtx.Flush();
         }
         // Create indirect argument and params for Filling in
@@ -1044,41 +1047,35 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
             cptCtx.TransitionResource(_indirectParams, UAV);
-            cptCtx.TransitionResource(_jobParamBuf, UAV);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
-            cptCtx.SetDynamicDescriptors(2, 0, 1,
-                &_newOccupiedBlocksBuf.GetCounterUAV(cmdCtx));
-            cptCtx.SetDynamicDescriptors(2, 1, 1,
-                &_freedOccupiedBlocksBuf.GetCounterUAV(cmdCtx));
-            cptCtx.SetDynamicDescriptors(2, 2, 1, &_indirectParams.GetUAV());
-            cptCtx.SetDynamicDescriptors(2, 3, 1, &_jobParamBuf.GetUAV());
+            Bind(cptCtx, 2, 0, 1, &_newFuseBlocksBuf.GetCounterUAV(cmdCtx));
+            Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cmdCtx));
+            Bind(cptCtx, 2, 2, 1, &_indirectParams.GetUAV());
+            Bind(cptCtx, 2, 3, 1, &_jobParamBuf.GetUAV());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
         // Filling in NewOccupiedBlocks into FreeSlots in OccupiedBlockQueue
         {
             GPU_PROFILE(cptCtx, L"FreedQFillIn");
             cptCtx.TransitionResource(_occupiedBlocksBuf, UAV);
-            cptCtx.TransitionResource(_newOccupiedBlocksBuf, csSRV);
-            cptCtx.TransitionResource(_freedOccupiedBlocksBuf, csSRV);
+            cptCtx.TransitionResource(_newFuseBlocksBuf, csSRV);
+            cptCtx.TransitionResource(_freedFuseBlocksBuf, csSRV);
             cptCtx.TransitionResource(_jobParamBuf, csSRV);
             cptCtx.TransitionResource(_indirectParams, IARG);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Pass1);
-            cptCtx.SetDynamicDescriptors(2, 0, 1, &_occupiedBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(3, 0, 1,
-                &_newOccupiedBlocksBuf.GetSRV());
-            cptCtx.SetDynamicDescriptors(3, 1, 1,
-                &_freedOccupiedBlocksBuf.GetSRV());
-            cptCtx.SetDynamicDescriptors(3, 2, 1, &_jobParamBuf.GetSRV());
+            Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &_newFuseBlocksBuf.GetSRV());
+            Bind(cptCtx, 3, 1, 1, &_freedFuseBlocksBuf.GetSRV());
+            Bind(cptCtx, 3, 2, 1, &_jobParamBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 24);
         }
         // Appending new occupied blocks to OccupiedBlockQueue
         {
             GPU_PROFILE(cptCtx, L"OccupiedQAppend");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Pass2);
-            cptCtx.SetDynamicDescriptors(2, 0, 1, &_occupiedBlocksBuf.GetUAV());
-            cptCtx.SetDynamicDescriptors(3, 0, 1,
-                &_newOccupiedBlocksBuf.GetSRV());
-            cptCtx.SetDynamicDescriptors(3, 1, 1, &_jobParamBuf.GetSRV());
+            Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &_newFuseBlocksBuf.GetSRV());
+            Bind(cptCtx, 3, 1, 1, &_jobParamBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 36);
         }
         // Resolve OccupiedBlockQueue for next VoxelUpdate DispatchIndirect
@@ -1086,19 +1083,18 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             GPU_PROFILE(cptCtx, L"OccupiedQResolve");
             cptCtx.TransitionResource(_indirectParams, UAV);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Resolve);
-            cptCtx.SetDynamicDescriptors(2, 0, 1, &_indirectParams.GetUAV());
-            cptCtx.SetDynamicDescriptors(3, 0, 1,
-                &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 2, 0, 1, &_indirectParams.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
     } else {
         GPU_PROFILE(cmdCtx, L"Volume Updating");
         cptCtx.SetPipelineState(_cptUpdatePSO[buf.type][type]);
-        cptCtx.SetDynamicDescriptors(2, 0, 2, buf.UAV);
-        cptCtx.SetDynamicDescriptors(2, 2, 1, &_fuseBlockVol.GetUAV());
-        cptCtx.SetDynamicDescriptors(3, 0, 1, &pDepthTex->GetSRV());
+        Bind(cptCtx, 2, 0, 2, buf.UAV);
+        Bind(cptCtx, 2, 2, 1, &_fuseBlockVol.GetUAV());
+        Bind(cptCtx, 3, 0, 1, &pDepthTex->GetSRV());
         if (!_typedLoadSupported) {
-            cptCtx.SetDynamicDescriptors(3, 1, 2, buf.SRV);
+            Bind(cptCtx, 3, 1, 2, buf.SRV);
         }
         cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
     }
@@ -1111,7 +1107,7 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx)
     gfxCtx.SetPipelineState(_gfxStepInfoVCamPSO);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     gfxCtx.SetRenderTargets(1, &_nearFarTex.GetRTV());
-    gfxCtx.SetDynamicDescriptors(3, 1, 1, &_renderBlockVol.GetSRV());
+    Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
     gfxCtx.SetIndexBuffer(_cubeTriangleStripIB.IndexBufferView());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
@@ -1127,10 +1123,10 @@ TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
     gfxCtx.SetPipelineState(_gfxVCamRenderPSO[buf.type][type][_filterType]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    gfxCtx.SetDynamicDescriptors(3, 0, 1, buf.SRV);
+    Bind(gfxCtx, 3, 0, 1, buf.SRV);
     if (_useStepInfoTex) {
-        gfxCtx.SetDynamicDescriptors(3, 1, 1, &_nearFarTex.GetSRV());
-        gfxCtx.SetDynamicDescriptors(3, 2, 1, &_renderBlockVol.GetSRV());
+        Bind(gfxCtx, 3, 1, 1, &_nearFarTex.GetSRV());
+        Bind(gfxCtx, 3, 2, 1, &_renderBlockVol.GetSRV());
     }
     gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),
         Graphics::g_SceneDepthBuffer.GetDSV());
@@ -1145,7 +1141,7 @@ TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
     gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),
         Graphics::g_SceneDepthBuffer.GetDSV());
-    gfxCtx.SetDynamicDescriptors(3, 1, 1, &_renderBlockVol.GetSRV());
+    Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
     gfxCtx.SetIndexBuffer(_cubeLineStripIB.IndexBufferView());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
@@ -1157,8 +1153,6 @@ template<class T>
 void
 TSDFVolume::_UpdateConstantBuffer(T& ctx)
 {
-    ctx.SetDynamicConstantBufferView(
-        0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    ctx.SetDynamicConstantBufferView(
-        1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    BindCB(ctx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+    BindCB(ctx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
 }
