@@ -334,8 +334,10 @@ public:
     void DrawIndexedInstanced(UINT IndexCountPerInstance,
         UINT InstanceCount, UINT StartIndexLocation,
         INT BaseVertexLocation, UINT StartInstanceLocation);
-    //void DrawIndirect(GpuBuffer& ArgumentBuffer,
-    //    size_t ArgumentBufferOffset = 0);
+    void DrawIndexedIndirect(GpuBuffer& ArgumentBuffer,
+        size_t ArgumentBufferOffset = 0);
+    void DrawIndirect(GpuBuffer& ArgumentBuffer,
+        size_t ArgumentBufferOffset = 0);
 };
 
 inline void
@@ -562,13 +564,27 @@ GraphicsContext::DrawIndexedInstanced(UINT IndexCountPerInstance,
         StartIndexLocation, BaseVertexLocation, StartInstanceLocation);
 }
 
-//inline void
-//GraphicsContext::DrawIndirect(GpuBuffer& ArgumentBuffer,
-//    size_t ArgumentBufferOffset /* = 0 */)
-//{
-//    FlushResourceBarriers();
-//    m_CommandList->ExecuteIndirect(Graphics::draw)
-//}
+inline void
+GraphicsContext::DrawIndexedIndirect(
+    GpuBuffer& ArgumentBuffer, size_t ArgumentBUfferOffset)
+{
+    FlushResourceBarriers();
+    m_DynamicDescriptorHeap.CommitGraphicsRootDescriptorTables(m_CommandList);
+    m_CommandList->ExecuteIndirect(
+        Graphics::g_DrawIndexedIndirectCommandSignature.GetSignature(), 1,
+        ArgumentBuffer.GetResource(), (UINT64)ArgumentBUfferOffset, nullptr, 0);
+}
+
+inline void
+GraphicsContext::DrawIndirect(
+    GpuBuffer& ArgumentBuffer, size_t ArgumentBUfferOffset)
+{
+    FlushResourceBarriers();
+    m_DynamicDescriptorHeap.CommitGraphicsRootDescriptorTables(m_CommandList);
+    m_CommandList->ExecuteIndirect(
+        Graphics::g_DrawIndirectCommandSignature.GetSignature(), 1,
+        ArgumentBuffer.GetResource(), (UINT64)ArgumentBUfferOffset, nullptr, 0);
+}
 
 //------------------------------------------------------------------------------
 // ComputeContext

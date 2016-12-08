@@ -70,6 +70,7 @@ namespace Graphics
 
     extern CommandSignature g_DispatchIndirectCommandSignature;
     extern CommandSignature g_DrawIndirectCommandSignature;
+    extern CommandSignature g_DrawIndexedIndirectCommandSignature;
 
     void Init();
     void Shutdown();

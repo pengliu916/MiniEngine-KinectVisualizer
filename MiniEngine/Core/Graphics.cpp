@@ -113,6 +113,7 @@ namespace Graphics
 
     CommandSignature g_DispatchIndirectCommandSignature(1);
     CommandSignature g_DrawIndirectCommandSignature(1);
+    CommandSignature g_DrawIndexedIndirectCommandSignature(1);
 
     RootSignature s_PresentRS;
     GraphicsPSO s_BufferCopyPSO;
@@ -430,6 +431,9 @@ namespace Graphics
 
         g_DrawIndirectCommandSignature[0].Draw();
         g_DrawIndirectCommandSignature.Finalize();
+
+        g_DrawIndexedIndirectCommandSignature[0].DrawIndexed();
+        g_DrawIndexedIndirectCommandSignature.Finalize();
 
         s_PresentRS.Reset(1);
         s_PresentRS[0].InitAsDescriptorRange(
