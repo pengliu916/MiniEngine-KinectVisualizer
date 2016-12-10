@@ -19,17 +19,19 @@ RWTexture2D<float4> DepthVisualTex : register(u1);
 
 uint GetFakedDepth(uint2 u2uv)
 {
+    float fResult = fBgDist;
     float2 f2ab = (u2uv - f2c) / f2f;
     float fA = dot(f2ab, f2ab) + 1.f;
     float fB = -2.f * (dot(f2ab, f4S.xy) + f4S.z);
     float fC = dot(f4S.xyz, f4S.xyz) - f4S.w * f4S.w;
     float fB2M4AC = fB * fB - 4.f * fA * fC;
-    if (fB2M4AC < 0.f) {
-        return fBgDist * 1000.f;
-    } else {
-        float fz = min((-fB - sqrt(fB2M4AC)) / (2.f * fA), fBgDist);
-        return fz * 1000;
+    if (fB2M4AC >= 0.f) {
+        fResult = min((-fB - sqrt(fB2M4AC)) / (2.f * fA), fBgDist);
     }
+    if (any(u2uv == uint2(12, 12)) || any(u2uv == uint2(500, 412))) {
+        fResult += .2f;
+    }
+    return fResult * 1000.f;
 }
 
 [numthreads(THREAD_PER_GROUP, 1, 1)]

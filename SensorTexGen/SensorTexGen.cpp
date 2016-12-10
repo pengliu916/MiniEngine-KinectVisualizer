@@ -231,9 +231,9 @@ bool
 SensorTexGen::OnRender(CommandContext& EngineContext)
 {
     static float fAnimTime = 0;
-    fAnimTime += Core::g_deltaTime;
-    float fx = sin(fAnimTime * 0.8f) * 0.8f;
-    float fy = cos(fAnimTime * 0.8f) * 0.8f;
+    fAnimTime += static_cast<float>(Core::g_deltaTime);
+    float fx = sin(fAnimTime * 0.5f) * 0.8f;
+    float fy = cos(fAnimTime * 0.5f) * 0.8f;
     _cbKinect.f4S.x = fx;
     _cbKinect.f4S.y = fy;
     if (!_streaming) {
@@ -354,6 +354,7 @@ SensorTexGen::RenderGui()
         }
         ImGui::Separator();
         ImGui::SliderFloat("BGDist", &_cbKinect.fBgDist, 0.5f, 5.f);
+        ImGui::SliderFloat("FGDist", &_cbKinect.f4S.z, 0.5f, 5.f);
         ImGui::Separator();
         ImGui::Checkbox("Streaming Data", &_streaming);
         ImGui::Checkbox("Update EveryFrame", &_perFrameUpdate);
