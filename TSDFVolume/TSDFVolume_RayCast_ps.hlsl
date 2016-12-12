@@ -12,6 +12,14 @@ Texture3D<uint> tex_srvRenderBlockVol : register(t2);
 #endif // ENABLE_BRICKS
 SamplerState samp_Linear : register(s0);
 
+#if FOR_SENSOR
+#define CAMPOS mDepthViewInv._m03_m13_m23
+#endif
+
+#if FOR_VCAMERA
+#define CAMPOS mViewInv._m03_m13_m23
+#endif
+
 //------------------------------------------------------------------------------
 // Structures
 //------------------------------------------------------------------------------
@@ -171,8 +179,9 @@ void main(float3 f3Pos : POSITION1, float4 f4ProjPos : SV_POSITION,
     }
 
     Ray eyeray;
-    //world space
-    eyeray.f3o = f4ViewPos.xyz;
+    // world space
+    // this is the camera position extracted from mViewInv
+    eyeray.f3o = CAMPOS;
     eyeray.f3d = f3Pos - eyeray.f3o;
     eyeray.f3d = normalize(eyeray.f3d);
 
@@ -183,7 +192,8 @@ void main(float3 f3Pos : POSITION1, float4 f4ProjPos : SV_POSITION,
 #else
     Ray eyeray;
     //world space
-    eyeray.f3o = f4ViewPos.xyz;
+    // this is the camera position extracted from mViewInv
+    eyeray.f3o = CAMPOS;
     eyeray.f3d = f3Pos - eyeray.f3o;
     eyeray.f3d = normalize(eyeray.f3d);
     bool bHit =

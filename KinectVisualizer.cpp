@@ -65,7 +65,10 @@ HRESULT KinectVisualizer::OnCreateResource()
     _bilateralFilter.OnCreateResoure(DXGI_FORMAT_R16_UINT);
     _bilateralFilter.UpdateCB(XMUINT2(depWidth, depHeight));
 
-    _tsdfVolume.OnCreateResource();
+    int2 depthReso = int2(depWidth, depHeight);
+    int2 colorReso = int2(colWidth, colHeight);
+
+    _tsdfVolume.OnCreateResource(depthReso, colorReso);
 
     OnSizeChanged();
 
@@ -138,8 +141,9 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
             _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
             _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
             _depthViewInv_T);
-        _tsdfVolume.OnRender(
-            EngineContext, mProj_T, mView_T, viewPos);
+        _tsdfVolume.OnRender(EngineContext, mProj_T, mView_T);
+        _tsdfVolume.OnExtractSurface(EngineContext,
+            XMMatrixInverse(nullptr, _depthViewInv_T));
         break;
     case kPointCloud:
         _pointCloudRenderer.UpdateLightPos(viewPos);

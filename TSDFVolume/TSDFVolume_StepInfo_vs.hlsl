@@ -1,5 +1,7 @@
 #include "TSDFVolume.inl"
 #include "TSDFVolume.hlsli"
+#include "CalibData.inl"
+
 Texture3D<int> tex_srvRenderBlockVol : register(t1);
 
 void main(uint uInstanceID : SV_InstanceID, in float4 f4Pos : POSITION,
@@ -25,8 +27,8 @@ void main(uint uInstanceID : SV_InstanceID, in float4 f4Pos : POSITION,
         float fz = -f4Temp.z;
         float2 f2HalfReso = i2DepthReso >> 1;
         float2 f2xy = (f4Temp.xy / fz * DEPTH_F + DEPTH_C
-            - f2HalfReso)) / f2HalfReso;
-        f4ProjPos = float4(f2xy, 1.f / fz, 1.f);
+            - f2HalfReso) / f2HalfReso;
+        f4ProjPos = float4(f2xy, 1.f, 1.f);
         float fVecLength = length(f4Temp.xyz);
 #endif // FOR_SENSOR
         f2Depths = float2(fVecLength, -fVecLength);

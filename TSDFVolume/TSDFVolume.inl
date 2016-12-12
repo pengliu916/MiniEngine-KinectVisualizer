@@ -77,12 +77,10 @@ CBUFFER_ALIGN STRUCT(cbuffer) PerFrameDataCB REGISTER(b0)
     // For depth sensor, doing Fusion
     matrix mDepthView;
     matrix mDepthViewInv;
-    float4 f4DepthPos;
     // For free virtual camera, doing visualization
     matrix mProjView;
     matrix mView;
     matrix mViewInv;
-    float4 f4ViewPos;
 #if !__hlsl
     void* operator new(size_t i) {
         return _aligned_malloc(i, 

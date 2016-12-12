@@ -123,10 +123,10 @@ bool GetValidReprojectedPoint(uint2 u2Idx, out float3 f3Pos)
     bool bResult = false;
     f3Pos = 0.f;
     if (all(int2(u2Idx) < i2DepthReso)) {
-        float z = tex_srvDepth.Load(uint3(u2Idx, 0)) / 1000.f;
+        float z = tex_srvDepth.Load(uint3(u2Idx.x, i2DepthReso.y - u2Idx.y, 0))
+            / 1000.f;
         if (z >= f2DepthRange.x && z <= f2DepthRange.y) {
             float2 f2xy = (u2Idx - DEPTH_C) / DEPTH_F * z;
-            f2xy.y *= -1.f;
             float4 f4Pos = float4(f2xy, -z, 1.f);
             f3Pos = mul(mDepthViewInv, f4Pos).xyz;
             // Make sure the pos is covered in the volume
@@ -149,7 +149,8 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     if (!GetValidReprojectedPoint(u3DTid.xy, f3Pos)) {
         return;
     }
-    float3 f3Step = vParam.fTruncDist * normalize(f3Pos - f4DepthPos.xyz);
+    float3 f3Step =
+        vParam.fTruncDist * normalize(f3Pos - mDepthViewInv._m03_m13_m23);
     uint3 u3Block0Idx = GetBlockIdx(f3Pos - f3Step);
     if (!(tex_uavFuseBlockVol[u3Block0Idx] & BLOCKSTATEMASK_UPDATE)) {
         InterlockedAddToUpdateQueue(u3Block0Idx);

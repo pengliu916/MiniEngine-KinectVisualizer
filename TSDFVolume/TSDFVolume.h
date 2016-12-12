@@ -28,7 +28,7 @@ public:
 
     TSDFVolume();
     ~TSDFVolume();
-    void OnCreateResource();
+    void OnCreateResource(const int2& depthReso, const int2& colorReso);
     void OnDestory();
     void OnResize();
     void OnReset();
@@ -37,18 +37,21 @@ public:
         ColorBuffer* pColorTex, const DirectX::XMMATRIX& mSensorView_T);
     void OnRender(CommandContext& cmdContext,
         const DirectX::XMMATRIX& mVCamProj_T,
-        const DirectX::XMMATRIX& mVCam_T,
-        const DirectX::XMFLOAT4& eyePos);
+        const DirectX::XMMATRIX& mVCam_T);
+    void OnExtractSurface(CommandContext& cmdContext,
+        const DirectX::XMMATRIX& mSensor_T);
     void RenderGui();
+
+    ColorBuffer* GetOutTex();
 
 private:
     void _CreateFuseBlockVolAndRelatedBuf(
         const uint3& reso, const uint ratio);
     void _CreateRenderBlockVol(const uint3& reso, const uint ratio);
     // Data update
-    void _UpdatePerFrameData(const DirectX::XMMATRIX& mVCamProjView_T,
-        const DirectX::XMMATRIX& mSensorView_T,
-        const DirectX::XMFLOAT4& eyePos);
+    void _UpdateRenderCamData(const DirectX::XMMATRIX& mVCamProjView_T,
+        const DirectX::XMMATRIX& mSensorView_T);
+    void _UpdateSensorData(const DirectX::XMMATRIX& mSensorView_T);
     void _UpdateVolumeSettings(const uint3 reso, const float voxelSize);
     void _UpdateBlockSettings(const uint fuseBlockVoxelRatio,
         const uint renderBlockVoxelRatio, const ThreadGroup TG);
@@ -61,11 +64,17 @@ private:
         const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex,
         ColorBuffer* pColorTex);
     void _RenderVolume(GraphicsContext& gfxCtx,
-        const ManagedBuf::BufInterface& buf);
-    void _RenderNearFar(GraphicsContext& gfxCtx);
+        const ManagedBuf::BufInterface& buf, bool toOutTex = false);
+    void _RenderNearFar(GraphicsContext& gfxCtx, bool toSurface = false);
     void _RenderBrickGrid(GraphicsContext& gfxCtx);
     template<class T>
     void _UpdateConstantBuffer(T& ctx);
+
+    // Resource for extracting depthmap
+    D3D12_VIEWPORT _depthViewPort = {};
+    D3D12_RECT _depthSissorRect = {};
+    // Texture for the output depthmap
+    ColorBuffer _extractedDepth;
 
     // Volume settings currently in use
     VolumeStruct _curVolStruct = kVoxel;

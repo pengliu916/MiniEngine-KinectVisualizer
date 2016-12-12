@@ -96,15 +96,9 @@ namespace {
         swprintf_s(fileName, 128, L"TSDFVolume_%ls.hlsl", shaderName);
         switch (shaderName[iLen-2])
         {
-        case 'c':
-            sprintf_s(target, 8, "cs_5_1");
-            break;
-        case 'p':
-            sprintf_s(target, 8, "ps_5_1");
-            break;
-        case 'v':
-            sprintf_s(target, 8, "vs_5_1");
-            break;
+        case 'c': sprintf_s(target, 8, "cs_5_1"); break;
+        case 'p': sprintf_s(target, 8, "ps_5_1"); break;
+        case 'v': sprintf_s(target, 8, "vs_5_1"); break;
         default:
             PRINTERROR(L"Shader name: %s is Invalid!", shaderName);
         }
@@ -118,8 +112,10 @@ namespace {
     {
         HRESULT hr;
         // Compile Shaders
-        ComPtr<ID3DBlob> quadVCamVS, quadSensorVS, stepInfoVS;
-        ComPtr<ID3DBlob> raycastPS[kBuf][kStruct][kFilter];
+        ComPtr<ID3DBlob> quadVCamVS, quadSensorVS;
+        ComPtr<ID3DBlob> stepInfoVCamVS, stepInfoSensorVS;
+        ComPtr<ID3DBlob> raycastVCamPS[kBuf][kStruct][kFilter];
+        ComPtr<ID3DBlob> raycastSensorPS[kBuf][kStruct][kFilter];
         ComPtr<ID3DBlob> volUpdateCS[kBuf][kStruct];
         ComPtr<ID3DBlob> blockUpdateCS[kBuf][kTG];
         ComPtr<ID3DBlob> tsdfVolResetCS[kBuf];
@@ -209,18 +205,33 @@ namespace {
                     macro[10].Definition = "8";
                 }
                 V(_Compile(L"VolumeUpdate_cs", macro, &volUpdateCS[i][j]));
+                macro[9].Definition = "1";
                 V(_Compile(L"RayCast_ps",
-                    macro, &raycastPS[i][j][TSDFVolume::kNoFilter]));
+                    macro, &raycastVCamPS[i][j][TSDFVolume::kNoFilter]));
                 macro[3].Definition = "1"; // FILTER_READ
                 V(_Compile(L"RayCast_ps",
-                    macro, &raycastPS[i][j][TSDFVolume::kLinearFilter]));
+                    macro, &raycastVCamPS[i][j][TSDFVolume::kLinearFilter]));
                 macro[3].Definition = "2"; // FILTER_READ
                 V(_Compile(L"RayCast_ps",
-                    macro, &raycastPS[i][j][TSDFVolume::kSamplerLinear]));
+                    macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerLinear]));
                 macro[3].Definition = "3"; // FILTER_READ
                 V(_Compile(L"RayCast_ps",
-                    macro, &raycastPS[i][j][TSDFVolume::kSamplerAniso]));
+                    macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerAniso]));
                 macro[3].Definition = "0"; // FILTER_READ
+                macro[9].Definition = "0"; macro[8].Definition = "1";
+                V(_Compile(L"RayCast_ps",
+                    macro, &raycastSensorPS[i][j][TSDFVolume::kNoFilter]));
+                macro[3].Definition = "1"; // FILTER_READ
+                V(_Compile(L"RayCast_ps",
+                    macro, &raycastSensorPS[i][j][TSDFVolume::kLinearFilter]));
+                macro[3].Definition = "2"; // FILTER_READ
+                V(_Compile(L"RayCast_ps",
+                    macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerLinear]));
+                macro[3].Definition = "3"; // FILTER_READ
+                V(_Compile(L"RayCast_ps",
+                    macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerAniso]));
+                macro[3].Definition = "0"; // FILTER_READ
+                macro[8].Definition = "0";
                 macro[DefIdx].Definition = "0";
             }
             compiledOnce = true;
@@ -249,6 +260,8 @@ namespace {
         // Create PSO for volume update and volume render
         DXGI_FORMAT ColorFormat = Graphics::g_SceneColorBuffer.GetFormat();
         DXGI_FORMAT DepthFormat = Graphics::g_SceneDepthBuffer.GetFormat();
+        DXGI_FORMAT ExtractTexFormat = ColorFormat;
+        //DXGI_FORMAT ExtractTexFormat = DXGI_FORMAT_R16_UINT;
 
 #define CreatePSO( ObjName, Shader)\
 ObjName.SetRootSignature(_rootsig);\
@@ -284,12 +297,17 @@ ObjName.Finalize();
                     _gfxVCamRenderPSO[i][k][j].SetRenderTargetFormats(
                         1, &ColorFormat, DepthFormat);
                     _gfxVCamRenderPSO[i][k][j].SetPixelShader(
-                        raycastPS[i][k][j]->GetBufferPointer(),
-                        raycastPS[i][k][j]->GetBufferSize());
+                        raycastVCamPS[i][k][j]->GetBufferPointer(),
+                        raycastVCamPS[i][k][j]->GetBufferSize());
                     _gfxSensorRenderPSO[i][k][j] = _gfxVCamRenderPSO[i][k][j];
                     _gfxSensorRenderPSO[i][k][j].SetVertexShader(
                         quadSensorVS->GetBufferPointer(),
                         quadSensorVS->GetBufferSize());
+                    _gfxSensorRenderPSO[i][k][j].SetRenderTargetFormats(
+                        1, &ExtractTexFormat, DXGI_FORMAT_UNKNOWN);
+                    _gfxSensorRenderPSO[i][k][j].SetPixelShader(
+                        raycastSensorPS[i][k][j]->GetBufferPointer(),
+                        raycastSensorPS[i][k][j]->GetBufferSize());
                     _gfxSensorRenderPSO[i][k][j].Finalize();
                     _gfxVCamRenderPSO[i][k][j].SetVertexShader(
                         quadVCamVS->GetBufferPointer(),
@@ -315,10 +333,13 @@ ObjName.Finalize();
             {"__hlsl", "1"},
             {"DEBUG_VIEW", "0"},
             {"FOR_VCAMERA", "1"},
+            {"FOR_SENSOR", "0"},
             {nullptr, nullptr}
         };
         V(_Compile(L"StepInfo_ps", macro1, &stepInfoPS));
-        V(_Compile(L"StepInfo_vs", macro1, &stepInfoVS));
+        V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS));
+        macro1[2].Definition = "0"; macro1[3].Definition = "1";
+        V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS))
         macro[1].Definition = "1";
         V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
 
@@ -327,10 +348,12 @@ ObjName.Finalize();
             D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
         _gfxStepInfoVCamPSO.SetInputLayout(
             _countof(inputElementDescs), inputElementDescs);
-        _gfxStepInfoVCamPSO.SetDepthStencilState(Graphics::g_DepthStateDisabled);
+        _gfxStepInfoVCamPSO.SetDepthStencilState(
+            Graphics::g_DepthStateDisabled);
         _gfxStepInfoVCamPSO.SetSampleMask(UINT_MAX);
         _gfxStepInfoVCamPSO.SetVertexShader(
-            stepInfoVS->GetBufferPointer(), stepInfoVS->GetBufferSize());
+            stepInfoVCamVS->GetBufferPointer(),
+            stepInfoVCamVS->GetBufferSize());
         _gfxStepInfoDebugPSO = _gfxStepInfoVCamPSO;
         _gfxStepInfoDebugPSO.SetDepthStencilState(
             Graphics::g_DepthStateReadOnly);
@@ -364,6 +387,11 @@ ObjName.Finalize();
             stepInfoPS->GetBufferPointer(), stepInfoPS->GetBufferSize());
         _gfxStepInfoDebugPSO.SetPixelShader(
             stepInfoPS->GetBufferPointer(), stepInfoDebugPS->GetBufferSize());
+        _gfxStepInfoSensorPSO = _gfxStepInfoVCamPSO;
+        _gfxStepInfoSensorPSO.SetVertexShader(
+            stepInfoSensorVS->GetBufferPointer(),
+            stepInfoSensorVS->GetBufferSize());
+        _gfxStepInfoSensorPSO.Finalize();
         _gfxStepInfoVCamPSO.Finalize();
         _gfxStepInfoDebugPSO.Finalize();
     }
@@ -429,7 +457,7 @@ TSDFVolume::~TSDFVolume()
 }
 
 void
-TSDFVolume::OnCreateResource()
+TSDFVolume::OnCreateResource(const int2& depthReso, const int2& colorReso)
 {
     ASSERT(Graphics::g_device);
     // Create resource for volume
@@ -459,6 +487,19 @@ TSDFVolume::OnCreateResource()
 
     std::call_once(_psoCompiled_flag, _CreateResource);
 
+    _cbPerCall.i2ColorReso = colorReso;
+    _cbPerCall.i2DepthReso = depthReso;
+
+    _depthViewPort.Width = static_cast<float>(depthReso.x);
+    _depthViewPort.Height = static_cast<float>(depthReso.y);
+    _depthViewPort.MaxDepth = 1.f;
+
+    _depthSissorRect.right = static_cast<LONG>(depthReso.x);
+    _depthSissorRect.bottom = static_cast<LONG>(depthReso.y);
+
+    _extractedDepth.Create(L"ExtracedDepth",
+        depthReso.x, depthReso.y, 1, Graphics::g_SceneColorBuffer.GetFormat());
+
     const uint3 reso = _volBuf.GetReso();
     _submittedReso = reso;
     _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
@@ -472,6 +513,7 @@ TSDFVolume::OnCreateResource()
 void
 TSDFVolume::OnDestory()
 {
+    _extractedDepth.Destroy();
     _debugBuf.Destroy();
     _jobParamBuf.Destroy();
     _indirectParams.Destroy();
@@ -491,8 +533,8 @@ TSDFVolume::OnDestory()
 void
 TSDFVolume::OnResize()
 {
-    uint32_t width = Core::g_config.swapChainDesc.Width;
-    uint32_t height = Core::g_config.swapChainDesc.Height;
+    int32_t width = Core::g_config.swapChainDesc.Width;
+    int32_t height = Core::g_config.swapChainDesc.Height;
 
     float fAspectRatio = width / (FLOAT)height;
     _cbPerCall.fWideHeightRatio = fAspectRatio;
@@ -501,7 +543,9 @@ TSDFVolume::OnResize()
     _cbPerCall.fTanHFov = tan(fHFov / 2.f);
 
     _nearFarTex.Destroy();
-    // Create MinMax Buffer
+    // Create MinMax Buffer but make sure it's at least is the sensor reso
+    width = max(width, _cbPerCall.i2DepthReso.x);
+    height = max(height, _cbPerCall.i2DepthReso.y);
     _nearFarTex.Create(L"StepInfoTex", width, height, 0, _stepInfoTexFormat);
 }
 
@@ -542,12 +586,6 @@ TSDFVolume::OnIntegrate(CommandContext& cmdCtx, ColorBuffer* pDepthTex,
     cptCtx.SetRootSignature(_rootsig);
     _cbPerFrame.mDepthView = XMMatrixInverse(nullptr, mDepth_T);
     _cbPerFrame.mDepthViewInv = mDepth_T;
-    _cbPerFrame.f4DepthPos = float4(mDepth_T.r[3].m128_f32);
-
-    _cbPerCall.i2DepthReso =
-        int2(pDepthTex->GetWidth(), pDepthTex->GetHeight());
-    _cbPerCall.i2ColorReso =
-        int2(pColorTex->GetWidth(), pColorTex->GetHeight());
     BindCB(cptCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
     BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
     cmdCtx.TransitionResource(_renderBlockVol, UAV);
@@ -562,10 +600,9 @@ TSDFVolume::OnIntegrate(CommandContext& cmdCtx, ColorBuffer* pDepthTex,
 
 void
 TSDFVolume::OnRender(CommandContext& cmdCtx,
-    const DirectX::XMMATRIX& mProj_T,
-    const DirectX::XMMATRIX& mView_T, const DirectX::XMFLOAT4& eyePos)
+    const DirectX::XMMATRIX& mProj_T, const DirectX::XMMATRIX& mView_T)
 {
-    _UpdatePerFrameData(mProj_T, mView_T, eyePos);
+    _UpdateRenderCamData(mProj_T, mView_T);
 
     cmdCtx.BeginResourceTransition(Graphics::g_SceneColorBuffer, RTV);
     cmdCtx.BeginResourceTransition(Graphics::g_SceneDepthBuffer, DSV);
@@ -591,17 +628,20 @@ TSDFVolume::OnRender(CommandContext& cmdCtx,
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
 
     if (_useStepInfoTex) {
+        GPU_PROFILE(gfxCtx, L"NearFar_Render");
         gfxCtx.TransitionResource(_renderBlockVol, vsSRV | psSRV);
         _RenderNearFar(gfxCtx);
         gfxCtx.TransitionResource(_nearFarTex, psSRV);
     }
-
-    gfxCtx.TransitionResource(*_curBufInterface.resource[0], psSRV);
-    _RenderVolume(gfxCtx, _curBufInterface);
-    gfxCtx.BeginResourceTransition(*_curBufInterface.resource[0], UAV);
-
+    {
+        GPU_PROFILE(gfxCtx, L"Volume_Render");
+        gfxCtx.TransitionResource(*_curBufInterface.resource[0], psSRV);
+        _RenderVolume(gfxCtx, _curBufInterface);
+        gfxCtx.BeginResourceTransition(*_curBufInterface.resource[0], UAV);
+    }
     if (_useStepInfoTex) {
         if (_stepInfoDebug) {
+            GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
             _RenderBrickGrid(gfxCtx);
         }
         cmdCtx.BeginResourceTransition(_nearFarTex, RTV);
@@ -609,189 +649,235 @@ TSDFVolume::OnRender(CommandContext& cmdCtx,
 }
 
 void
+TSDFVolume::OnExtractSurface(CommandContext& cmdCtx,
+    const DirectX::XMMATRIX& mSensor_T)
+{
+    _UpdateSensorData(mSensor_T);
+    GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
+    cmdCtx.TransitionResource(_extractedDepth, RTV);
+    if (_useStepInfoTex) {
+        gfxCtx.TransitionResource(_nearFarTex, RTV, true);
+        gfxCtx.ClearColor(_nearFarTex);
+    }
+
+    gfxCtx.ClearColor(_extractedDepth);
+
+    gfxCtx.SetRootSignature(_rootsig);
+    BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+    BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    gfxCtx.SetViewport(_depthViewPort);
+    gfxCtx.SetScisor(_depthSissorRect);
+    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
+
+    if (_useStepInfoTex) {
+        GPU_PROFILE(gfxCtx, L"NearFar_Extract");
+        gfxCtx.TransitionResource(_renderBlockVol, vsSRV | psSRV);
+        _RenderNearFar(gfxCtx, true);
+        gfxCtx.TransitionResource(_nearFarTex, psSRV);
+    }
+    {
+        GPU_PROFILE(gfxCtx, L"Volume_Extract");
+        gfxCtx.TransitionResource(*_curBufInterface.resource[0], psSRV);
+        _RenderVolume(gfxCtx, _curBufInterface, true);
+        gfxCtx.BeginResourceTransition(*_curBufInterface.resource[0], UAV);
+    }
+    if (_useStepInfoTex) {
+        cmdCtx.BeginResourceTransition(_nearFarTex, RTV);
+    }
+    _extractedDepth.GuiShow();
+}
+
+void
 TSDFVolume::RenderGui()
 {
     static bool showPenal = true;
-    if (ImGui::CollapsingHeader("Sparse Volume", 0, true, true)) {
-        ImGui::Checkbox("Block Volume Update", &_blockVolumeUpdate);
-        ImGui::SameLine();
-        ImGui::Checkbox("Debug", &_readBackGPUBufStatus);
-        if (_readBackGPUBufStatus && _blockVolumeUpdate) {
-            char buf[64];
-            float occupiedBlockPct =
-                (float)_readBackData[0] / _occupiedBlockQueueSize;
-            sprintf_s(buf, 64, "%d/%d OccupiedBlocks",
-                _readBackData[0], _occupiedBlockQueueSize);
-            ImGui::ProgressBar(occupiedBlockPct, ImVec2(-1.f, 0.f), buf);
-            float updateBlockPct =
-                (float)_readBackData[1] / _updateBlockQueueSize;
-            sprintf_s(buf, 64, "%d/%d UpdateBlocks",
-                _readBackData[1], _updateBlockQueueSize);
-            ImGui::ProgressBar(updateBlockPct, ImVec2(-1.f, 0.f), buf);
-            float newQueuePct =
-                (float)_readBackData[2] / _newOccupiedBlocksSize;
-            sprintf_s(buf, 64, "%d/%d NewQueueBlocks",
-                _readBackData[2], _newOccupiedBlocksSize);
-            ImGui::ProgressBar(newQueuePct, ImVec2(-1.f, 0.f), buf);
-            float freeQueuePct =
-                (float)_readBackData[3] / _freedOccupiedBlocksSize;
-            sprintf_s(buf, 64, "%d/%d FreeQueueBlocks",
-                _readBackData[3], _freedOccupiedBlocksSize);
-            ImGui::ProgressBar(freeQueuePct, ImVec2(-1.f, 0.f), buf);
-        }
-        ImGui::Text("BlockUpdate CS Threadgroup Size:");
-        static int iTGSize = (int)_TGSize;
-        ImGui::RadioButton("4x4x4##TG", &iTGSize, k64);
-        ImGui::RadioButton("8x8x8##TG", &iTGSize, k512);
-        if (iTGSize != (int)_TGSize) {
-            if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
-                iTGSize = (int)_TGSize;
-            } else {
-                _TGSize = (ThreadGroup)iTGSize;
-                _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                    _renderBlockVoxelRatio, _TGSize);
-                _CreateFuseBlockVolAndRelatedBuf(_curReso, _fuseBlockVoxelRatio);
-            }
-        }
-        ImGui::Separator();
-        ImGui::Checkbox("StepInfoTex", &_useStepInfoTex);
-        ImGui::SameLine();
-        ImGui::Checkbox("DebugGrid", &_stepInfoDebug);
-        ImGui::Separator();
-        static int iFilterType = (int)_filterType;
-        ImGui::RadioButton("No Filter", &iFilterType, kNoFilter);
-        ImGui::RadioButton("Linear Filter", &iFilterType, kLinearFilter);
-        ImGui::RadioButton("Linear Sampler", &iFilterType, kSamplerLinear);
-        ImGui::RadioButton("Aniso Sampler", &iFilterType, kSamplerAniso);
-        if (_volBuf.GetType() != ManagedBuf::k3DTexBuffer &&
-            iFilterType > kLinearFilter) {
-            iFilterType = _filterType;
-        }
-        _filterType = (FilterType)iFilterType;
-
-        ImGui::Separator();
-        ImGui::Text("Buffer Settings:");
-        static int uBufferBitChoice = _volBuf.GetBit();
-        static int uBufferTypeChoice = _volBuf.GetType();
-        ImGui::RadioButton("8Bit", &uBufferBitChoice,
-            ManagedBuf::k8Bit); ImGui::SameLine();
-        ImGui::RadioButton("16Bit", &uBufferBitChoice,
-            ManagedBuf::k16Bit); ImGui::SameLine();
-        ImGui::RadioButton("32Bit", &uBufferBitChoice,
-            ManagedBuf::k32Bit);
-        ImGui::RadioButton("Use Typed Buffer", &uBufferTypeChoice,
-            ManagedBuf::kTypedBuffer);
-        ImGui::RadioButton("Use Texture3D Buffer", &uBufferTypeChoice,
-            ManagedBuf::k3DTexBuffer);
-        if (iFilterType > kLinearFilter &&
-            uBufferTypeChoice != ManagedBuf::k3DTexBuffer) {
-            uBufferTypeChoice = _volBuf.GetType();
-        }
-        if ((uBufferTypeChoice != _volBuf.GetType() ||
-            uBufferBitChoice != _volBuf.GetBit()) &&
-            !_volBuf.ChangeResource(_volBuf.GetReso(),
-            (ManagedBuf::Type)uBufferTypeChoice,
-                (ManagedBuf::Bit)uBufferBitChoice)) {
-            uBufferTypeChoice = _volBuf.GetType();
-        }
-
-        ImGui::Separator();
-        ImGui::Columns(2, "Block Ratio");
-        ImGui::Text("FuseBlockRatio:"); ImGui::NextColumn();
-        ImGui::Text("RenderBlockRatio:"); ImGui::NextColumn();
-        static int fuseBlockRatio = (int)_fuseBlockVoxelRatio;
-        static int renderBlockRatio = (int)_renderBlockVoxelRatio;
-        ImGui::RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4);
-        ImGui::NextColumn();
-        ImGui::RadioButton("4x4x4##Render", &renderBlockRatio, 4);
-        ImGui::NextColumn();
-        ImGui::RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8);
-        ImGui::NextColumn();
-        ImGui::RadioButton("8x8x8##Render", &renderBlockRatio, 8);
-        ImGui::NextColumn();
-        ImGui::RadioButton("16x16x16##Fuse", &fuseBlockRatio, 16);
-        ImGui::NextColumn();
-        ImGui::RadioButton("16x16x16##Render", &renderBlockRatio, 16);
-        ImGui::NextColumn(); ImGui::NextColumn();
-        ImGui::RadioButton("32x32x32##Render", &renderBlockRatio, 32);
-
-        if (fuseBlockRatio != _fuseBlockVoxelRatio) {
-            if (!(fuseBlockRatio == 4 && _TGSize != k64) &&
-                fuseBlockRatio <= renderBlockRatio) {
-                _fuseBlockVoxelRatio = fuseBlockRatio;
-                _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                    _renderBlockVoxelRatio, _TGSize);
-                _CreateFuseBlockVolAndRelatedBuf(
-                    _curReso, _fuseBlockVoxelRatio);
-            } else {
-                fuseBlockRatio = _fuseBlockVoxelRatio;
-            }
-        }
-        if (renderBlockRatio != _renderBlockVoxelRatio) {
-            if (renderBlockRatio >= fuseBlockRatio) {
-                _renderBlockVoxelRatio = renderBlockRatio;
-                _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                    _renderBlockVoxelRatio, _TGSize);
-                _CreateRenderBlockVol(
-                    _volBuf.GetReso(), _renderBlockVoxelRatio);
-                _CreateFuseBlockVolAndRelatedBuf(
-                    _curReso, _fuseBlockVoxelRatio);
-            } else {
-                renderBlockRatio = _renderBlockVoxelRatio;
-            }
-        }
-        ImGui::Columns(1);
-        ImGui::Separator();
-
-        ImGui::Text("Volume Size Settings:");
-        static uint3 uiReso = _volBuf.GetReso();
-        ImGui::AlignFirstTextHeightToWidgets();
-        ImGui::Text("X:"); ImGui::SameLine();
-        ImGui::RadioButton("128##X", (int*)&uiReso.x, 128); ImGui::SameLine();
-        ImGui::RadioButton("256##X", (int*)&uiReso.x, 256); ImGui::SameLine();
-        ImGui::RadioButton("384##X", (int*)&uiReso.x, 384); ImGui::SameLine();
-        ImGui::RadioButton("512##X", (int*)&uiReso.x, 512);
-
-        ImGui::AlignFirstTextHeightToWidgets();
-        ImGui::Text("Y:"); ImGui::SameLine();
-        ImGui::RadioButton("128##Y", (int*)&uiReso.y, 128); ImGui::SameLine();
-        ImGui::RadioButton("256##Y", (int*)&uiReso.y, 256); ImGui::SameLine();
-        ImGui::RadioButton("384##Y", (int*)&uiReso.y, 384); ImGui::SameLine();
-        ImGui::RadioButton("512##Y", (int*)&uiReso.y, 512);
-
-        ImGui::AlignFirstTextHeightToWidgets();
-        ImGui::Text("Z:"); ImGui::SameLine();
-        ImGui::RadioButton("128##Z", (int*)&uiReso.z, 128); ImGui::SameLine();
-        ImGui::RadioButton("256##Z", (int*)&uiReso.z, 256); ImGui::SameLine();
-        ImGui::RadioButton("384##Z", (int*)&uiReso.z, 384); ImGui::SameLine();
-        ImGui::RadioButton("512##Z", (int*)&uiReso.z, 512);
-        if ((_IsResolutionChanged(uiReso, _submittedReso) ||
-            _volBuf.GetType() != uBufferTypeChoice) &&
-            _volBuf.ChangeResource(
-                uiReso, _volBuf.GetType(), ManagedBuf::k32Bit)) {
-            PRINTINFO("Reso:%dx%dx%d", uiReso.x, uiReso.y, uiReso.z);
-            _submittedReso = uiReso;
+    if (!ImGui::CollapsingHeader("Sparse Volume", 0, true, true)) {
+        return;
+    }
+    ImGui::Checkbox("Block Volume Update", &_blockVolumeUpdate);
+    ImGui::SameLine();
+    ImGui::Checkbox("Debug", &_readBackGPUBufStatus);
+    if (_readBackGPUBufStatus && _blockVolumeUpdate) {
+        char buf[64];
+        float occupiedBlockPct =
+            (float)_readBackData[0] / _occupiedBlockQueueSize;
+        sprintf_s(buf, 64, "%d/%d OccupiedBlocks",
+            _readBackData[0], _occupiedBlockQueueSize);
+        ImGui::ProgressBar(occupiedBlockPct, ImVec2(-1.f, 0.f), buf);
+        float updateBlockPct =
+            (float)_readBackData[1] / _updateBlockQueueSize;
+        sprintf_s(buf, 64, "%d/%d UpdateBlocks",
+            _readBackData[1], _updateBlockQueueSize);
+        ImGui::ProgressBar(updateBlockPct, ImVec2(-1.f, 0.f), buf);
+        float newQueuePct =
+            (float)_readBackData[2] / _newOccupiedBlocksSize;
+        sprintf_s(buf, 64, "%d/%d NewQueueBlocks",
+            _readBackData[2], _newOccupiedBlocksSize);
+        ImGui::ProgressBar(newQueuePct, ImVec2(-1.f, 0.f), buf);
+        float freeQueuePct =
+            (float)_readBackData[3] / _freedOccupiedBlocksSize;
+        sprintf_s(buf, 64, "%d/%d FreeQueueBlocks",
+            _readBackData[3], _freedOccupiedBlocksSize);
+        ImGui::ProgressBar(freeQueuePct, ImVec2(-1.f, 0.f), buf);
+    }
+    ImGui::Text("BlockUpdate CS Threadgroup Size:");
+    static int iTGSize = (int)_TGSize;
+    ImGui::RadioButton("4x4x4##TG", &iTGSize, k64);
+    ImGui::RadioButton("8x8x8##TG", &iTGSize, k512);
+    if (iTGSize != (int)_TGSize) {
+        if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
+            iTGSize = (int)_TGSize;
         } else {
-            uiReso = _submittedReso;
-        }
-        ImGui::SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
-        static float fVoxelSize = _volParam->fVoxelSize;
-        if (ImGui::SliderFloat("VoxelSize",
-            &fVoxelSize, 1.f/256.f,10.f / 256.f)) {
-            _UpdateVolumeSettings(_curReso, fVoxelSize);
+            _TGSize = (ThreadGroup)iTGSize;
             _UpdateBlockSettings(_fuseBlockVoxelRatio,
                 _renderBlockVoxelRatio, _TGSize);
-        }
-
-        ImGui::Separator();
-        if (ImGui::Button("Recompile All Shaders")) {
-            _CreatePSOs();
-        }
-        ImGui::Separator();
-        if (ImGui::Button("Reset Volume")) {
-            OnReset();
+            _CreateFuseBlockVolAndRelatedBuf(_curReso, _fuseBlockVoxelRatio);
         }
     }
+    ImGui::Separator();
+    ImGui::Checkbox("StepInfoTex", &_useStepInfoTex);
+    ImGui::SameLine();
+    ImGui::Checkbox("DebugGrid", &_stepInfoDebug);
+    ImGui::Separator();
+    static int iFilterType = (int)_filterType;
+    ImGui::RadioButton("No Filter", &iFilterType, kNoFilter);
+    ImGui::RadioButton("Linear Filter", &iFilterType, kLinearFilter);
+    ImGui::RadioButton("Linear Sampler", &iFilterType, kSamplerLinear);
+    ImGui::RadioButton("Aniso Sampler", &iFilterType, kSamplerAniso);
+    if (_volBuf.GetType() != ManagedBuf::k3DTexBuffer &&
+        iFilterType > kLinearFilter) {
+        iFilterType = _filterType;
+    }
+    _filterType = (FilterType)iFilterType;
+
+    ImGui::Separator();
+    ImGui::Text("Buffer Settings:");
+    static int uBufferBitChoice = _volBuf.GetBit();
+    static int uBufferTypeChoice = _volBuf.GetType();
+    ImGui::RadioButton("8Bit", &uBufferBitChoice,
+        ManagedBuf::k8Bit); ImGui::SameLine();
+    ImGui::RadioButton("16Bit", &uBufferBitChoice,
+        ManagedBuf::k16Bit); ImGui::SameLine();
+    ImGui::RadioButton("32Bit", &uBufferBitChoice,
+        ManagedBuf::k32Bit);
+    ImGui::RadioButton("Use Typed Buffer", &uBufferTypeChoice,
+        ManagedBuf::kTypedBuffer);
+    ImGui::RadioButton("Use Texture3D Buffer", &uBufferTypeChoice,
+        ManagedBuf::k3DTexBuffer);
+    if (iFilterType > kLinearFilter &&
+        uBufferTypeChoice != ManagedBuf::k3DTexBuffer) {
+        uBufferTypeChoice = _volBuf.GetType();
+    }
+    if ((uBufferTypeChoice != _volBuf.GetType() ||
+        uBufferBitChoice != _volBuf.GetBit()) &&
+        !_volBuf.ChangeResource(_volBuf.GetReso(),
+        (ManagedBuf::Type)uBufferTypeChoice,
+            (ManagedBuf::Bit)uBufferBitChoice)) {
+        uBufferTypeChoice = _volBuf.GetType();
+    }
+
+    ImGui::Separator();
+    ImGui::Columns(2, "Block Ratio");
+    ImGui::Text("FuseBlockRatio:"); ImGui::NextColumn();
+    ImGui::Text("RenderBlockRatio:"); ImGui::NextColumn();
+    static int fuseBlockRatio = (int)_fuseBlockVoxelRatio;
+    static int renderBlockRatio = (int)_renderBlockVoxelRatio;
+    ImGui::RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4);
+    ImGui::NextColumn();
+    ImGui::RadioButton("4x4x4##Render", &renderBlockRatio, 4);
+    ImGui::NextColumn();
+    ImGui::RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8);
+    ImGui::NextColumn();
+    ImGui::RadioButton("8x8x8##Render", &renderBlockRatio, 8);
+    ImGui::NextColumn();
+    ImGui::RadioButton("16x16x16##Fuse", &fuseBlockRatio, 16);
+    ImGui::NextColumn();
+    ImGui::RadioButton("16x16x16##Render", &renderBlockRatio, 16);
+    ImGui::NextColumn(); ImGui::NextColumn();
+    ImGui::RadioButton("32x32x32##Render", &renderBlockRatio, 32);
+
+    if (fuseBlockRatio != _fuseBlockVoxelRatio) {
+        if (!(fuseBlockRatio == 4 && _TGSize != k64) &&
+            fuseBlockRatio <= renderBlockRatio) {
+            _fuseBlockVoxelRatio = fuseBlockRatio;
+            _UpdateBlockSettings(_fuseBlockVoxelRatio,
+                _renderBlockVoxelRatio, _TGSize);
+            _CreateFuseBlockVolAndRelatedBuf(
+                _curReso, _fuseBlockVoxelRatio);
+        } else {
+            fuseBlockRatio = _fuseBlockVoxelRatio;
+        }
+    }
+    if (renderBlockRatio != _renderBlockVoxelRatio) {
+        if (renderBlockRatio >= fuseBlockRatio) {
+            _renderBlockVoxelRatio = renderBlockRatio;
+            _UpdateBlockSettings(_fuseBlockVoxelRatio,
+                _renderBlockVoxelRatio, _TGSize);
+            _CreateRenderBlockVol(
+                _volBuf.GetReso(), _renderBlockVoxelRatio);
+            _CreateFuseBlockVolAndRelatedBuf(
+                _curReso, _fuseBlockVoxelRatio);
+        } else {
+            renderBlockRatio = _renderBlockVoxelRatio;
+        }
+    }
+    ImGui::Columns(1);
+    ImGui::Separator();
+
+    ImGui::Text("Volume Size Settings:");
+    static uint3 uiReso = _volBuf.GetReso();
+    ImGui::AlignFirstTextHeightToWidgets();
+    ImGui::Text("X:"); ImGui::SameLine();
+    ImGui::RadioButton("128##X", (int*)&uiReso.x, 128); ImGui::SameLine();
+    ImGui::RadioButton("256##X", (int*)&uiReso.x, 256); ImGui::SameLine();
+    ImGui::RadioButton("384##X", (int*)&uiReso.x, 384); ImGui::SameLine();
+    ImGui::RadioButton("512##X", (int*)&uiReso.x, 512);
+
+    ImGui::AlignFirstTextHeightToWidgets();
+    ImGui::Text("Y:"); ImGui::SameLine();
+    ImGui::RadioButton("128##Y", (int*)&uiReso.y, 128); ImGui::SameLine();
+    ImGui::RadioButton("256##Y", (int*)&uiReso.y, 256); ImGui::SameLine();
+    ImGui::RadioButton("384##Y", (int*)&uiReso.y, 384); ImGui::SameLine();
+    ImGui::RadioButton("512##Y", (int*)&uiReso.y, 512);
+
+    ImGui::AlignFirstTextHeightToWidgets();
+    ImGui::Text("Z:"); ImGui::SameLine();
+    ImGui::RadioButton("128##Z", (int*)&uiReso.z, 128); ImGui::SameLine();
+    ImGui::RadioButton("256##Z", (int*)&uiReso.z, 256); ImGui::SameLine();
+    ImGui::RadioButton("384##Z", (int*)&uiReso.z, 384); ImGui::SameLine();
+    ImGui::RadioButton("512##Z", (int*)&uiReso.z, 512);
+    if ((_IsResolutionChanged(uiReso, _submittedReso) ||
+        _volBuf.GetType() != uBufferTypeChoice) &&
+        _volBuf.ChangeResource(
+            uiReso, _volBuf.GetType(), ManagedBuf::k32Bit)) {
+        PRINTINFO("Reso:%dx%dx%d", uiReso.x, uiReso.y, uiReso.z);
+        _submittedReso = uiReso;
+    } else {
+        uiReso = _submittedReso;
+    }
+    ImGui::SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
+    static float fVoxelSize = _volParam->fVoxelSize;
+    if (ImGui::SliderFloat("VoxelSize",
+        &fVoxelSize, 1.f / 256.f, 10.f / 256.f)) {
+        _UpdateVolumeSettings(_curReso, fVoxelSize);
+        _UpdateBlockSettings(_fuseBlockVoxelRatio,
+            _renderBlockVoxelRatio, _TGSize);
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Recompile All Shaders")) {
+        _CreatePSOs();
+    }
+    ImGui::Separator();
+    if (ImGui::Button("Reset Volume")) {
+        OnReset();
+    }
+}
+
+ColorBuffer*
+TSDFVolume::GetOutTex()
+{
+    return &_extractedDepth;
 }
 
 void
@@ -837,13 +923,19 @@ TSDFVolume::_CreateRenderBlockVol(const uint3& reso, const uint ratio)
 }
 
 void
-TSDFVolume::_UpdatePerFrameData(const DirectX::XMMATRIX& mProj_T,
-    const DirectX::XMMATRIX& mView_T, const DirectX::XMFLOAT4& eyePos)
+TSDFVolume::_UpdateRenderCamData(const DirectX::XMMATRIX& mProj_T,
+    const DirectX::XMMATRIX& mView_T)
 {
-    _cbPerFrame.mProjView = XMMatrixMultiply(mView_T, mProj_T);;
+    _cbPerFrame.mProjView = XMMatrixMultiply(mView_T, mProj_T);
     _cbPerFrame.mView = mView_T;
     _cbPerFrame.mViewInv = XMMatrixInverse(nullptr, mView_T);
-    _cbPerFrame.f4ViewPos = eyePos;
+}
+
+void
+TSDFVolume::_UpdateSensorData(const DirectX::XMMATRIX& mSensorView_T)
+{
+    _cbPerFrame.mDepthView = mSensorView_T;
+    _cbPerFrame.mDepthViewInv = XMMatrixInverse(nullptr, mSensorView_T);
 }
 
 void
@@ -1089,9 +1181,10 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         }
     } else {
         GPU_PROFILE(cmdCtx, L"Volume Updating");
+        _CleanRenderBlockVol(cptCtx);
         cptCtx.SetPipelineState(_cptUpdatePSO[buf.type][type]);
         Bind(cptCtx, 2, 0, 2, buf.UAV);
-        Bind(cptCtx, 2, 2, 1, &_fuseBlockVol.GetUAV());
+        Bind(cptCtx, 2, 2, 1, &_renderBlockVol.GetUAV());
         Bind(cptCtx, 3, 0, 1, &pDepthTex->GetSRV());
         if (!_typedLoadSupported) {
             Bind(cptCtx, 3, 1, 2, buf.SRV);
@@ -1101,10 +1194,10 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
 }
 
 void
-TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx)
+TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
 {
-    GPU_PROFILE(gfxCtx, L"Render NearFar");
-    gfxCtx.SetPipelineState(_gfxStepInfoVCamPSO);
+    gfxCtx.SetPipelineState(
+        toSurface ? _gfxStepInfoSensorPSO : _gfxStepInfoVCamPSO);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     gfxCtx.SetRenderTargets(1, &_nearFarTex.GetRTV());
     Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
@@ -1117,26 +1210,30 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx)
 
 void
 TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
-    const ManagedBuf::BufInterface& buf)
+    const ManagedBuf::BufInterface& buf, bool toOutTex)
 {
-    GPU_PROFILE(gfxCtx, L"Rendering");
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
-    gfxCtx.SetPipelineState(_gfxVCamRenderPSO[buf.type][type][_filterType]);
+    gfxCtx.SetPipelineState(toOutTex
+        ? _gfxSensorRenderPSO[buf.type][type][_filterType]
+        : _gfxVCamRenderPSO[buf.type][type][_filterType]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     Bind(gfxCtx, 3, 0, 1, buf.SRV);
     if (_useStepInfoTex) {
         Bind(gfxCtx, 3, 1, 1, &_nearFarTex.GetSRV());
         Bind(gfxCtx, 3, 2, 1, &_renderBlockVol.GetSRV());
     }
-    gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),
-        Graphics::g_SceneDepthBuffer.GetDSV());
+    if (toOutTex) {
+        gfxCtx.SetRenderTargets(1, &_extractedDepth.GetRTV());
+    } else {
+        gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),
+            Graphics::g_SceneDepthBuffer.GetDSV());
+    }
     gfxCtx.Draw(3);
 }
 
 void
 TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
 {
-    GPU_PROFILE(gfxCtx, L"Render BrickGrid");
     gfxCtx.SetPipelineState(_gfxStepInfoDebugPSO);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
     gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),

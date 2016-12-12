@@ -26,8 +26,8 @@ int2 GetProjectedUVDepth(uint3 u3DTid, out float fDepth)
         (u3DTid - vParam.u3VoxelReso * 0.5f + 0.5f) * vParam.fVoxelSize, 1.f));
     fDepth = -f4Temp.z;
     // To match opencv camera coordinate
-    f4Temp.y *= -1.f;
     int2 i2uv = f4Temp.xy / fDepth * DEPTH_F + DEPTH_C;
+    i2uv.y = i2DepthReso.y - i2uv.y;
     return i2uv;
 }
 
