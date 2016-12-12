@@ -37,6 +37,7 @@ namespace {
     bool _stepInfoDebug = false;
     bool _blockVolumeUpdate = true;
     bool _readBackGPUBufStatus = true;
+    bool _noInstance = false;
 
     // define the geometry for a triangle.
     const XMFLOAT3 cubeVertices[] = {
@@ -70,8 +71,8 @@ namespace {
     // PSOs for rendering
     GraphicsPSO _gfxVCamRenderPSO[kBuf][kStruct][kFilter];
     GraphicsPSO _gfxSensorRenderPSO[kBuf][kStruct][kFilter];
-    GraphicsPSO _gfxStepInfoVCamPSO;
-    GraphicsPSO _gfxStepInfoSensorPSO;
+    GraphicsPSO _gfxStepInfoVCamPSO[2]; // index is noInstance on/off
+    GraphicsPSO _gfxStepInfoSensorPSO[2]; // index is noInstance on/off
     GraphicsPSO _gfxStepInfoDebugPSO;
     // PSOs for reseting
     ComputePSO _cptFuseBlockVolResetPSO;
@@ -113,7 +114,6 @@ namespace {
         HRESULT hr;
         // Compile Shaders
         ComPtr<ID3DBlob> quadVCamVS, quadSensorVS;
-        ComPtr<ID3DBlob> stepInfoVCamVS, stepInfoSensorVS;
         ComPtr<ID3DBlob> raycastVCamPS[kBuf][kStruct][kFilter];
         ComPtr<ID3DBlob> raycastSensorPS[kBuf][kStruct][kFilter];
         ComPtr<ID3DBlob> volUpdateCS[kBuf][kStruct];
@@ -329,6 +329,7 @@ ObjName.Finalize();
 
         // Create PSO for render near far plane
         ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS;
+        ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2];
         D3D_SHADER_MACRO macro1[] = {
             {"__hlsl", "1"},
             {"DEBUG_VIEW", "0"},
@@ -337,27 +338,30 @@ ObjName.Finalize();
             {nullptr, nullptr}
         };
         V(_Compile(L"StepInfo_ps", macro1, &stepInfoPS));
-        V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS));
+        V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS[0]));
+        V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoVCamVS[1]));
         macro1[2].Definition = "0"; macro1[3].Definition = "1";
-        V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS))
+        V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS[0]));
+        V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoSensorVS[1]));
         macro[1].Definition = "1";
         V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
 
-        _gfxStepInfoVCamPSO.SetRootSignature(_rootsig);
-        _gfxStepInfoVCamPSO.SetPrimitiveRestart(
+        _gfxStepInfoVCamPSO[0].SetRootSignature(_rootsig);
+        _gfxStepInfoVCamPSO[0].SetPrimitiveRestart(
             D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
-        _gfxStepInfoVCamPSO.SetInputLayout(
+        _gfxStepInfoVCamPSO[0].SetInputLayout(
             _countof(inputElementDescs), inputElementDescs);
-        _gfxStepInfoVCamPSO.SetDepthStencilState(
+        _gfxStepInfoVCamPSO[0].SetDepthStencilState(
             Graphics::g_DepthStateDisabled);
-        _gfxStepInfoVCamPSO.SetSampleMask(UINT_MAX);
-        _gfxStepInfoVCamPSO.SetVertexShader(
-            stepInfoVCamVS->GetBufferPointer(),
-            stepInfoVCamVS->GetBufferSize());
-        _gfxStepInfoDebugPSO = _gfxStepInfoVCamPSO;
+        _gfxStepInfoVCamPSO[0].SetSampleMask(UINT_MAX);
+        _gfxStepInfoVCamPSO[0].SetVertexShader(
+            stepInfoVCamVS[0]->GetBufferPointer(),
+            stepInfoVCamVS[0]->GetBufferSize());
+        _gfxStepInfoDebugPSO = _gfxStepInfoVCamPSO[0];
         _gfxStepInfoDebugPSO.SetDepthStencilState(
             Graphics::g_DepthStateReadOnly);
-        _gfxStepInfoVCamPSO.SetRasterizerState(Graphics::g_RasterizerTwoSided);
+        _gfxStepInfoVCamPSO[0].SetRasterizerState(
+            Graphics::g_RasterizerTwoSided);
         D3D12_RASTERIZER_DESC rastDesc = Graphics::g_RasterizerTwoSided;
         rastDesc.FillMode = D3D12_FILL_MODE_WIREFRAME;
         _gfxStepInfoDebugPSO.SetRasterizerState(rastDesc);
@@ -374,25 +378,37 @@ ObjName.Finalize();
         blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
         blendDesc.RenderTarget[0].RenderTargetWriteMask =
             D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN;
-        _gfxStepInfoVCamPSO.SetBlendState(blendDesc);
-        _gfxStepInfoVCamPSO.SetPrimitiveTopologyType(
+        _gfxStepInfoVCamPSO[0].SetBlendState(blendDesc);
+        _gfxStepInfoVCamPSO[0].SetPrimitiveTopologyType(
             D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
         _gfxStepInfoDebugPSO.SetPrimitiveTopologyType(
             D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
         _gfxStepInfoDebugPSO.SetRenderTargetFormats(
             1, &ColorFormat, DepthFormat);
-        _gfxStepInfoVCamPSO.SetRenderTargetFormats(
+        _gfxStepInfoVCamPSO[0].SetRenderTargetFormats(
             1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
-        _gfxStepInfoVCamPSO.SetPixelShader(
+        _gfxStepInfoVCamPSO[0].SetPixelShader(
             stepInfoPS->GetBufferPointer(), stepInfoPS->GetBufferSize());
         _gfxStepInfoDebugPSO.SetPixelShader(
             stepInfoPS->GetBufferPointer(), stepInfoDebugPS->GetBufferSize());
-        _gfxStepInfoSensorPSO = _gfxStepInfoVCamPSO;
-        _gfxStepInfoSensorPSO.SetVertexShader(
-            stepInfoSensorVS->GetBufferPointer(),
-            stepInfoSensorVS->GetBufferSize());
-        _gfxStepInfoSensorPSO.Finalize();
-        _gfxStepInfoVCamPSO.Finalize();
+        _gfxStepInfoSensorPSO[0] = _gfxStepInfoVCamPSO[0];
+        _gfxStepInfoSensorPSO[1] = _gfxStepInfoSensorPSO[0];
+        _gfxStepInfoSensorPSO[1].SetInputLayout(0, nullptr);
+        _gfxStepInfoSensorPSO[0].SetVertexShader(
+            stepInfoSensorVS[0]->GetBufferPointer(),
+            stepInfoSensorVS[0]->GetBufferSize());
+        _gfxStepInfoSensorPSO[1].SetVertexShader(
+            stepInfoSensorVS[1]->GetBufferPointer(),
+            stepInfoSensorVS[1]->GetBufferSize());
+        _gfxStepInfoSensorPSO[0].Finalize();
+        _gfxStepInfoSensorPSO[1].Finalize();
+        _gfxStepInfoVCamPSO[1] = _gfxStepInfoVCamPSO[0];
+        _gfxStepInfoVCamPSO[1].SetInputLayout(0, nullptr);
+        _gfxStepInfoVCamPSO[1].SetVertexShader(
+            stepInfoVCamVS[1]->GetBufferPointer(),
+            stepInfoVCamVS[1]->GetBufferSize());
+        _gfxStepInfoVCamPSO[0].Finalize();
+        _gfxStepInfoVCamPSO[1].Finalize();
         _gfxStepInfoDebugPSO.Finalize();
     }
 
@@ -736,6 +752,7 @@ TSDFVolume::RenderGui()
     }
     ImGui::Separator();
     ImGui::Checkbox("StepInfoTex", &_useStepInfoTex);
+    ImGui::Checkbox("NoInstance", &_noInstance);
     ImGui::SameLine();
     ImGui::Checkbox("DebugGrid", &_stepInfoDebug);
     ImGui::Separator();
@@ -999,7 +1016,6 @@ void
 TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
     const ManagedBuf::BufInterface& buf, bool updateCB)
 {
-    GPU_PROFILE(cptCtx, L"TSDFVolume Reset");
     cptCtx.SetPipelineState(_cptTSDFBufResetPSO[buf.type]);
     cptCtx.SetRootSignature(_rootsig);
     if (updateCB) {
@@ -1013,7 +1029,6 @@ TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
 void
 TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB)
 {
-    GPU_PROFILE(cptCtx, L"FuseBlockVol Reset");
     cptCtx.SetPipelineState(_cptFuseBlockVolResetPSO);
     cptCtx.SetRootSignature(_rootsig);
     if (updateCB) {
@@ -1029,7 +1044,6 @@ TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB)
 void
 TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 {
-    GPU_PROFILE(cptCtx, L"RenderBlockVol Reset");
     cptCtx.SetPipelineState(_cptRenderBlockVolResetPSO);
     cptCtx.SetRootSignature(_rootsig);
     Bind(cptCtx, 2, 0, 1, &_renderBlockVol.GetUAV());
@@ -1196,16 +1210,22 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
 void
 TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
 {
-    gfxCtx.SetPipelineState(
-        toSurface ? _gfxStepInfoSensorPSO : _gfxStepInfoVCamPSO);
+    gfxCtx.SetPipelineState(toSurface
+        ? _gfxStepInfoSensorPSO[_noInstance]
+        : _gfxStepInfoVCamPSO[_noInstance]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     gfxCtx.SetRenderTargets(1, &_nearFarTex.GetRTV());
     Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
-    gfxCtx.SetIndexBuffer(_cubeTriangleStripIB.IndexBufferView());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
     uint BrickCount = xyz.x * xyz.y * xyz.z / ratio / ratio / ratio;
-    gfxCtx.DrawIndexedInstanced(CUBE_TRIANGLESTRIP_LENGTH, BrickCount, 0, 0, 0);
+    if (_noInstance) {
+        gfxCtx.Draw(BrickCount * 16);
+    } else {
+        gfxCtx.SetIndexBuffer(_cubeTriangleStripIB.IndexBufferView());
+        gfxCtx.DrawIndexedInstanced(
+            CUBE_TRIANGLESTRIP_LENGTH, BrickCount, 0, 0, 0);
+    }
 }
 
 void

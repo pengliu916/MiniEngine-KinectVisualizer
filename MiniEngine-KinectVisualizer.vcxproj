@@ -164,6 +164,7 @@
     <CustomBuild Include="TSDFVolume\TSDFVolume_RayCast_vs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_ps.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_vs.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfoNoInstance_vs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeUpdate_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeReset_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_VoxelUpdate.hlsli" />

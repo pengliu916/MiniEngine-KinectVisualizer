@@ -115,6 +115,9 @@
     <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfo_vs.hlsl">
       <Filter>TSDFVolume</Filter>
     </CustomBuild>
+    <CustomBuild Include="TSDFVolume\TSDFVolume_StepInfoNoInstance_vs.hlsl">
+      <Filter>TSDFVolume</Filter>
+    </CustomBuild>
     <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeUpdate_cs.hlsl">
       <Filter>TSDFVolume</Filter>
     </CustomBuild>
