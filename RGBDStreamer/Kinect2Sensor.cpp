@@ -164,6 +164,7 @@ Kinect2Sensor::Kinect2Sensor(
 Kinect2Sensor::~Kinect2Sensor()
 {
     _streaming.store(false, std::memory_order_relaxed);
+    _backGroundThread.release();
     Shutdown();
     for (uint8_t i = 0; i < kNumBufferTypes; ++i) {
         for (uint8_t j = 0; j < 2; ++j) {
