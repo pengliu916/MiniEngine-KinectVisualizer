@@ -28,7 +28,8 @@ uint GetFakedDepth(uint2 u2uv)
     if (fB2M4AC >= 0.f) {
         fResult = min((-fB - sqrt(fB2M4AC)) / (2.f * fA), fBgDist);
     }
-    if (any(u2uv == uint2(12, 12)) || any(u2uv == uint2(500, 412))) {
+    if (any(u2uv == uint2(12, 12)) || any(u2uv == uint2(500, 412)) ||
+        any(u2uv == uint2(256, 212))) {
         fResult += .2f;
     }
     return fResult * 1000.f;

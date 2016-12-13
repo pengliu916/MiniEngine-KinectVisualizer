@@ -11,6 +11,7 @@ namespace {
     bool _useCS = true;
     bool _streaming = true;
     bool _perFrameUpdate = true;
+    bool _animateFakedDepth = true;
     std::string _texNames[SensorTexGen::kNumTargetTex] =
     {"Depth Raw","Depth Visualized","Infrared Gamma","Color Raw"};
 
@@ -231,7 +232,9 @@ bool
 SensorTexGen::OnRender(CommandContext& EngineContext)
 {
     static float fAnimTime = 0;
-    fAnimTime += static_cast<float>(Core::g_deltaTime);
+    if (_animateFakedDepth) {
+        fAnimTime += static_cast<float>(Core::g_deltaTime);
+    }
     float fx = sin(fAnimTime * 0.5f) * 0.8f;
     float fy = cos(fAnimTime * 0.5f) * 0.8f;
     _cbKinect.f4S.x = fx;
@@ -353,6 +356,7 @@ SensorTexGen::RenderGui()
             _CreatePSOs();
         }
         ImGui::Separator();
+        ImGui::Checkbox("Animate", &_animateFakedDepth);
         ImGui::SliderFloat("BGDist", &_cbKinect.fBgDist, 0.5f, 5.f);
         ImGui::SliderFloat("FGDist", &_cbKinect.f4S.z, 0.5f, 5.f);
         ImGui::Separator();
