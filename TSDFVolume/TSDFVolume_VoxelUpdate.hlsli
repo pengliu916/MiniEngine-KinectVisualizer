@@ -24,10 +24,9 @@ int2 GetProjectedUVDepth(uint3 u3DTid, out float fDepth)
 {
     float4 f4Temp = mul(mDepthView, float4(
         (u3DTid - vParam.u3VoxelReso * 0.5f + 0.5f) * vParam.fVoxelSize, 1.f));
-    fDepth = -f4Temp.z;
+    fDepth = f4Temp.z;
     // To match opencv camera coordinate
     int2 i2uv = f4Temp.xy / fDepth * DEPTH_F + DEPTH_C;
-    i2uv.y = i2DepthReso.y - i2uv.y;
     return i2uv;
 }
 
@@ -37,7 +36,7 @@ bool GetValidDepthUV(uint3 u3VolIdx, out float fDepth, out int2 i2uv)
     i2uv = GetProjectedUVDepth(u3VolIdx, fDepth);
     // Discard voxels whose projected image lay outside of depth image
     // or depth value is out of sensor range
-    if (fDepth < 0.f || fDepth > f2DepthRange.y ||
+    if (fDepth > 0.f || fDepth < f2DepthRange.y ||
         any(i2uv > i2DepthReso || i2uv < 0)) {
         bResult = false;
     }
@@ -69,8 +68,8 @@ bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
     int2 i2uv;
     float fDepthToSensor;
     if (GetValidDepthUV(u3DTid, fDepthToSensor, i2uv)) {
-        float fSurfaceDepthToSensor = tex_srvDepth.Load(int3(i2uv, 0)) / 1000.f;
-        float fSD = fSurfaceDepthToSensor - fDepthToSensor;
+        float fSurfaceDepthToSensor = tex_srvDepth.Load(int3(i2uv, 0)) * 0.001f;
+        float fSD = fSurfaceDepthToSensor + fDepthToSensor;
         // Discard voxels if it's far behind surface
         if (fSD > -vParam.fTruncDist) {
             float fTSD = min(fSD / vParam.fTruncDist, 1.f);

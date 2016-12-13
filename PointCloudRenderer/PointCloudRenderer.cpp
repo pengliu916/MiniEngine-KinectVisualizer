@@ -7,7 +7,6 @@ using namespace Microsoft::WRL;
 
 PointCloudRenderer::PointCloudRenderer()
 {
-    _cbData.f4Offset = XMFLOAT4(0.f, 0.f, -2.5f, 0.f);
     _cbData.f4AmbientCol = XMFLOAT4(0.1f, 0.1f, 0.1f, 0.0f);
     _cbData.f4LightAttn = XMFLOAT4(1.f, 0.01f, 0.0f, 0.0f);
     _cbData.f4LightPos = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -137,7 +136,7 @@ PointCloudRenderer::UpdateCB(const DirectX::XMFLOAT2& colReso,
 void
 PointCloudRenderer::OnRender(GraphicsContext& gfxContext, 
     const ColorBuffer* pDepthMap, const ColorBuffer* pColorMap,
-    const DirectX::XMMATRIX& mProjView_T)
+    const DirectX::XMMATRIX& mProjView_T, const DirectX::XMMATRIX& mDepth)
 {
     GPU_PROFILE(gfxContext, L"HeightMap Render");
 
@@ -151,6 +150,7 @@ PointCloudRenderer::OnRender(GraphicsContext& gfxContext,
         D3D12_RESOURCE_STATE_DEPTH_WRITE, true);
     // Row major to Column major
     _cbData.mProjView = mProjView_T;
+    _cbData.mDepthSensor = mDepth;
     gfxContext.ClearColor(Graphics::g_SceneColorBuffer);
     gfxContext.ClearDepth(Graphics::g_SceneDepthBuffer);
     gfxContext.SetDynamicConstantBufferView(
@@ -178,15 +178,9 @@ PointCloudRenderer::RenderGui()
         ImGui::SameLine();
         ImGui::RadioButton(
             "Shaded", (int*)&_renderMode, RenderMode::kShadedSurface);
-        static float offset[3] = 
-            {_cbData.f4Offset.x, _cbData.f4Offset.y, _cbData.f4Offset.z};
-        ImGui::DragFloat3("PC Offset", offset, 0.1f);
         if (_renderMode != PointCloudRenderer::kPointCloud) {
             ImGui::SliderFloat(
                 "MaxQuadZSpan", &_cbData.fQuadZSpanThreshold, 0.01f, 0.15f);
         }
-        _cbData.f4Offset.x = offset[0];
-        _cbData.f4Offset.y = offset[1];
-        _cbData.f4Offset.z = offset[2];
     }
 }

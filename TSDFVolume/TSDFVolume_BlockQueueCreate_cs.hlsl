@@ -22,8 +22,7 @@ bool IsPointVisible(float4 f4Pos)
 {
     bool bResult = false;
     float4 f4Pos_c = mul(mDepthView, f4Pos);
-    f4Pos_c.z *= -1.f;
-    if (f4Pos_c.z > f2DepthRange.x && f4Pos_c.z < f2DepthRange.y) {
+    if (f4Pos_c.z < f2DepthRange.x && f4Pos_c.z > f2DepthRange.y) {
         float2 f2ImgIdx = f4Pos_c.xy * DEPTH_F / f4Pos_c.z + DEPTH_C;
         if (all(f2ImgIdx >= float2(0.f, 0.f)) && all(f2ImgIdx <= i2DepthReso)) {
             bResult = true;
@@ -123,11 +122,10 @@ bool GetValidReprojectedPoint(uint2 u2Idx, out float3 f3Pos)
     bool bResult = false;
     f3Pos = 0.f;
     if (all(int2(u2Idx) < i2DepthReso)) {
-        float z = tex_srvDepth.Load(uint3(u2Idx.x, i2DepthReso.y - u2Idx.y, 0))
-            / 1000.f;
-        if (z >= f2DepthRange.x && z <= f2DepthRange.y) {
+        float z = tex_srvDepth.Load(uint3(u2Idx.xy, 0)) * -0.001f;
+        if (z < f2DepthRange.x && z > f2DepthRange.y) {
             float2 f2xy = (u2Idx - DEPTH_C) / DEPTH_F * z;
-            float4 f4Pos = float4(f2xy, -z, 1.f);
+            float4 f4Pos = float4(f2xy, z, 1.f);
             f3Pos = mul(mDepthViewInv, f4Pos).xyz;
             // Make sure the pos is covered in the volume
             if (any(abs(f3Pos) > (vParam.f3HalfVolSize - vParam.fTruncDist))) {

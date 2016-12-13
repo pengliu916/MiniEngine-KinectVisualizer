@@ -465,7 +465,7 @@ TSDFVolume::TSDFVolume()
     _volParam = &_cbPerCall.vParam;
     _volParam->fMaxWeight = 20.f;
     _volParam->fVoxelSize = 1.f / 100.f;
-    _cbPerCall.f2DepthRange = float2(0.2f, 12.f);
+    _cbPerCall.f2DepthRange = float2(-0.2f, -12.f);
 }
 
 TSDFVolume::~TSDFVolume()

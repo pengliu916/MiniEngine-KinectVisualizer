@@ -19,7 +19,8 @@ public:
         const DirectX::XMFLOAT2& depReso, const DirectX::XMFLOAT4& colFC, 
         const DirectX::XMFLOAT4& depFC, const DirectX::XMMATRIX& dep2Col);
     void OnRender(GraphicsContext& gfxContext, const ColorBuffer* pDepthMap,
-        const ColorBuffer* pColorMap, const DirectX::XMMATRIX& mProjView_T);
+        const ColorBuffer* pColorMap, const DirectX::XMMATRIX& mProjView_T,
+        const DirectX::XMMATRIX& mDepthSensor_T);
     void RenderGui();
 
 private:

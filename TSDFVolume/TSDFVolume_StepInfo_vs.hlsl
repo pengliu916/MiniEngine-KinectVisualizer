@@ -24,10 +24,10 @@ void main(uint uInstanceID : SV_InstanceID, in float4 f4Pos : POSITION,
 #endif // FOR_VCAMERA
 #if FOR_SENSOR
         float4 f4Temp = mul(mDepthView, f4Pos);
-        float fz = -f4Temp.z;
         float2 f2HalfReso = i2DepthReso >> 1;
-        float2 f2xy = (f4Temp.xy / fz * DEPTH_F + DEPTH_C
+        float2 f2xy = (f4Temp.xy / f4Temp.z * DEPTH_F + DEPTH_C
             - f2HalfReso) / f2HalfReso;
+        f2xy.y *= -1.f;
         f4ProjPos = float4(f2xy, 1.f, 1.f);
         float fVecLength = length(f4Temp.xyz);
 #endif // FOR_SENSOR

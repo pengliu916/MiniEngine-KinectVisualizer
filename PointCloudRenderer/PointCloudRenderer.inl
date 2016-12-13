@@ -23,12 +23,12 @@ typedef DirectX::XMMATRIX matrix;
 #if __cplusplus || (__hlsl)
 CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0) {
     matrix mProjView;
+    matrix mDepthSensor;
     float2 f2ColorReso;
     float2 f2DepthInfraredReso;
     float4 f4ColorCxyFxy;
     float4 f4DepthCxyFxy;
     matrix mDepth2Color;
-    float4 f4Offset;
     float4 f4LightPos;
     float4 f4LightAttn;
     float4 f4AmbientCol;

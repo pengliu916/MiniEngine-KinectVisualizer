@@ -150,7 +150,7 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
         _pointCloudRenderer.OnRender(EngineContext.GetGraphicsContext(),
             _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
             _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
-            mProjView_T);
+            mProjView_T, _depthViewInv_T);
         break;
     default:
         break;

@@ -56,13 +56,12 @@ void main(point uint VertID[1] : POSITION0,
     float2 Tex[4];
     [unroll] for (int i = 0; i < 4; i++) {
         uint2 _xy = xy + offset[i];
-        float depth = z[i] * 0.001f;
+        float depth = z[i] * -0.001f;
         Pos[i] = float4((_xy - f4DepthCxyFxy.xy) /
             f4DepthCxyFxy.zw * depth, depth, 1.f);
         float4 pos_col = mul(mDepth2Color, Pos[i]);
         Tex[i] = pos_col.xy / pos_col.z * f4ColorCxyFxy.zw + f4ColorCxyFxy.xy;
-        Pos[i] = Pos[i] * float4(1.f, -1.f, 1.f, 1.f) + f4Offset;
-        projectedPos[i] = mul(mProjView, Pos[i]);
+        projectedPos[i] = mul(mProjView, mul(mDepthSensor, Pos[i]));
     }
 #if SHADED
     float3 nor[4] = {Pos[1].xyz - Pos[0].xyz, Pos[2].xyz - Pos[0].xyz,
