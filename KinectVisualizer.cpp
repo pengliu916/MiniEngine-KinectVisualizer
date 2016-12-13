@@ -20,7 +20,8 @@ namespace {
 
 KinectVisualizer::KinectVisualizer(
     uint32_t width, uint32_t height, std::wstring name)
-    :_sensorTexGen(true, true, true)
+    : _sensorTexGen(true, true, true),
+    _normalGen(uint2(512, 424), L"NormalMap")
 {
     _width = width;
     _height = height;
@@ -70,6 +71,8 @@ HRESULT KinectVisualizer::OnCreateResource()
 
     _tsdfVolume.OnCreateResource(depthReso, colorReso);
 
+    _normalGen.OnCreateResource();
+
     OnSizeChanged();
 
     return S_OK;
@@ -112,6 +115,7 @@ void KinectVisualizer::OnUpdate()
             break;
         }
         _sensorTexGen.RenderGui();
+        _normalGen.RenderGui();
     }
     ImGui::End();
 }
@@ -155,7 +159,9 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
     default:
         break;
     }
-
+    _normalGen.OnProcessing(EngineContext.GetComputeContext(),
+        _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex));
+    _normalGen.GetNormalMap()->GuiShow();
 }
 
 void KinectVisualizer::OnDestroy()

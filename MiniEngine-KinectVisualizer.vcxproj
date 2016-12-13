@@ -111,6 +111,8 @@
     <ClInclude Include="KinectVisualizer.h" />
     <ClCompile Include="KinectVisualizer.cpp" />
     <ClCompile Include="Main.cpp" />
+    <ClInclude Include="NormalGenerator\NormalGenerator.h" />
+    <ClCompile Include="NormalGenerator\NormalGenerator.cpp" />
     <ClInclude Include="PointCloudRenderer\PointCloudRenderer.h" />
     <ClCompile Include="PointCloudRenderer\PointCloudRenderer.cpp" />
     <ClInclude Include="SensorTexGen\LinearFrameAllocator.h" />
@@ -139,6 +141,9 @@
     </CustomBuild>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CustomBuild Include="CalibData.inl" />
+    <CustomBuild Include="NormalGenerator\NormalGenerator_GetNormal_cs.hlsl" />
+    <CustomBuild Include="NormalGenerator\NormalGenerator.inl" />
     <CustomBuild Include="SensorTexGen\SensorTexGen.hlsli" />
     <CustomBuild Include="SensorTexGen\SensorTexGen_Copy_cs.hlsl" />
     <CustomBuild Include="SensorTexGen\SensorTexGen_Copy_ps.hlsl" />
@@ -148,7 +153,6 @@
     <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_PointCloud_vs.hlsl" />
     <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_TexColor_ps.hlsl" />
     <CustomBuild Include="PointCloudRenderer\PointCloudRenderer_TriangleCloud_gs.hlsl" />
-    <CustomBuild Include="CalibData.inl" />
     <CustomBuild Include="PointCloudRenderer\PointCloudRenderer.inl" />
     <CustomBuild Include="SeparableFilter\SeparableFilter_BilateralFilter_cs.hlsl" />
     <CustomBuild Include="SeparableFilter\SeparableFilter_BilateralFilter_ps.hlsl" />

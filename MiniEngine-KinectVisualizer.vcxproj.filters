@@ -127,6 +127,18 @@
     <CustomBuild Include="TSDFVolume\TSDFVolume_VoxelUpdate.hlsli">
       <Filter>TSDFVolume</Filter>
     </CustomBuild>
+    <ClInclude Include="NormalGenerator\NormalGenerator.h">
+      <Filter>NormalGenerator</Filter>
+    </ClInclude>
+    <ClCompile Include="NormalGenerator\NormalGenerator.cpp">
+      <Filter>NormalGenerator</Filter>
+    </ClCompile>
+    <CustomBuild Include="NormalGenerator\NormalGenerator.inl">
+      <Filter>NormalGenerator</Filter>
+    </CustomBuild>
+    <CustomBuild Include="NormalGenerator\NormalGenerator_GetNormal_cs.hlsl">
+      <Filter>NormalGenerator</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SeparableFilter">
@@ -140,6 +152,9 @@
     </Filter>
     <Filter Include="TSDFVolume">
       <UniqueIdentifier>{fc3c37fe-9186-40ac-80f6-ae5c115dcdf2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="NormalGenerator">
+      <UniqueIdentifier>{fc1a348d-2bd6-4044-888e-ef37882060e4}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
