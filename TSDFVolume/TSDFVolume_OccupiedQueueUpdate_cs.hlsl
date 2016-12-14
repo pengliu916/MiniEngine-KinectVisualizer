@@ -6,6 +6,7 @@ RWByteAddressBuffer buf_uavNewOccupiedBlockBufCtr : register(u0);
 RWByteAddressBuffer buf_uavFreedOccupiedBlocksBufCtr : register(u1);
 RWByteAddressBuffer buf_uavIndirectParam : register(u2);
 RWByteAddressBuffer buf_uavIndirectJobParams : register(u3);
+ByteAddressBuffer buf_srvOccupiedBlockBufCtr : register(t0);
 //------------------------------------------------------------------------------
 // Compute Shader
 //------------------------------------------------------------------------------
@@ -21,6 +22,15 @@ void main(uint uGIdx : SV_GroupIndex)
         buf_uavIndirectJobParams.Store(FREEQUEUE_JOBCOUNT, uNewBlockCtr);
         buf_uavIndirectJobParams.Store(ADDQUEUE_STARTOFFSET, 0);
         buf_uavIndirectJobParams.Store(ADDQUEUE_JOBCOUNT, 0);
+        // Prepare information for defragmentation
+        if (uLeftOver > (uint)iDefragmentThreshold) {
+            uint uNewSize = buf_srvOccupiedBlockBufCtr.Load(0) - uLeftOver;
+            buf_uavIndirectJobParams.Store(OCCUPIEDQUEUE_SIZE, uNewSize);
+            uint uPaddedCtr = (uLeftOver + WARP_SIZE - 1) & ~(WARP_SIZE - 1);
+            buf_uavIndirectParam.Store(48, uPaddedCtr >> 5);
+        } else {
+            buf_uavIndirectParam.Store(48, 0);
+        }
         uint uPaddedCtr = (uNewBlockCtr + WARP_SIZE - 1) & ~(WARP_SIZE - 1);
         buf_uavIndirectParam.Store(24, uPaddedCtr >> 5);// uPaddedCtr/WARP_SIZE
         buf_uavIndirectParam.Store(36, 0);
@@ -38,6 +48,7 @@ void main(uint uGIdx : SV_GroupIndex)
         buf_uavIndirectParam.Store(36, uPaddedCtr >> 5);
         buf_uavFreedOccupiedBlocksBufCtr.Store(0, 0);
         buf_uavNewOccupiedBlockBufCtr.Store(0, 0);
+        buf_uavIndirectParam.Store(48, 0);
     }
 }
 #endif

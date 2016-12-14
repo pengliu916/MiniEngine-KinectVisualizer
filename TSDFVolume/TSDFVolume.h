@@ -33,6 +33,7 @@ public:
     void OnResize();
     void OnReset();
     void OnUpdate();
+    void OnDefragment(ComputeContext& cptCtx);
     void OnIntegrate(CommandContext& cmdCtx, ColorBuffer* pDepthTex,
         ColorBuffer* pColorTex, const DirectX::XMMATRIX& mSensorView_T);
     void OnRender(CommandContext& cmdContext,
@@ -114,7 +115,7 @@ private:
     // [12-21] y idx
     // [22-31] z idx
     StructuredBuffer _updateBlocksBuf;
-    uint32_t _updateBlockQueueSize;
+    uint32_t _updateQSize;
     
     // 32bit element buffer for allocated blocks(occupied), and its element size
     // [0] not used
@@ -123,7 +124,7 @@ private:
     // [12-21] y idx
     // [22-31] z idx
     StructuredBuffer _occupiedBlocksBuf;
-    uint32_t _occupiedBlockQueueSize;
+    uint32_t _occupiedQSize;
 
     // 32bit element buffer for blocks need to add to _occupiedBlocksBuf
     // [0-1] not used
@@ -131,13 +132,13 @@ private:
     // [12-21] y idx
     // [22-31] z idx
     StructuredBuffer _newFuseBlocksBuf;
-    uint32_t _newOccupiedBlocksSize;
+    uint32_t _newQSize;
 
     // 32bit element buffer for freed blocks in _occupiedBlocksBuf
     // [0-8] not used
     // [9-31] idx in occupied buf
     StructuredBuffer _freedFuseBlocksBuf;
-    uint32_t _freedOccupiedBlocksSize;
+    uint32_t _freedQSize;
 
     // Buffer for scheduling job in OccupiedQueueUpdate
     // _jobParamBuf layout:
@@ -162,9 +163,9 @@ private:
 
     // GPU constant buffer for per call update basis
     PerCallDataCB _cbPerCall;
-    // point to vol data section in _cbPerCall
+    // Point to vol data section in _cbPerCall
     VolumeParam* _volParam;
 
-    // pointers/handlers currently available
+    // Pointers/handlers currently available
     ManagedBuf::BufInterface _curBufInterface;
 };

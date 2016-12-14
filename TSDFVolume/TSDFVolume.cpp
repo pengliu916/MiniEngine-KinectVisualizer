@@ -68,6 +68,8 @@ namespace {
     ComputePSO _cptBlockQUpdate_Pass1;
     ComputePSO _cptBlockQUpdate_Pass2;
     ComputePSO _cptBlockQUpdate_Resolve;
+    // PSO for occupied queue defragmentation
+    ComputePSO _cptBlockQDefragment;
     // PSOs for rendering
     GraphicsPSO _gfxVCamRenderPSO[kBuf][kStruct][kFilter];
     GraphicsPSO _gfxSensorRenderPSO[kBuf][kStruct][kFilter];
@@ -129,6 +131,7 @@ namespace {
         ComPtr<ID3DBlob> blockQUpdate_Pass1CS;
         ComPtr<ID3DBlob> blockQUpdate_Pass2CS;
         ComPtr<ID3DBlob> blockQUpdate_ResolveCS;
+        ComPtr<ID3DBlob> blockQDefragmentCS;
 
         D3D_SHADER_MACRO macro_[] = {
             { "__hlsl", "1" },//0
@@ -154,6 +157,7 @@ namespace {
         macro_[3].Definition = "0"; macro_[4].Definition = "1";
         V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_ResolveCS));
         macro_[4].Definition = "0";
+        V(_Compile(L"QueueDefragment_cs", macro_, &blockQDefragmentCS));
 
         D3D_SHADER_MACRO macro[] = {
             { "__hlsl", "1" },//0
@@ -277,6 +281,7 @@ ObjName.Finalize();
         CreatePSO(_cptBlockQUpdate_Pass1, blockQUpdate_Pass1CS);
         CreatePSO(_cptBlockQUpdate_Pass2, blockQUpdate_Pass2CS);
         CreatePSO(_cptBlockQUpdate_Resolve, blockQUpdate_ResolveCS);
+        CreatePSO(_cptBlockQDefragment, blockQDefragmentCS);
 
         compiledOnce = false;
         for (int k = 0; k < kStruct; ++k) {
@@ -466,6 +471,7 @@ TSDFVolume::TSDFVolume()
     _volParam->fMaxWeight = 20.f;
     _volParam->fVoxelSize = 1.f / 100.f;
     _cbPerCall.f2DepthRange = float2(-0.2f, -12.f);
+    _cbPerCall.iDefragmentThreshold = 200000;
 }
 
 TSDFVolume::~TSDFVolume()
@@ -480,7 +486,7 @@ TSDFVolume::OnCreateResource(const int2& depthReso, const int2& colorReso)
     _volBuf.CreateResource();
 
     // Create resource for job count for OccupiedBlockUpdate pass
-    _jobParamBuf.Create(L"JobCountBuf", 4, 4);
+    _jobParamBuf.Create(L"JobCountBuf", 5, 4);
 
     // Create debug buffer for all queue buffer size. 
     // 0 : _occupiedBlocksBuf.counter
@@ -492,14 +498,15 @@ TSDFVolume::OnCreateResource(const int2& depthReso, const int2& colorReso)
     // Initial value for dispatch indirect args. args are thread group count
     // x, y, z. Since we only need 1 dimensional dispatch thread group, we
     // pre-populate 1, 1 for threadgroup Ys and Zs
-    __declspec(align(16)) const uint32_t initArgs[12] = {
+    __declspec(align(16)) const uint32_t initArgs[15] = {
         0, 1, 1, // for VolumeUpdate_Pass2, X = OccupiedBlocks / WARP_SIZE
         0, 1, 1, // for VolumeUpdate_Pass3, X = numUpdateBlock * TG/Block
         0, 1, 1, // for OccupiedBlockUpdate_Pass2, X = numFreeSlots / WARP_SIZE
         0, 1, 1, // for OccupiedBlockUpdate_Pass3, X = numLeftOver / WARP_SIZE
+        0, 1, 1, // for defragment pass, X = numLeftOver / WARP_SIZE
     };
     _indirectParams.Create(L"TSDFVolume Indirect Params",
-        1, 4 * sizeof(D3D12_DISPATCH_ARGUMENTS), initArgs);
+        1, 5 * sizeof(D3D12_DISPATCH_ARGUMENTS), initArgs);
 
     std::call_once(_psoCompiled_flag, _CreateResource);
 
@@ -591,6 +598,23 @@ TSDFVolume::OnUpdate()
         _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
         _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
     }
+}
+
+void
+TSDFVolume::OnDefragment(ComputeContext& cptCtx)
+{
+    GPU_PROFILE(cptCtx, L"Defragment");
+    cptCtx.SetPipelineState(_cptBlockQDefragment);
+    cptCtx.SetRootSignature(_rootsig);
+    cptCtx.TransitionResource(_occupiedBlocksBuf, UAV);
+    cptCtx.TransitionResource(_freedFuseBlocksBuf, csSRV);
+    cptCtx.TransitionResource(_jobParamBuf, csSRV);
+    cptCtx.TransitionResource(_indirectParams, IARG);
+    Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
+    Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cptCtx));
+    Bind(cptCtx, 3, 0, 1, &_freedFuseBlocksBuf.GetSRV());
+    Bind(cptCtx, 3, 1, 1, &_jobParamBuf.GetSRV());
+    cptCtx.DispatchIndirect(_indirectParams, 48);
 }
 
 void
@@ -715,39 +739,36 @@ TSDFVolume::RenderGui()
     ImGui::Checkbox("Debug", &_readBackGPUBufStatus);
     if (_readBackGPUBufStatus && _blockVolumeUpdate) {
         char buf[64];
-        float occupiedBlockPct =
-            (float)_readBackData[0] / _occupiedBlockQueueSize;
-        sprintf_s(buf, 64, "%d/%d OccupiedBlocks",
-            _readBackData[0], _occupiedBlockQueueSize);
-        ImGui::ProgressBar(occupiedBlockPct, ImVec2(-1.f, 0.f), buf);
-        float updateBlockPct =
-            (float)_readBackData[1] / _updateBlockQueueSize;
-        sprintf_s(buf, 64, "%d/%d UpdateBlocks",
-            _readBackData[1], _updateBlockQueueSize);
-        ImGui::ProgressBar(updateBlockPct, ImVec2(-1.f, 0.f), buf);
-        float newQueuePct =
-            (float)_readBackData[2] / _newOccupiedBlocksSize;
-        sprintf_s(buf, 64, "%d/%d NewQueueBlocks",
-            _readBackData[2], _newOccupiedBlocksSize);
-        ImGui::ProgressBar(newQueuePct, ImVec2(-1.f, 0.f), buf);
-        float freeQueuePct =
-            (float)_readBackData[3] / _freedOccupiedBlocksSize;
-        sprintf_s(buf, 64, "%d/%d FreeQueueBlocks",
-            _readBackData[3], _freedOccupiedBlocksSize);
-        ImGui::ProgressBar(freeQueuePct, ImVec2(-1.f, 0.f), buf);
+        float data = (float)_readBackData[0] / _occupiedQSize;
+        sprintf_s(buf, 64, "%d/%d OccupiedQ", _readBackData[0], _occupiedQSize);
+        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        data = (float)_readBackData[1] / _updateQSize;
+        sprintf_s(buf, 64, "%d/%d UpdateQ", _readBackData[1], _updateQSize);
+        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        data = (float)_readBackData[2] / _newQSize;
+        sprintf_s(buf, 64, "%d/%d NewQ", _readBackData[2], _newQSize);
+        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        data = (float)_readBackData[3] / _freedQSize;
+        sprintf_s(buf, 64, "%d/%d FreeQ", _readBackData[3], _freedQSize);
+        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
     }
-    ImGui::Text("BlockUpdate CS Threadgroup Size:");
-    static int iTGSize = (int)_TGSize;
-    ImGui::RadioButton("4x4x4##TG", &iTGSize, k64);
-    ImGui::RadioButton("8x8x8##TG", &iTGSize, k512);
-    if (iTGSize != (int)_TGSize) {
-        if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
-            iTGSize = (int)_TGSize;
-        } else {
-            _TGSize = (ThreadGroup)iTGSize;
-            _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                _renderBlockVoxelRatio, _TGSize);
-            _CreateFuseBlockVolAndRelatedBuf(_curReso, _fuseBlockVoxelRatio);
+    if (_blockVolumeUpdate) {
+        ImGui::SliderInt("Defragment Threshold",
+            &_cbPerCall.iDefragmentThreshold, 5000, 500000);
+        ImGui::Text("BlockUpdate CS Threadgroup Size:");
+        static int iTGSize = (int)_TGSize;
+        ImGui::RadioButton("4x4x4##TG", &iTGSize, k64);
+        ImGui::RadioButton("8x8x8##TG", &iTGSize, k512);
+        if (iTGSize != (int)_TGSize) {
+            if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
+                iTGSize = (int)_TGSize;
+            } else {
+                _TGSize = (ThreadGroup)iTGSize;
+                _UpdateBlockSettings(_fuseBlockVoxelRatio,
+                    _renderBlockVoxelRatio, _TGSize);
+                _CreateFuseBlockVolAndRelatedBuf(
+                    _curReso, _fuseBlockVoxelRatio);
+            }
         }
     }
     ImGui::Separator();
@@ -912,22 +933,22 @@ TSDFVolume::_CreateFuseBlockVolAndRelatedBuf(
     cptCtx.Finish(true);
     
     _updateBlocksBuf.Destroy();
-    _updateBlockQueueSize = blockCount;
-    _updateBlocksBuf.Create(L"UpdateBlockQueue", _updateBlockQueueSize, 4);
+    _updateQSize = blockCount;
+    _updateBlocksBuf.Create(L"UpdateBlockQueue", _updateQSize, 4);
     
     _occupiedBlocksBuf.Destroy();
-    _occupiedBlockQueueSize = blockCount;
-    _occupiedBlocksBuf.Create(L"OccupiedBlockQueue", _updateBlockQueueSize, 4);
+    _occupiedQSize = blockCount;
+    _occupiedBlocksBuf.Create(L"OccupiedBlockQueue", _updateQSize, 4);
     
     _newFuseBlocksBuf.Destroy();
-    _newOccupiedBlocksSize = (uint32_t)(_occupiedBlockQueueSize * 0.3f);
+    _newQSize = (uint32_t)(_occupiedQSize * 0.3f);
     _newFuseBlocksBuf.Create(L"NewOccupiedBlockBuf",
-        _newOccupiedBlocksSize, 4);
+        _newQSize, 4);
 
     _freedFuseBlocksBuf.Destroy();
-    _freedOccupiedBlocksSize = (uint32_t)(_occupiedBlockQueueSize * 0.3f);
+    _freedQSize = (uint32_t)(_occupiedQSize * 0.3f);
     _freedFuseBlocksBuf.Create(L"FreedOccupiedBlockBuf",
-        _freedOccupiedBlocksSize, 4);
+        _freedQSize, 4);
 }
 
 void
@@ -1154,10 +1175,12 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
             cptCtx.TransitionResource(_indirectParams, UAV);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
+            BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
             Bind(cptCtx, 2, 0, 1, &_newFuseBlocksBuf.GetCounterUAV(cmdCtx));
             Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cmdCtx));
             Bind(cptCtx, 2, 2, 1, &_indirectParams.GetUAV());
             Bind(cptCtx, 2, 3, 1, &_jobParamBuf.GetUAV());
+            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
         // Filling in NewOccupiedBlocks into FreeSlots in OccupiedBlockQueue

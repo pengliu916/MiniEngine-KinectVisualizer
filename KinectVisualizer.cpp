@@ -145,6 +145,7 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
             _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
             _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
             _depthViewInv_T);
+        _tsdfVolume.OnDefragment(EngineContext.GetComputeContext());
         _tsdfVolume.OnRender(EngineContext, mProj_T, mView_T);
         _tsdfVolume.OnExtractSurface(EngineContext,
             XMMatrixInverse(nullptr, _depthViewInv_T));

@@ -26,7 +26,7 @@
 #define FREEQUEUE_JOBCOUNT 4
 #define ADDQUEUE_STARTOFFSET 8
 #define ADDQUEUE_JOBCOUNT 12
-#define ACTIVERENDERBLOCK_COUNT 16
+#define OCCUPIEDQUEUE_SIZE 16
 
 // The length of cube triangles-strip vertices
 #define CUBE_TRIANGLESTRIP_LENGTH 14
@@ -103,7 +103,7 @@ CBUFFER_ALIGN STRUCT(cbuffer) PerCallDataCB REGISTER(b1)
     float fWideHeightRatio;
     float fTanHFov;
     float fClipDist;
-    float fNIU;
+    int iDefragmentThreshold;
 #if !__hlsl
     void* operator new(size_t i) {
         return _aligned_malloc(i, 
