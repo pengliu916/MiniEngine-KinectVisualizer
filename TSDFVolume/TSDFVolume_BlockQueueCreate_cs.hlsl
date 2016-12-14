@@ -2,6 +2,10 @@
 #include "TSDFVolume.hlsli"
 #include "CalibData.inl"
 
+#pragma warning(push)
+// Compiler falsely emit x4000 if I do early out return
+#pragma warning(disable: 4000)
+
 RWStructuredBuffer<uint> buf_uavUpdateBlockQueue : register(u0);
 RWTexture3D<uint> tex_uavFuseBlockVol : register(u1);
 
@@ -22,56 +26,46 @@ bool IsPointVisible(float4 f4Pos)
 {
     bool bResult = false;
     float4 f4Pos_c = mul(mDepthView, f4Pos);
-    if (f4Pos_c.z < f2DepthRange.x && f4Pos_c.z > f2DepthRange.y) {
-        float2 f2ImgIdx = f4Pos_c.xy * DEPTH_F / f4Pos_c.z + DEPTH_C;
-        if (all(f2ImgIdx >= float2(0.f, 0.f)) && all(f2ImgIdx <= i2DepthReso)) {
-            bResult = true;
-        }
+    if (f4Pos_c.z >= f2DepthRange.x && f4Pos_c.z <= f2DepthRange.y) {
+        return false;
     }
-    return bResult;
+    float2 f2ImgIdx = f4Pos_c.xy * DEPTH_F / f4Pos_c.z + DEPTH_C;
+    if (all(f2ImgIdx >= float2(0.f, 0.f)) && all(f2ImgIdx <= i2DepthReso)) {
+        return true;
+    }
+    return false;
 }
 
 bool IsBlockVisible(uint3 u3BlockIdx)
 {
-    bool bResult = true;
-    // Compiler falsely emit x4000 if I do early out return
     // 0 0 0
     float4 f4BlockCorner =
         float4(u3BlockIdx * vParam.fFuseBlockSize - vParam.f3HalfVolSize, 1.f);
-    if (!IsPointVisible(f4BlockCorner)) {
-        // 1 0 0
-        f4BlockCorner.x += vParam.fFuseBlockSize;
-        if (!IsPointVisible(f4BlockCorner)) {
-            // 1 1 0
-            f4BlockCorner.y += vParam.fFuseBlockSize;
-            if (!IsPointVisible(f4BlockCorner)) {
-                // 1 1 1
-                f4BlockCorner.z += vParam.fFuseBlockSize;
-                if (!IsPointVisible(f4BlockCorner)) {
-                    // 0 1 1
-                    f4BlockCorner.x -= vParam.fFuseBlockSize;
-                    if (!IsPointVisible(f4BlockCorner)) {
-                        // 0 0 1
-                        f4BlockCorner.y -= vParam.fFuseBlockSize;
-                        if (!IsPointVisible(f4BlockCorner)) {
-                            // 1 0 1
-                            f4BlockCorner.x += vParam.fFuseBlockSize;
-                            if (!IsPointVisible(f4BlockCorner)) {
-                                // 0 1 0
-                                f4BlockCorner.x -= vParam.fFuseBlockSize;
-                                f4BlockCorner.y += vParam.fFuseBlockSize;
-                                f4BlockCorner.z -= vParam.fFuseBlockSize;
-                                if (!IsPointVisible(f4BlockCorner)) {
-                                    bResult = false;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return bResult;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 1 0 0
+    f4BlockCorner.x += vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 1 1 0
+    f4BlockCorner.y += vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 1 1 1
+    f4BlockCorner.z += vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 0 1 1
+    f4BlockCorner.x -= vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 0 0 1
+    f4BlockCorner.y -= vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 1 0 1
+    f4BlockCorner.x += vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    // 0 1 0
+    f4BlockCorner.x -= vParam.fFuseBlockSize;
+    f4BlockCorner.y += vParam.fFuseBlockSize;
+    f4BlockCorner.z -= vParam.fFuseBlockSize;
+    if (IsPointVisible(f4BlockCorner)) { return true; }
+    return false;
 }
 
 // Each thread test one block from OccupiedBlockBuf, and add it to
@@ -119,23 +113,21 @@ void InterlockedAddToUpdateQueue(uint3 u3BlockIdx)
 
 bool GetValidReprojectedPoint(uint2 u2Idx, out float3 f3Pos)
 {
-    bool bResult = false;
     f3Pos = 0.f;
-    if (all(int2(u2Idx) < i2DepthReso)) {
-        float z = tex_srvDepth.Load(uint3(u2Idx.xy, 0)) * -0.001f;
-        if (z < f2DepthRange.x && z > f2DepthRange.y) {
-            float2 f2xy = (u2Idx - DEPTH_C) / DEPTH_F * z;
-            float4 f4Pos = float4(f2xy, z, 1.f);
-            f3Pos = mul(mDepthViewInv, f4Pos).xyz;
-            // Make sure the pos is covered in the volume
-            if (any(abs(f3Pos) > (vParam.f3HalfVolSize - vParam.fTruncDist))) {
-                bResult = false;
-            } else {
-                bResult = true;
-            }
+    if (any(int2(u2Idx) >= i2DepthReso)) {
+        return false;
+    }
+    float z = tex_srvDepth.Load(uint3(u2Idx.xy, 0)) * -0.001f;
+    if (z < f2DepthRange.x && z > f2DepthRange.y) {
+        float2 f2xy = (u2Idx - DEPTH_C) / DEPTH_F * z;
+        float4 f4Pos = float4(f2xy, z, 1.f);
+        f3Pos = mul(mDepthViewInv, f4Pos).xyz;
+        // Make sure the pos is covered in the volume
+        if (all(abs(f3Pos) < (vParam.f3HalfVolSize - vParam.fTruncDist))) {
+            return true;
         }
     }
-    return bResult;
+    return false;
 }
 
 // Each thread process one pixel from DepthMap, and add at most 2 blocks
@@ -160,3 +152,4 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     }
 }
 #endif // PASS_2
+#pragma  warning(pop)
