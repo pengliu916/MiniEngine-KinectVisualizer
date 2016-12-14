@@ -2,15 +2,6 @@
 #include "SensorTexGen.hlsli"
 #include "CalibData.inl"
 
-#if COLOR_TEX
-Buffer<uint4> ColBuffer : register(t2);
-#else
-Buffer<uint> DepBuffer : register(t0);
-#if INFRARED_TEX
-Buffer<uint> InfBuffer : register(t1);
-#endif // INFRARED_TEX
-#endif
-
 struct PSOutput {
 #if COLOR_TEX
     float4 f4ColorOut : SV_Target0;
@@ -40,12 +31,20 @@ PSOutput main(
     output.f4ColorOut = ColBuffer[uId] / 255.f;
 #else
 #if VISUALIZED_DEPTH_TEX
+#if FAKEDEPTH
+    output.f4DepVisaulOut = (GetFakedDepth(u2Idx).xxxx % 255) / 255.f;
+#else
     output.f4DepVisaulOut = (DepBuffer[uId] % 255) / 255.f;
+#endif // FAKEDEPTH
 #endif // VISUALIZED_DEPTH_TEX
 #if INFRARED_TEX
     output.f4InfraredOut = pow((InfBuffer[uId]) / 65535.f, 0.32f);
 #endif // INFRARED_TEX
+#if FAKEDEPTH
+    output.uDepthOut = GetFakedDepth(u2Idx);
+#else
     output.uDepthOut = DepBuffer[uId];
+#endif // FAKEDEPTH
 #endif // COLOR_TEX
     return output;
 }
