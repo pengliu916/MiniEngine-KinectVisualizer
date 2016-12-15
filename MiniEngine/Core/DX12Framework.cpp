@@ -44,6 +44,7 @@ namespace Core
 {
     uint64_t g_tickesPerSecond = 0;
     uint64_t g_lastFrameTickCount = 0;
+    uint64_t g_frameCount = 0;
     double g_elapsedTime = 0;
     double g_deltaTime = 0;
 
@@ -216,6 +217,7 @@ namespace Core
         double frameTime = 0.0;
 
         while (!_terminated && !_hasError) {
+            g_frameCount++;
             // Get time delta
             uint64_t count;
             QueryPerformanceCounter((LARGE_INTEGER*)&count);

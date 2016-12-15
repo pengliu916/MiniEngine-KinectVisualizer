@@ -60,6 +60,7 @@ namespace Core
 
     extern uint64_t g_tickesPerSecond; // CPU tickes per second
     extern uint64_t g_lastFrameTickCount; // Total CPU tickes until last frame
+    extern uint64_t g_frameCount;
     extern double g_elapsedTime; // Elapsed time since program start
     extern double g_deltaTime; // Elapsed time since last frame
     extern Settings g_config; // gfx settings

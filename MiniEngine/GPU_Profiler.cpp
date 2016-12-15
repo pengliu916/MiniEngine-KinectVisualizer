@@ -23,6 +23,8 @@ namespace {
     unordered_map<wstring, uint8_t> m_timerNameIdxMap;
     wstring* m_timerNameArray;
     XMFLOAT4* m_timerColorArray;
+    float** m_timerHistory;
+    float* m_timerAvg;
     uint64_t* m_timeStampBufferCopy;
 
     ID3D12Resource* m_readbackBuffer;
@@ -64,7 +66,7 @@ GPU_Profiler::Initialize()
     m_EntryWordHeight = 15;
     m_EntryHeight = 2 * m_EntryMargin + m_EntryWordHeight;
     m_MaxBarWidth = 500;
-    m_WorldSpace = 200;
+    m_WorldSpace = 250;
 
     // Initialize the array to store all timer name
     m_timerNameArray = new wstring[MAX_TIMER_COUNT];
@@ -75,6 +77,14 @@ GPU_Profiler::Initialize()
     m_timerColorArray = new XMFLOAT4[MAX_TIMER_COUNT];
 
     m_RectData = new RectAttr[MAX_TIMER_COUNT];
+
+    m_timerHistory = new float*[MAX_TIMER_COUNT];
+    for (int i = 0; i < MAX_TIMER_COUNT; ++i) {
+        m_timerHistory[i] = new float[MAX_TIMER_HISTORY];
+        memset((void*)m_timerHistory[i], 0, sizeof(float) * MAX_TIMER_HISTORY);
+    }
+
+    m_timerAvg = new float[MAX_TIMER_COUNT];
 
     m_ActiveTimer.reserve(MAX_TIMER_COUNT);
 
@@ -181,6 +191,14 @@ GPU_Profiler::ShutDown()
     m_timerColorArray = nullptr;
     delete[] m_timeStampBufferCopy;
     m_timeStampBufferCopy = nullptr;
+
+    for (int i = 0; i < MAX_TIMER_COUNT; ++i) {
+        delete[] m_timerHistory[i];
+    }
+    delete[] m_timerHistory;
+
+    delete[] m_timerAvg;
+
     DeleteCriticalSection(&m_critialSection);
 }
 
@@ -206,8 +224,28 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
     for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
         if (m_timeStampBufferCopy[idx * 2] > preEndTime) {
             m_ActiveTimer.push_back(idx);
+            m_timerHistory[idx][Core::g_frameCount % MAX_TIMER_HISTORY] =
+                (float)ReadTimer(idx);
+        } else {
+            m_timerHistory[idx][Core::g_frameCount % MAX_TIMER_HISTORY] = 0.f;
         }
     }
+
+    for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
+        uint8_t count = 0;
+        float avg = 0.f;
+        for (uint8_t i = 0; i < MAX_TIMER_HISTORY; ++i) {
+            float val = m_timerHistory[idx][i];
+            if (val > 0.f) {
+                ++count;
+                avg += val;
+            }
+        }
+        if (count > 0) {
+            m_timerAvg[idx] = avg / count;
+        }
+    }
+
     // sort timer based on timer's start time
     sort(m_ActiveTimer.begin(), m_ActiveTimer.end(), compStartTime);
 
@@ -328,8 +366,8 @@ GPU_Profiler::GetTimingStr(uint8_t idx, wchar_t* outStr)
     }
     double result = m_timeStampBufferCopy[idx * 2 + 1] * m_GPUTickDelta -
         m_timeStampBufferCopy[idx * 2] * m_GPUTickDelta;
-    swprintf(outStr, L"%-15.15s:%4.2fms \0",
-        m_timerNameArray[idx].c_str(), result);
+    swprintf(outStr, L"%-15.15s:%4.2fms %4.2fms \0",
+        m_timerNameArray[idx].c_str(), m_timerAvg[idx], ReadTimer(idx));
     return (uint16_t)wcslen(outStr);
 }
 
