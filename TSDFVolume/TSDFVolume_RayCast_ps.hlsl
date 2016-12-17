@@ -1,6 +1,9 @@
 #include "TSDFVolume.inl"
 #include "TSDFVolume.hlsli"
 
+// Compiler falsely emit x4000 if I do early out return
+#pragma warning(disable: 4000)
+
 #if TYPED_UAV
 Buffer<float> tex_srvTSDFVol : register(t0);
 #else // TEX3D_UAV
@@ -14,10 +17,12 @@ SamplerState samp_Linear : register(s0);
 
 #if FOR_SENSOR
 #define CAMPOS mDepthViewInv._m03_m13_m23
+#define CAMVIEW mDepthView
 #endif
 
 #if FOR_VCAMERA
 #define CAMPOS mViewInv._m03_m13_m23
+#define CAMVIEW mView
 #endif
 
 //------------------------------------------------------------------------------
@@ -87,6 +92,7 @@ float UninterpolatedRead(float3 f3Idx)
     return tex_srvTSDFVol[BUFFER_INDEX((int3)f3Idx)];
 }
 
+#if 1
 float3 GetNormal(float3 f3Idx)
 {
     float f000 = InterpolatedRead(f3Idx);
@@ -95,13 +101,19 @@ float3 GetNormal(float3 f3Idx)
     float f001 = InterpolatedRead(f3Idx + float3(0.f, 0.f, 1.f));
     return normalize(float3(f100 - f000, f010 - f000, f001 - f000));
 }
+#endif
 
-void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
-    inout float4 f4OutColor, inout float fDepth)
+float3 GetCoordinateInTexture3D(Ray eyeray, float t)
 {
-    float3 f3Idx = eyeray.f3o + eyeray.f3d * f2NearFar.x;
+    float3 f3Idx = eyeray.f3o + eyeray.f3d * t;
     f3Idx = f3Idx * vParam.fInvVoxelSize + vParam.f3HalfVoxelReso;
+    return f3Idx;
+}
+
+bool FindIntersectPos(Ray eyeray, float2 f2NearFar, out float3 f3HitPos)
+{
     float t = f2NearFar.x;
+    float3 f3Idx = GetCoordinateInTexture3D(eyeray, t);
     float fDeltaT = vParam.fVoxelSize;
     float3 f3IdxStep = eyeray.f3d;
     bool bSurfaceFound = false;
@@ -120,10 +132,10 @@ void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
             bActiveBlock = tex_srvRenderBlockVol[i3BlockIdx];
         }
         if (!bActiveBlock) {
-            float3 f3Offset =
+            float3 f3BoxMin =
                 i3BlockIdx * vParam.fRenderBlockSize - vParam.f3HalfVolSize;
             float2 f2BlockNearFar;
-            IntersectBox(eyeray, f3Offset, f3Offset + vParam.fRenderBlockSize,
+            IntersectBox(eyeray, f3BoxMin, f3BoxMin + vParam.fRenderBlockSize,
                 f2BlockNearFar.x, f2BlockNearFar.y);
             t = max(t + fDeltaT, f2BlockNearFar.y + fDeltaT);
             f3Idx = eyeray.f3o + eyeray.f3d * t;
@@ -136,7 +148,6 @@ void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
         if (fCurTSDF < 1.f) {
             fCurTSDF = InterpolatedRead(f3Idx) * vParam.fTruncDist;
         }
-
         if (fCurTSDF < 0) {
             bSurfaceFound = true;
             break;
@@ -145,19 +156,38 @@ void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
         f3Idx += f3IdxStep;
         t += fDeltaT;
     }
-
     if (!bSurfaceFound) {
-        return;
+        return false;
     }
 
-    float3 f3SurfPos = lerp(f3PreIdx, f3Idx, fPreTSDF / (fPreTSDF - fCurTSDF));
-    f3SurfPos = (f3SurfPos - vParam.f3HalfVoxelReso) * vParam.fVoxelSize;
+    f3HitPos = lerp(f3PreIdx, f3Idx, fPreTSDF / (fPreTSDF - fCurTSDF));
+    f3HitPos = (f3HitPos - vParam.f3HalfVoxelReso) * vParam.fVoxelSize;
+    return true;
+}
+
+void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
+    inout float4 f4OutColor, inout float fDepth)
+{
+    float3 f3SurfPos;
+    if (!FindIntersectPos(eyeray, f2NearFar, f3SurfPos)) {
+        return;
+    }
     float4 f4ProjPos = mul(mProjView, float4(f3SurfPos, 1.f));
     fDepth = f4ProjPos.z / f4ProjPos.w;
     float3 f3Normal = GetNormal(
         f3SurfPos * vParam.fInvVoxelSize + vParam.f3HalfVoxelReso);
     f4OutColor = float4(f3Normal * 0.5f + 0.5f, 1);
     return;
+}
+
+void GetDepth(Ray eyeray, float2 f2NearFar, inout uint uDepth)
+{
+    float3 f3SurfPos;
+    if (!FindIntersectPos(eyeray, f2NearFar, f3SurfPos)) {
+        return;
+    }
+    float4 f4Pos = mul(CAMVIEW, float4(f3SurfPos, 1.f));
+    uDepth = -1000.f * f4Pos.z + 0.5f;
 }
 
 //------------------------------------------------------------------------------
