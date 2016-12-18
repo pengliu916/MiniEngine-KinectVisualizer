@@ -191,7 +191,7 @@ namespace Core
 
     void FrameworkHandleEvent(IDX12Framework& application, MSG* msg) {
         bool GuiIsUsingInput = GuiRenderer::OnEvent(msg);
-        if (!GuiIsUsingInput) {
+        if (g_config.passThroughMsg || !GuiIsUsingInput) {
             application.OnEvent(msg);
         }
     }

@@ -38,6 +38,7 @@ namespace Core
         bool vsync = false;
         bool FXAA = true;
         bool showPerf = true;
+        bool passThroughMsg = false;
     };
 
     class IDX12Framework
