@@ -4,6 +4,9 @@
 using namespace DirectX;
 using namespace Microsoft::WRL;
 
+#define Trans(ctx, res, state) \
+ctx.TransitionResource(res, state)
+
 #define Bind(ctx, rootIdx, offset, count, resource) \
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
@@ -12,8 +15,10 @@ ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
 
 namespace {
     const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    const D3D12_RESOURCE_STATES SRV =
+    const D3D12_RESOURCE_STATES psSRV =
         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    const D3D12_RESOURCE_STATES  csSRV =
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
     const DXGI_FORMAT _normalMapFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 
     RootSignature _rootsig;
@@ -98,6 +103,7 @@ void
 NormalGenerator::OnProcessing(
     ComputeContext& cptCtx, ColorBuffer* pInputTex)
 {
+    Trans(cptCtx, *pInputTex, csSRV);
     GPU_PROFILE(cptCtx, _name.c_str());
     cptCtx.SetPipelineState(_cptGetNormalPSO);
     cptCtx.SetRootSignature(_rootsig);

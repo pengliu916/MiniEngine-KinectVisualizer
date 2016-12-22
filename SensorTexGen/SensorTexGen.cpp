@@ -13,6 +13,9 @@ ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
 #define Trans(ctx, res, state) \
 ctx.TransitionResource(res, state)
 
+#define BeginTrans(ctx, res, state) \
+ctx.BeginResourceTransition(res, state)
+
 namespace {
     // Renaming to save column space
     const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -377,10 +380,6 @@ SensorTexGen::OnRender(CommandContext& EngineContext)
             ctx.Draw(3);
         }
     }
-    Trans(EngineContext, _outTex[kDepthTex], psSRV);
-    Trans(EngineContext, _outTex[kDepthVisualTex], psSRV);
-    Trans(EngineContext, _outTex[kInfraredTex], psSRV);
-    Trans(EngineContext, _outTex[kColorTex], psSRV);
     return needUpdate;
 }
 

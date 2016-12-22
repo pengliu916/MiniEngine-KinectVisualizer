@@ -611,8 +611,12 @@ TSDFVolume::ResetAllResource()
 }
 
 void
-TSDFVolume::PreProcessing()
+TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
+    const DirectX::XMMATRIX& mVCamView_T,
+    const DirectX::XMMATRIX& mSensor_T)
 {
+    _UpdateRenderCamData(mVCamProj_T, mVCamView_T);
+    _UpdateSensorData(mSensor_T);
     ManagedBuf::BufInterface newBufInterface = _volBuf.GetResource();
     _curBufInterface = newBufInterface;
 
@@ -627,33 +631,34 @@ TSDFVolume::PreProcessing()
 void
 TSDFVolume::DefragmentActiveBlockQueue(ComputeContext& cptCtx)
 {
-    GPU_PROFILE(cptCtx, L"Defragment");
-    cptCtx.SetPipelineState(_cptBlockQDefragment);
-    cptCtx.SetRootSignature(_rootsig);
     Trans(cptCtx, _occupiedBlocksBuf, UAV);
     Trans(cptCtx, _freedFuseBlocksBuf, csSRV);
     Trans(cptCtx, _jobParamBuf, csSRV);
     Trans(cptCtx, _indirectParams, IARG);
-    Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
-    Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cptCtx));
-    Bind(cptCtx, 3, 0, 1, &_freedFuseBlocksBuf.GetSRV());
-    Bind(cptCtx, 3, 1, 1, &_jobParamBuf.GetSRV());
-    cptCtx.DispatchIndirect(_indirectParams, 48);
+    {
+        GPU_PROFILE(cptCtx, L"Defragment");
+        cptCtx.SetPipelineState(_cptBlockQDefragment);
+        cptCtx.SetRootSignature(_rootsig);
+        Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
+        Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cptCtx));
+        Bind(cptCtx, 3, 0, 1, &_freedFuseBlocksBuf.GetSRV());
+        Bind(cptCtx, 3, 1, 1, &_jobParamBuf.GetSRV());
+        cptCtx.DispatchIndirect(_indirectParams, 48);
+    }
+    BeginTrans(cptCtx, _occupiedBlocksBuf, csSRV);
+    BeginTrans(cptCtx, _freedFuseBlocksBuf, UAV);
+    BeginTrans(cptCtx, _jobParamBuf, UAV);
 }
 
 void
-TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
-    ColorBuffer* pColorTex, const DirectX::XMMATRIX& mDepth_T)
+TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex)
 {
     cptCtx.SetRootSignature(_rootsig);
-    _cbPerFrame.mDepthView = XMMatrixInverse(nullptr, mDepth_T);
-    _cbPerFrame.mDepthViewInv = mDepth_T;
-    BindCB(cptCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    _UpdateConstantBuffer(cptCtx);
     Trans(cptCtx, _renderBlockVol, UAV);
     Trans(cptCtx, *_curBufInterface.resource[0], UAV);
     Trans(cptCtx, *_curBufInterface.resource[1], UAV);
-    _UpdateVolume(cptCtx, _curBufInterface, pDepthTex, pColorTex);
+    _UpdateVolume(cptCtx, _curBufInterface, pDepthTex);
     BeginTrans(cptCtx, *_curBufInterface.resource[0], psSRV);
     if (_useStepInfoTex) {
         BeginTrans(cptCtx, _renderBlockVol, vsSRV | psSRV);
@@ -661,91 +666,83 @@ TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
 }
 
 void
-TSDFVolume::RenderSurface(GraphicsContext& gfxCtx,
-    const DirectX::XMMATRIX& mProj_T, const DirectX::XMMATRIX& mView_T)
+TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
 {
-    _UpdateRenderCamData(mProj_T, mView_T);
-
-    Trans(gfxCtx, _depthMapVisual, RTV);
-    Trans(gfxCtx, _depthBufVisual, DSV);
-    TransFlush(gfxCtx, _nearFarForVisual, RTV);
-
+    if (RT & kForProc) Trans(gfxCtx, _depthMapProc, RTV);
+    if (RT & kForVisu) Trans(gfxCtx, _depthMapVisual, RTV);
     if (_useStepInfoTex) {
-        gfxCtx.ClearColor(_nearFarForVisual);
+        if (RT & kForProc) Trans(gfxCtx, _nearFarForProcess, RTV);
+        if (RT & kForVisu) Trans(gfxCtx, _nearFarForVisual, RTV);
+        gfxCtx.FlushResourceBarriers();
+    } else {
+        gfxCtx.FlushResourceBarriers();
     }
-
-    gfxCtx.ClearColor(_depthMapVisual);
-    gfxCtx.ClearDepth(_depthBufVisual);
 
     gfxCtx.SetRootSignature(_rootsig);
-    BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    _UpdateConstantBuffer(gfxCtx);
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
-    gfxCtx.SetViewport(_depthVisViewPort);
-    gfxCtx.SetScisor(_depthVisSissorRect);
 
-    if (_useStepInfoTex) {
-        GPU_PROFILE(gfxCtx, L"NearFar_Render");
-        gfxCtx.SetRenderTargets(1, &_nearFarForVisual.GetRTV());
-        Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
-        _RenderNearFar(gfxCtx);
-        Trans(gfxCtx, _nearFarForVisual, psSRV);
-    }
-    {
-        GPU_PROFILE(gfxCtx, L"Volume_Render");
-        gfxCtx.SetRenderTargets(
-            1, &_depthMapVisual.GetRTV(), _depthBufVisual.GetDSV());
-        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
-        _RenderVolume(gfxCtx, _curBufInterface);
-        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
-    }
-}
-
-void
-TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx,
-    const DirectX::XMMATRIX& mSensor_T)
-{
-    _UpdateSensorData(mSensor_T);
-
-    Trans(gfxCtx, _depthMapProc, RTV);
-    TransFlush(gfxCtx, _nearFarForProcess, RTV);
-    if (_useStepInfoTex) {
+    Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
+    if (RT & kForProc) {
         gfxCtx.ClearColor(_nearFarForProcess);
+        gfxCtx.SetViewport(_depthViewPort);
+        gfxCtx.SetScisor(_depthSissorRect);
+        if (_useStepInfoTex) {
+            GPU_PROFILE(gfxCtx, L"NearFar_Proc");
+            gfxCtx.SetRenderTarget(_nearFarForProcess.GetRTV());
+            _RenderNearFar(gfxCtx, true);
+            BeginTrans(gfxCtx, _nearFarForProcess, psSRV);
+        }
     }
-
-    gfxCtx.ClearColor(_depthMapProc);
-
-    gfxCtx.SetRootSignature(_rootsig);
-    BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
-    gfxCtx.SetViewport(_depthViewPort);
-    gfxCtx.SetScisor(_depthSissorRect);
-    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
-
-    if (_useStepInfoTex) {
-        GPU_PROFILE(gfxCtx, L"NearFar_Extract");
-        gfxCtx.SetRenderTargets(1, &_nearFarForProcess.GetRTV());
-        Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
-        _RenderNearFar(gfxCtx, true);
-        Trans(gfxCtx, _nearFarForProcess, psSRV);
+    if (RT & kForVisu) {
+        gfxCtx.ClearColor(_nearFarForVisual);
+        gfxCtx.SetViewport(_depthVisViewPort);
+        gfxCtx.SetScisor(_depthVisSissorRect);
+        if (_useStepInfoTex) {
+            GPU_PROFILE(gfxCtx, L"NearFar_Visu");
+            gfxCtx.SetRenderTarget(_nearFarForVisual.GetRTV());
+            _RenderNearFar(gfxCtx);
+            BeginTrans(gfxCtx, _nearFarForVisual, psSRV);
+        }
     }
-    {
-        GPU_PROFILE(gfxCtx, L"Volume_Extract");
-        gfxCtx.SetRenderTarget(_depthMapProc.GetRTV());
-        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
-        _RenderVolume(gfxCtx, _curBufInterface, true);
-        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
+    if (RT & kForProc) {
+        {
+            GPU_PROFILE(gfxCtx, L"Volume_Proc");
+            gfxCtx.ClearColor(_depthMapProc);
+            gfxCtx.SetViewport(_depthViewPort);
+            gfxCtx.SetScisor(_depthSissorRect);
+            gfxCtx.SetRenderTarget(_depthMapProc.GetRTV());
+            Trans(gfxCtx, _nearFarForProcess, psSRV);
+            Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
+            _RenderVolume(gfxCtx, _curBufInterface, true);
+            BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
+            BeginTrans(gfxCtx, _nearFarForProcess, RTV);
+        }
+    }
+    if (RT & kForVisu) {
+        {
+            GPU_PROFILE(gfxCtx, L"Volume_Visu");
+            gfxCtx.ClearColor(_depthMapVisual);
+            gfxCtx.ClearDepth(_depthBufVisual);
+            gfxCtx.SetViewport(_depthVisViewPort);
+            gfxCtx.SetScisor(_depthVisSissorRect);
+            gfxCtx.SetRenderTargets(
+                1, &_depthMapVisual.GetRTV(), _depthBufVisual.GetDSV());
+            Trans(gfxCtx, _nearFarForVisual, psSRV);
+            Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
+            _RenderVolume(gfxCtx, _curBufInterface);
+            BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
+            BeginTrans(gfxCtx, _nearFarForVisual, RTV);
+        }
     }
 }
 
 void
-TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor,
-    const DirectX::XMMATRIX& mVCamProj_t, const DirectX::XMMATRIX& mVCamView_T)
+TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor)
 {
     if (!_useStepInfoTex || !_stepInfoDebug) {
         return;
     }
-    _UpdateRenderCamData(mVCamProj_t, mVCamView_T);
 
     Trans(gfxCtx, *pColor, RTV);
     Trans(gfxCtx, _depthBufVisual, DSV);
@@ -1000,10 +997,10 @@ TSDFVolume::_UpdateRenderCamData(const DirectX::XMMATRIX& mProj_T,
 }
 
 void
-TSDFVolume::_UpdateSensorData(const DirectX::XMMATRIX& mSensorView_T)
+TSDFVolume::_UpdateSensorData(const DirectX::XMMATRIX& mSensor_T)
 {
-    _cbPerFrame.mDepthView = mSensorView_T;
-    _cbPerFrame.mDepthViewInv = XMMatrixInverse(nullptr, mSensorView_T);
+    _cbPerFrame.mDepthViewInv = mSensor_T;
+    _cbPerFrame.mDepthView = XMMatrixInverse(nullptr, mSensor_T);
 }
 
 void
@@ -1105,35 +1102,37 @@ TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 }
 
 void
-TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
-    const ManagedBuf::BufInterface& buf,
-    ColorBuffer* pDepthTex, ColorBuffer* pColorTex)
+TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
+    const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex)
 {
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
     const uint3 xyz = _volParam->u3VoxelReso;
-    ComputeContext& cptCtx = cmdCtx.GetComputeContext();
     cptCtx.SetRootSignature(_rootsig);
     if (_blockVolumeUpdate) {
+        BeginTrans(cptCtx, _renderBlockVol, UAV);
         // Add blocks to UpdateBlockQueue from OccupiedBlockQueue
+        Trans(cptCtx, _updateBlocksBuf, UAV);
+        Trans(cptCtx, _fuseBlockVol, UAV);
+        Trans(cptCtx, _occupiedBlocksBuf, csSRV);
+        Trans(cptCtx, _indirectParams, IARG);
         {
             GPU_PROFILE(cptCtx, L"Occupied2UpdateQ");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass1);
             cptCtx.ResetCounter(_updateBlocksBuf);
-            Trans(cptCtx, _updateBlocksBuf, UAV);
-            Trans(cptCtx, _fuseBlockVol, UAV);
-            Trans(cptCtx, _occupiedBlocksBuf, csSRV);
-            Trans(cptCtx, _indirectParams, IARG);
             Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
             Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
             Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetSRV());
-            Bind(cptCtx, 3, 1, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 3, 1, 1, &_occupiedBlocksBuf.GetCounterSRV(cptCtx));
             cptCtx.DispatchIndirect(_indirectParams, 0);
         }
+        BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
+        BeginTrans(cptCtx, _indirectParams, UAV);
         // Add blocks to UpdateBlockQueue from DepthMap
+        Trans(cptCtx, _fuseBlockVol, UAV);
+        Trans(cptCtx, *pDepthTex, psSRV | csSRV);
         {
             GPU_PROFILE(cptCtx, L"Depth2UpdateQ");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
-            Trans(cptCtx, _fuseBlockVol, UAV);
             // UAV barrier for _updateBlocksBuf is omit since the order of ops
             // on it does not matter before reading it during UpdateVoxel
             Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
@@ -1142,28 +1141,30 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             cptCtx.Dispatch2D(
                 _cbPerCall.i2DepthReso.x, _cbPerCall.i2DepthReso.y);
         }
+        BeginTrans(cptCtx, _updateBlocksBuf, csSRV);
+        BeginTrans(cptCtx, _fuseBlockVol, UAV);
         // Resolve UpdateBlockQueue for DispatchIndirect
+        Trans(cptCtx, _indirectParams, UAV);
         {
             GPU_PROFILE(cptCtx, L"UpdateQResolve");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Resolve);
-            Trans(cptCtx, _indirectParams, UAV);
-            Bind(cptCtx, 3, 0, 1, &_updateBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 3, 0, 1, &_updateBlocksBuf.GetCounterSRV(cptCtx));
             Bind(cptCtx, 2, 0, 1, &_indirectParams.GetUAV());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
         // Update voxels in blocks from UpdateBlockQueue and create queues for
         // NewOccupiedBlocks and FreedOccupiedBlocks
+        Trans(cptCtx, _occupiedBlocksBuf, UAV);
+        Trans(cptCtx, _renderBlockVol, UAV);
+        Trans(cptCtx, _fuseBlockVol, UAV);
+        Trans(cptCtx, _newFuseBlocksBuf, UAV);
+        Trans(cptCtx, _freedFuseBlocksBuf, UAV);
+        Trans(cptCtx, _updateBlocksBuf, csSRV);
+        Trans(cptCtx, _indirectParams, IARG);
         {
             GPU_PROFILE(cptCtx, L"UpdateVoxels");
             cptCtx.SetPipelineState(
                 _cptBlockVolUpdate_Pass3[buf.type][_TGSize]);
-            Trans(cptCtx, _occupiedBlocksBuf, UAV);
-            Trans(cptCtx, _renderBlockVol, UAV);
-            Trans(cptCtx, _fuseBlockVol, UAV);
-            Trans(cptCtx, _newFuseBlocksBuf, UAV);
-            Trans(cptCtx, _freedFuseBlocksBuf, UAV);
-            Trans(cptCtx, _updateBlocksBuf, csSRV);
-            Trans(cptCtx, _indirectParams, IARG);
             Bind(cptCtx, 2, 0, 2, buf.UAV);
             Bind(cptCtx, 2, 2, 1, &_fuseBlockVol.GetUAV());
             Bind(cptCtx, 2, 3, 1, &_newFuseBlocksBuf.GetUAV());
@@ -1177,6 +1178,9 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             Bind(cptCtx, 3, 3, 1, &_updateBlocksBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 12);
         }
+        BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
+        BeginTrans(cptCtx, _newFuseBlocksBuf, csSRV);
+        BeginTrans(cptCtx, _freedFuseBlocksBuf, csSRV);
         // Read queue buffer counter back for debugging
         if (_readBackGPUBufStatus) {
             Graphics::g_cmdListMngr.WaitForFence(_readBackFence);
@@ -1197,27 +1201,28 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         }
         // Create indirect argument and params for Filling in
         // OccupiedBlockFreedSlot and AppendingNewOccupiedBlock
+        Trans(cptCtx, _indirectParams, UAV);
+        Trans(cptCtx, _jobParamBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
-            Trans(cptCtx, _indirectParams, UAV);
             BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
-            Bind(cptCtx, 2, 0, 1, &_newFuseBlocksBuf.GetCounterUAV(cmdCtx));
-            Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cmdCtx));
+            Bind(cptCtx, 2, 0, 1, &_newFuseBlocksBuf.GetCounterUAV(cptCtx));
+            Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cptCtx));
             Bind(cptCtx, 2, 2, 1, &_indirectParams.GetUAV());
             Bind(cptCtx, 2, 3, 1, &_jobParamBuf.GetUAV());
-            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cptCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
         // Filling in NewOccupiedBlocks into FreeSlots in OccupiedBlockQueue
+        Trans(cptCtx, _occupiedBlocksBuf, UAV);
+        Trans(cptCtx, _newFuseBlocksBuf, csSRV);
+        Trans(cptCtx, _freedFuseBlocksBuf, csSRV);
+        Trans(cptCtx, _jobParamBuf, csSRV);
+        Trans(cptCtx, _indirectParams, IARG);
         {
             GPU_PROFILE(cptCtx, L"FreedQFillIn");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Pass1);
-            Trans(cptCtx, _occupiedBlocksBuf, UAV);
-            Trans(cptCtx, _newFuseBlocksBuf, csSRV);
-            Trans(cptCtx, _freedFuseBlocksBuf, csSRV);
-            Trans(cptCtx, _jobParamBuf, csSRV);
-            Trans(cptCtx, _indirectParams, IARG);
             Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
             Bind(cptCtx, 3, 0, 1, &_newFuseBlocksBuf.GetSRV());
             Bind(cptCtx, 3, 1, 1, &_freedFuseBlocksBuf.GetSRV());
@@ -1233,17 +1238,22 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
             Bind(cptCtx, 3, 1, 1, &_jobParamBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 36);
         }
+        BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
+        BeginTrans(cptCtx, _jobParamBuf, csSRV);
+        BeginTrans(cptCtx, _newFuseBlocksBuf, UAV);
+        BeginTrans(cptCtx, _freedFuseBlocksBuf, csSRV);
         // Resolve OccupiedBlockQueue for next VoxelUpdate DispatchIndirect
+        Trans(cptCtx, _indirectParams, UAV);
         {
             GPU_PROFILE(cptCtx, L"OccupiedQResolve");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Resolve);
-            Trans(cptCtx, _indirectParams, UAV);
             Bind(cptCtx, 2, 0, 1, &_indirectParams.GetUAV());
-            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
+            Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cptCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
+        BeginTrans(cptCtx, _indirectParams, IARG);
     } else {
-        GPU_PROFILE(cmdCtx, L"Volume Updating");
+        GPU_PROFILE(cptCtx, L"Volume Updating");
         _CleanRenderBlockVol(cptCtx);
         cptCtx.SetPipelineState(_cptUpdatePSO[buf.type][type]);
         Bind(cptCtx, 2, 0, 2, buf.UAV);

@@ -4,6 +4,11 @@
 class TSDFVolume
 {
 public:
+    enum OutSurf {
+        kForProc = 0x1,
+        kForVisu = 0x2
+    };
+
     enum VolumeStruct {
         kVoxel = 0,
         kBlockVol,
@@ -32,18 +37,13 @@ public:
     void Destory();
     void ResizeVisualSurface(uint32_t width, uint32_t height);
     void ResetAllResource();
-    void PreProcessing();
-    void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
-    void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
-        ColorBuffer* pColorTex, const DirectX::XMMATRIX& mSensorView_T);
-    void RenderSurface(GraphicsContext& gfxCtx,
-        const DirectX::XMMATRIX& mVCamProj_T,
-        const DirectX::XMMATRIX& mVCamView_T);
-    void ExtractSurface(GraphicsContext& gfxCtx,
+    void PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
+        const DirectX::XMMATRIX& mVCamView_T,
         const DirectX::XMMATRIX& mSensor_T);
-    void RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor,
-        const DirectX::XMMATRIX& mVCamProj_t,
-        const DirectX::XMMATRIX& mVCam_T);
+    void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
+    void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex);
+    void ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT);
+    void RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor);
     void RenderGui();
 
     ColorBuffer* GetDepthTexForProcessing();
@@ -54,9 +54,9 @@ private:
         const uint3& reso, const uint ratio);
     void _CreateRenderBlockVol(const uint3& reso, const uint ratio);
     // Data update
-    void _UpdateRenderCamData(const DirectX::XMMATRIX& mVCamProjView_T,
-        const DirectX::XMMATRIX& mSensorView_T);
-    void _UpdateSensorData(const DirectX::XMMATRIX& mSensorView_T);
+    void _UpdateRenderCamData(const DirectX::XMMATRIX& mVCamProj_T,
+        const DirectX::XMMATRIX& mVCamView_T);
+    void _UpdateSensorData(const DirectX::XMMATRIX& mSensor_T);
     void _UpdateVolumeSettings(const uint3 reso, const float voxelSize);
     void _UpdateBlockSettings(const uint fuseBlockVoxelRatio,
         const uint renderBlockVoxelRatio, const ThreadGroup TG);
@@ -65,9 +65,8 @@ private:
         const ManagedBuf::BufInterface& buf, bool updateCB = false);
     void _CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB = false);
     void _CleanRenderBlockVol(ComputeContext& cptCtx);
-    void _UpdateVolume(CommandContext& cmdCtx,
-        const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex,
-        ColorBuffer* pColorTex);
+    void _UpdateVolume(ComputeContext& cptCtx,
+        const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex);
     void _RenderVolume(GraphicsContext& gfxCtx,
         const ManagedBuf::BufInterface& buf, bool toOutTex = false);
     void _RenderNearFar(GraphicsContext& gfxCtx, bool toSurface = false);

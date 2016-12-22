@@ -4,7 +4,28 @@
 using namespace DirectX;
 using namespace Microsoft::WRL;
 
+#define Bind(ctx, rootIdx, offset, count, resource) \
+ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
+
+#define BindCB(ctx, rootIdx, size, ptr) \
+ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
+
+#define Trans(ctx, res, state) \
+ctx.TransitionResource(res, state)
+
+#define TransFlush(ctx, res, state) \
+ctx.TransitionResource(res, state, true)
+
+#define BeginTrans(ctx, res, state) \
+ctx.BeginResourceTransition(res, state)
+
 namespace {
+    const D3D12_RESOURCE_STATES psSRV =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    const D3D12_RESOURCE_STATES  csSRV =
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    const D3D12_RESOURCE_STATES RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
+
     GraphicsPSO _hPassPSO[SeperableFilter::kNumKernelDiameter];
     GraphicsPSO _vPassPSO[SeperableFilter::kNumKernelDiameter];
     RootSignature _rootSignature;
@@ -114,27 +135,27 @@ void SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
 }
 
 void SeperableFilter::OnRender(
-    GraphicsContext& gfxCtx, const ColorBuffer* pInputTex)
+    GraphicsContext& gfxCtx, ColorBuffer* pInputTex)
 {
+    Trans(gfxCtx, *pInputTex, psSRV | csSRV);
+    Trans(gfxCtx, _intermediateBuf, RTV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
     gfxCtx.SetRootSignature(_rootSignature);
     gfxCtx.SetPipelineState(_hPassPSO[_kernelSizeInUse]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    gfxCtx.SetDynamicConstantBufferView(0, sizeof(CBuffer), (void*)&_dataCB);
-    gfxCtx.SetDynamicDescriptors(1, 0, 1, &pInputTex->GetSRV());
     gfxCtx.SetRenderTargets(1, &_intermediateBuf.GetRTV());
     gfxCtx.SetViewport(_viewport);
     gfxCtx.SetScisor(_scisorRact);
-    gfxCtx.TransitionResource(
-        _intermediateBuf, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    BindCB(gfxCtx, 0, sizeof(CBuffer), (void*)&_dataCB);
+    Bind(gfxCtx, 1, 0, 1, &pInputTex->GetSRV());
     gfxCtx.Draw(3);
-
-    gfxCtx.TransitionResource(
-        _intermediateBuf, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    Trans(gfxCtx, *pInputTex, RTV);
+    Trans(gfxCtx, _intermediateBuf, psSRV);
     gfxCtx.SetPipelineState(_vPassPSO[_kernelSizeInUse]);
-    gfxCtx.SetDynamicDescriptors(1, 0, 1, &_intermediateBuf.GetSRV());
     gfxCtx.SetRenderTargets(1, &pInputTex->GetRTV());
+    Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     gfxCtx.Draw(3);
+    BeginTrans(gfxCtx, _intermediateBuf, RTV);
 }
 
 void SeperableFilter::RenderGui()
