@@ -20,6 +20,8 @@ namespace {
     ComputePSO _cptGetNormalPSO;
     std::once_flag _psoCompiled_flag;
 
+    float _fDistThreshold = FLT_MAX;
+
     void _CreatePSO()
     {
         HRESULT hr;
@@ -63,6 +65,7 @@ NormalGenerator::NormalGenerator(uint2 reso, const std::wstring& name)
     : _name(name)
 {
     _dataCB.u2Reso = reso;
+    _dataCB.fDistThreshold = 0.1f;
 }
 
 NormalGenerator::~NormalGenerator()
@@ -96,14 +99,14 @@ NormalGenerator::OnProcessing(
     ComputeContext& cptCtx, ColorBuffer* pInputTex)
 {
     GPU_PROFILE(cptCtx, _name.c_str());
-    cptCtx.SetRootSignature(_rootsig);
     cptCtx.SetPipelineState(_cptGetNormalPSO);
+    cptCtx.SetRootSignature(_rootsig);
     cptCtx.TransitionResource(*pInputTex, UAV);
+    _dataCB.fDistThreshold = _fDistThreshold;
     BindCB(cptCtx, 0, sizeof(_dataCB), (void*)&_dataCB);
     Bind(cptCtx, 1, 0, 1, &_normalMap.GetUAV());
     Bind(cptCtx, 2, 0, 1, &pInputTex->GetSRV());
     cptCtx.Dispatch2D(_dataCB.u2Reso.x, _dataCB.u2Reso.y);
-    cptCtx.BeginResourceTransition(*pInputTex, SRV);
 }
 
 void
@@ -115,7 +118,7 @@ NormalGenerator::RenderGui()
     if (ImGui::Button("Recompile Shaders")) {
         _CreatePSO();
     }
-    ImGui::SliderFloat("Dist Threshold", &_dataCB.fDistThreshold, 0.05f, 0.5f);
+    ImGui::SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
 }
 
 ColorBuffer*

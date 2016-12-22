@@ -115,7 +115,7 @@ void KinectVisualizer::OnUpdate()
             break;
         }
         _sensorTexGen.RenderGui();
-        _normalGen.RenderGui();
+        NormalGenerator::RenderGui();
     }
     ImGui::End();
 }
