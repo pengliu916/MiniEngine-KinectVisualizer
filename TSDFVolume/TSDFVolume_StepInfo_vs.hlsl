@@ -9,8 +9,8 @@ void main(uint uInstanceID : SV_InstanceID, in float4 f4Pos : POSITION,
 {
     uint3 u3Idx = MakeU3Idx(uInstanceID,
         vParam.u3VoxelReso / vParam.uVoxelRenderBlockRatio);
-    f4ProjPos = float4(0.f, 0.f, 0.f, 1.f);
-    f2Depths = float2(0.f, 0.f);
+    f4ProjPos = nan();
+    f2Depths = nan();
     // check whether it is occupied 
     if (tex_srvRenderBlockVol[u3Idx] != 0) {
         float3 f3BrickOffset = 

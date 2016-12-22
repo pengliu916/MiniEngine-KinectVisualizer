@@ -6,6 +6,13 @@
 #define BufIdx uint
 #endif
 
+float nan() {
+#pragma warning(push)
+#pragma warning(disable:4118)
+    return sqrt(-1);
+#pragma warning(pop)
+}
+
 uint FlatIdx(uint3 idx, uint3 reso)
 {
     return idx.x + idx.y * reso.x + idx.z * reso.x * reso.y;

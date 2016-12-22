@@ -28,22 +28,26 @@ public:
 
     TSDFVolume();
     ~TSDFVolume();
-    void OnCreateResource(const int2& depthReso, const int2& colorReso);
-    void OnDestory();
-    void OnResize();
-    void OnReset();
-    void OnUpdate();
-    void OnDefragment(ComputeContext& cptCtx);
-    void OnIntegrate(CommandContext& cmdCtx, ColorBuffer* pDepthTex,
+    void CreateResource(const int2& depthReso, const int2& colorReso);
+    void Destory();
+    void ResizeVisualSurface(uint32_t width, uint32_t height);
+    void ResetAllResource();
+    void PreProcessing();
+    void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
+    void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
         ColorBuffer* pColorTex, const DirectX::XMMATRIX& mSensorView_T);
-    void OnRender(CommandContext& cmdContext,
+    void RenderSurface(GraphicsContext& gfxCtx,
         const DirectX::XMMATRIX& mVCamProj_T,
-        const DirectX::XMMATRIX& mVCam_T);
-    void OnExtractSurface(CommandContext& cmdContext,
+        const DirectX::XMMATRIX& mVCamView_T);
+    void ExtractSurface(GraphicsContext& gfxCtx,
         const DirectX::XMMATRIX& mSensor_T);
+    void RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor,
+        const DirectX::XMMATRIX& mVCamProj_t,
+        const DirectX::XMMATRIX& mVCam_T);
     void RenderGui();
 
-    ColorBuffer* GetOutTex();
+    ColorBuffer* GetDepthTexForProcessing();
+    ColorBuffer* GetDepthTexForVisualize();
 
 private:
     void _CreateFuseBlockVolAndRelatedBuf(
@@ -74,8 +78,12 @@ private:
     // Resource for extracting depthmap
     D3D12_VIEWPORT _depthViewPort = {};
     D3D12_RECT _depthSissorRect = {};
+    D3D12_VIEWPORT _depthVisViewPort = {};
+    D3D12_RECT _depthVisSissorRect = {};
     // Texture for the output depthmap
-    ColorBuffer _extractedDepth;
+    ColorBuffer _depthMapProc;
+    ColorBuffer _depthMapVisual;
+    DepthBuffer _depthBufVisual;
 
     // Volume settings currently in use
     VolumeStruct _curVolStruct = kVoxel;
@@ -107,7 +115,8 @@ private:
     int _renderBlockVoxelRatio = 8;
 
     // Texture2D for ray casting range
-    ColorBuffer _nearFarTex;
+    ColorBuffer _nearFarForVisual;
+    ColorBuffer _nearFarForProcess;
 
     // 32bit element buffer for blocks need to be updated, and its element size
     // [0-1] not used

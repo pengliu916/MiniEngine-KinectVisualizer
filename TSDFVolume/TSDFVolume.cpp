@@ -12,6 +12,15 @@ ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 #define BindCB(ctx, rootIdx, size, ptr) \
 ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
 
+#define Trans(ctx, res, state) \
+ctx.TransitionResource(res, state)
+
+#define TransFlush(ctx, res, state) \
+ctx.TransitionResource(res, state, true)
+
+#define BeginTrans(ctx, res, state) \
+ctx.BeginResourceTransition(res, state)
+
 namespace {
     const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     const D3D12_RESOURCE_STATES psSRV =
@@ -23,7 +32,6 @@ namespace {
     const D3D12_RESOURCE_STATES RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
     const D3D12_RESOURCE_STATES DSV = D3D12_RESOURCE_STATE_DEPTH_WRITE;
     const D3D12_RESOURCE_STATES IARG = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
-
 
     const UINT kBuf = ManagedBuf::kNumType;
     const UINT kStruct = TSDFVolume::kNumStruct;
@@ -262,9 +270,9 @@ namespace {
         };
 
         // Create PSO for volume update and volume render
-        DXGI_FORMAT ColorFormat = Graphics::g_SceneColorBuffer.GetFormat();
-        DXGI_FORMAT DepthFormat = Graphics::g_SceneDepthBuffer.GetFormat();
-        DXGI_FORMAT ExtractTexFormat = ColorFormat;
+        DXGI_FORMAT ColorBufFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+        DXGI_FORMAT DepthBufFormat = Graphics::g_SceneDepthBuffer.GetFormat();
+        DXGI_FORMAT DepthMapFormat = DXGI_FORMAT_R16_UINT;
         //DXGI_FORMAT ExtractTexFormat = DXGI_FORMAT_R16_UINT;
 
 #define CreatePSO( ObjName, Shader)\
@@ -288,8 +296,7 @@ ObjName.Finalize();
             for (int i = 0; i < kBuf; ++i) {
                 for (int j = 0; j < kFilter; ++j) {
                     _gfxVCamRenderPSO[i][k][j].SetRootSignature(_rootsig);
-                    _gfxVCamRenderPSO[i][k][j].SetInputLayout(
-                        _countof(inputElementDescs), inputElementDescs);
+                    _gfxVCamRenderPSO[i][k][j].SetInputLayout(0, nullptr);
                     _gfxVCamRenderPSO[i][k][j].SetRasterizerState(
                         Graphics::g_RasterizerDefault);
                     _gfxVCamRenderPSO[i][k][j].SetBlendState(
@@ -300,16 +307,18 @@ ObjName.Finalize();
                     _gfxVCamRenderPSO[i][k][j].SetPrimitiveTopologyType(
                         D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
                     _gfxVCamRenderPSO[i][k][j].SetRenderTargetFormats(
-                        1, &ColorFormat, DepthFormat);
+                        1, &DepthMapFormat, DepthBufFormat);
                     _gfxVCamRenderPSO[i][k][j].SetPixelShader(
                         raycastVCamPS[i][k][j]->GetBufferPointer(),
                         raycastVCamPS[i][k][j]->GetBufferSize());
                     _gfxSensorRenderPSO[i][k][j] = _gfxVCamRenderPSO[i][k][j];
+                    _gfxSensorRenderPSO[i][k][j].SetDepthStencilState(
+                        Graphics::g_DepthStateDisabled);
                     _gfxSensorRenderPSO[i][k][j].SetVertexShader(
                         quadSensorVS->GetBufferPointer(),
                         quadSensorVS->GetBufferSize());
                     _gfxSensorRenderPSO[i][k][j].SetRenderTargetFormats(
-                        1, &ExtractTexFormat, DXGI_FORMAT_UNKNOWN);
+                        1, &DepthMapFormat, DXGI_FORMAT_UNKNOWN);
                     _gfxSensorRenderPSO[i][k][j].SetPixelShader(
                         raycastSensorPS[i][k][j]->GetBufferPointer(),
                         raycastSensorPS[i][k][j]->GetBufferSize());
@@ -348,7 +357,7 @@ ObjName.Finalize();
         macro1[2].Definition = "0"; macro1[3].Definition = "1";
         V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS[0]));
         V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoSensorVS[1]));
-        macro[1].Definition = "1";
+        macro1[1].Definition = "1";
         V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
 
         _gfxStepInfoVCamPSO[0].SetRootSignature(_rootsig);
@@ -389,13 +398,14 @@ ObjName.Finalize();
         _gfxStepInfoDebugPSO.SetPrimitiveTopologyType(
             D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
         _gfxStepInfoDebugPSO.SetRenderTargetFormats(
-            1, &ColorFormat, DepthFormat);
+            1, &ColorBufFormat, DepthBufFormat);
         _gfxStepInfoVCamPSO[0].SetRenderTargetFormats(
             1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
         _gfxStepInfoVCamPSO[0].SetPixelShader(
             stepInfoPS->GetBufferPointer(), stepInfoPS->GetBufferSize());
         _gfxStepInfoDebugPSO.SetPixelShader(
-            stepInfoPS->GetBufferPointer(), stepInfoDebugPS->GetBufferSize());
+            stepInfoDebugPS->GetBufferPointer(),
+            stepInfoDebugPS->GetBufferSize());
         _gfxStepInfoSensorPSO[0] = _gfxStepInfoVCamPSO[0];
         _gfxStepInfoSensorPSO[1] = _gfxStepInfoSensorPSO[0];
         _gfxStepInfoSensorPSO[1].SetInputLayout(0, nullptr);
@@ -465,7 +475,8 @@ ObjName.Finalize();
 
 TSDFVolume::TSDFVolume()
     : _volBuf(XMUINT3(512, 512, 512)),
-    _nearFarTex(XMVectorSet(MAX_DEPTH, 0, 0, 0))
+    _nearFarForVisual(XMVectorSet(MAX_DEPTH, 0, 0, 0)),
+    _nearFarForProcess(XMVectorSet(MAX_DEPTH, 0, 0, 0))
 {
     _volParam = &_cbPerCall.vParam;
     _volParam->fMaxWeight = 20.f;
@@ -479,7 +490,7 @@ TSDFVolume::~TSDFVolume()
 }
 
 void
-TSDFVolume::OnCreateResource(const int2& depthReso, const int2& colorReso)
+TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso)
 {
     ASSERT(Graphics::g_device);
     // Create resource for volume
@@ -520,8 +531,10 @@ TSDFVolume::OnCreateResource(const int2& depthReso, const int2& colorReso)
     _depthSissorRect.right = static_cast<LONG>(depthReso.x);
     _depthSissorRect.bottom = static_cast<LONG>(depthReso.y);
 
-    _extractedDepth.Create(L"ExtracedDepth",
-        depthReso.x, depthReso.y, 1, Graphics::g_SceneColorBuffer.GetFormat());
+    _depthMapProc.Create(L"ExtracedDepth",
+        depthReso.x, depthReso.y, 1, DXGI_FORMAT_R16_UINT);
+    _nearFarForProcess.Create(L"StepInfoTex_Proc", depthReso.x, depthReso.y, 0,
+        _stepInfoTexFormat);
 
     const uint3 reso = _volBuf.GetReso();
     _submittedReso = reso;
@@ -534,9 +547,11 @@ TSDFVolume::OnCreateResource(const int2& depthReso, const int2& colorReso)
 }
 
 void
-TSDFVolume::OnDestory()
+TSDFVolume::Destory()
 {
-    _extractedDepth.Destroy();
+    _depthMapVisual.Destroy();
+    _depthBufVisual.Destroy();
+    _depthMapProc.Destroy();
     _debugBuf.Destroy();
     _jobParamBuf.Destroy();
     _indirectParams.Destroy();
@@ -547,33 +562,42 @@ TSDFVolume::OnDestory()
     _volBuf.Destroy();
     _fuseBlockVol.Destroy();
     _renderBlockVol.Destroy();
-    _nearFarTex.Destroy();
+    _nearFarForVisual.Destroy();
+    _nearFarForProcess.Destroy();
     _cubeVB.Destroy();
     _cubeTriangleStripIB.Destroy();
     _cubeLineStripIB.Destroy();
 }
 
 void
-TSDFVolume::OnResize()
+TSDFVolume::ResizeVisualSurface(uint32_t width, uint32_t height)
 {
-    int32_t width = Core::g_config.swapChainDesc.Width;
-    int32_t height = Core::g_config.swapChainDesc.Height;
-
     float fAspectRatio = width / (FLOAT)height;
     _cbPerCall.fWideHeightRatio = fAspectRatio;
     _cbPerCall.fClipDist = 0.1f;
     float fHFov = XM_PIDIV4;
     _cbPerCall.fTanHFov = tan(fHFov / 2.f);
 
-    _nearFarTex.Destroy();
-    // Create MinMax Buffer but make sure it's at least is the sensor reso
-    width = max(width, _cbPerCall.i2DepthReso.x);
-    height = max(height, _cbPerCall.i2DepthReso.y);
-    _nearFarTex.Create(L"StepInfoTex", width, height, 0, _stepInfoTexFormat);
+    _depthVisViewPort.Width = static_cast<float>(width);
+    _depthVisViewPort.Height = static_cast<float>(height);
+    _depthVisViewPort.MaxDepth = 1.f;
+
+    _depthVisSissorRect.right = static_cast<LONG>(width);
+    _depthVisSissorRect.bottom = static_cast<LONG>(height);
+
+    _nearFarForVisual.Destroy();
+    _nearFarForVisual.Create(L"StepInfoTex_Visual", width, height, 1,
+        _stepInfoTexFormat);
+    _depthMapVisual.Destroy();
+    _depthMapVisual.Create(L"ExtractedDepth_Visual", width, height, 1,
+        DXGI_FORMAT_R16_UINT);
+    _depthBufVisual.Destroy();
+    _depthBufVisual.Create(L"ExtractedDepthBuf_Visual", width, height,
+        Graphics::g_SceneDepthBuffer.GetFormat());
 }
 
 void
-TSDFVolume::OnReset()
+TSDFVolume::ResetAllResource()
 {
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetContext");
     cptCtx.SetRootSignature(_rootsig);
@@ -587,7 +611,7 @@ TSDFVolume::OnReset()
 }
 
 void
-TSDFVolume::OnUpdate()
+TSDFVolume::PreProcessing()
 {
     ManagedBuf::BufInterface newBufInterface = _volBuf.GetResource();
     _curBufInterface = newBufInterface;
@@ -601,15 +625,15 @@ TSDFVolume::OnUpdate()
 }
 
 void
-TSDFVolume::OnDefragment(ComputeContext& cptCtx)
+TSDFVolume::DefragmentActiveBlockQueue(ComputeContext& cptCtx)
 {
     GPU_PROFILE(cptCtx, L"Defragment");
     cptCtx.SetPipelineState(_cptBlockQDefragment);
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.TransitionResource(_occupiedBlocksBuf, UAV);
-    cptCtx.TransitionResource(_freedFuseBlocksBuf, csSRV);
-    cptCtx.TransitionResource(_jobParamBuf, csSRV);
-    cptCtx.TransitionResource(_indirectParams, IARG);
+    Trans(cptCtx, _occupiedBlocksBuf, UAV);
+    Trans(cptCtx, _freedFuseBlocksBuf, csSRV);
+    Trans(cptCtx, _jobParamBuf, csSRV);
+    Trans(cptCtx, _indirectParams, IARG);
     Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
     Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cptCtx));
     Bind(cptCtx, 3, 0, 1, &_freedFuseBlocksBuf.GetSRV());
@@ -618,89 +642,78 @@ TSDFVolume::OnDefragment(ComputeContext& cptCtx)
 }
 
 void
-TSDFVolume::OnIntegrate(CommandContext& cmdCtx, ColorBuffer* pDepthTex,
+TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
     ColorBuffer* pColorTex, const DirectX::XMMATRIX& mDepth_T)
 {
-    ComputeContext& cptCtx = cmdCtx.GetComputeContext();
-    
     cptCtx.SetRootSignature(_rootsig);
     _cbPerFrame.mDepthView = XMMatrixInverse(nullptr, mDepth_T);
     _cbPerFrame.mDepthViewInv = mDepth_T;
     BindCB(cptCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
     BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
-    cmdCtx.TransitionResource(_renderBlockVol, UAV);
-    cmdCtx.TransitionResource(*_curBufInterface.resource[0], UAV);
-    cmdCtx.TransitionResource(*_curBufInterface.resource[1], UAV);
-    _UpdateVolume(cmdCtx, _curBufInterface, pDepthTex, pColorTex);
-    cmdCtx.BeginResourceTransition(*_curBufInterface.resource[0], psSRV);
+    Trans(cptCtx, _renderBlockVol, UAV);
+    Trans(cptCtx, *_curBufInterface.resource[0], UAV);
+    Trans(cptCtx, *_curBufInterface.resource[1], UAV);
+    _UpdateVolume(cptCtx, _curBufInterface, pDepthTex, pColorTex);
+    BeginTrans(cptCtx, *_curBufInterface.resource[0], psSRV);
     if (_useStepInfoTex) {
-        cmdCtx.BeginResourceTransition(_renderBlockVol, vsSRV | psSRV);
+        BeginTrans(cptCtx, _renderBlockVol, vsSRV | psSRV);
     }
 }
 
 void
-TSDFVolume::OnRender(CommandContext& cmdCtx,
+TSDFVolume::RenderSurface(GraphicsContext& gfxCtx,
     const DirectX::XMMATRIX& mProj_T, const DirectX::XMMATRIX& mView_T)
 {
     _UpdateRenderCamData(mProj_T, mView_T);
 
-    cmdCtx.BeginResourceTransition(Graphics::g_SceneColorBuffer, RTV);
-    cmdCtx.BeginResourceTransition(Graphics::g_SceneDepthBuffer, DSV);
-
-    GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
-    gfxCtx.TransitionResource(Graphics::g_SceneColorBuffer, RTV);
-    gfxCtx.TransitionResource(
-        Graphics::g_SceneDepthBuffer, DSV, !_useStepInfoTex);
+    Trans(gfxCtx, _depthMapVisual, RTV);
+    Trans(gfxCtx, _depthBufVisual, DSV);
+    TransFlush(gfxCtx, _nearFarForVisual, RTV);
 
     if (_useStepInfoTex) {
-        gfxCtx.TransitionResource(_nearFarTex, RTV, true);
-        gfxCtx.ClearColor(_nearFarTex);
+        gfxCtx.ClearColor(_nearFarForVisual);
     }
 
-    gfxCtx.ClearColor(Graphics::g_SceneColorBuffer);
-    gfxCtx.ClearDepth(Graphics::g_SceneDepthBuffer);
+    gfxCtx.ClearColor(_depthMapVisual);
+    gfxCtx.ClearDepth(_depthBufVisual);
 
     gfxCtx.SetRootSignature(_rootsig);
     BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
     BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
-    gfxCtx.SetViewport(Graphics::g_DisplayPlaneViewPort);
-    gfxCtx.SetScisor(Graphics::g_DisplayPlaneScissorRect);
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
+    gfxCtx.SetViewport(_depthVisViewPort);
+    gfxCtx.SetScisor(_depthVisSissorRect);
 
     if (_useStepInfoTex) {
         GPU_PROFILE(gfxCtx, L"NearFar_Render");
-        gfxCtx.TransitionResource(_renderBlockVol, vsSRV | psSRV);
+        gfxCtx.SetRenderTargets(1, &_nearFarForVisual.GetRTV());
+        Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
         _RenderNearFar(gfxCtx);
-        gfxCtx.TransitionResource(_nearFarTex, psSRV);
+        Trans(gfxCtx, _nearFarForVisual, psSRV);
     }
     {
         GPU_PROFILE(gfxCtx, L"Volume_Render");
-        gfxCtx.TransitionResource(*_curBufInterface.resource[0], psSRV);
+        gfxCtx.SetRenderTargets(
+            1, &_depthMapVisual.GetRTV(), _depthBufVisual.GetDSV());
+        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         _RenderVolume(gfxCtx, _curBufInterface);
-        gfxCtx.BeginResourceTransition(*_curBufInterface.resource[0], UAV);
-    }
-    if (_useStepInfoTex) {
-        if (_stepInfoDebug) {
-            GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
-            _RenderBrickGrid(gfxCtx);
-        }
-        cmdCtx.BeginResourceTransition(_nearFarTex, RTV);
+        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
     }
 }
 
 void
-TSDFVolume::OnExtractSurface(CommandContext& cmdCtx,
+TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx,
     const DirectX::XMMATRIX& mSensor_T)
 {
     _UpdateSensorData(mSensor_T);
-    GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
-    cmdCtx.TransitionResource(_extractedDepth, RTV);
+
+    Trans(gfxCtx, _depthMapProc, RTV);
+    TransFlush(gfxCtx, _nearFarForProcess, RTV);
     if (_useStepInfoTex) {
-        gfxCtx.TransitionResource(_nearFarTex, RTV, true);
-        gfxCtx.ClearColor(_nearFarTex);
+        gfxCtx.ClearColor(_nearFarForProcess);
     }
 
-    gfxCtx.ClearColor(_extractedDepth);
+    gfxCtx.ClearColor(_depthMapProc);
 
     gfxCtx.SetRootSignature(_rootsig);
     BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
@@ -711,54 +724,78 @@ TSDFVolume::OnExtractSurface(CommandContext& cmdCtx,
 
     if (_useStepInfoTex) {
         GPU_PROFILE(gfxCtx, L"NearFar_Extract");
-        gfxCtx.TransitionResource(_renderBlockVol, vsSRV | psSRV);
+        gfxCtx.SetRenderTargets(1, &_nearFarForProcess.GetRTV());
+        Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
         _RenderNearFar(gfxCtx, true);
-        gfxCtx.TransitionResource(_nearFarTex, psSRV);
+        Trans(gfxCtx, _nearFarForProcess, psSRV);
     }
     {
         GPU_PROFILE(gfxCtx, L"Volume_Extract");
-        gfxCtx.TransitionResource(*_curBufInterface.resource[0], psSRV);
+        gfxCtx.SetRenderTarget(_depthMapProc.GetRTV());
+        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         _RenderVolume(gfxCtx, _curBufInterface, true);
-        gfxCtx.BeginResourceTransition(*_curBufInterface.resource[0], UAV);
+        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
     }
-    if (_useStepInfoTex) {
-        cmdCtx.BeginResourceTransition(_nearFarTex, RTV);
+}
+
+void
+TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor,
+    const DirectX::XMMATRIX& mVCamProj_t, const DirectX::XMMATRIX& mVCamView_T)
+{
+    if (!_useStepInfoTex || !_stepInfoDebug) {
+        return;
     }
-    _extractedDepth.GuiShow();
+    _UpdateRenderCamData(mVCamProj_t, mVCamView_T);
+
+    Trans(gfxCtx, *pColor, RTV);
+    Trans(gfxCtx, _depthBufVisual, DSV);
+
+    gfxCtx.SetRootSignature(_rootsig);
+    BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+    BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
+    gfxCtx.SetViewport(_depthVisViewPort);
+    gfxCtx.SetScisor(_depthVisSissorRect);
+    gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), _depthBufVisual.GetDSV());
+
+    GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
+    _RenderBrickGrid(gfxCtx);
+    Trans(gfxCtx, *pColor, psSRV);
 }
 
 void
 TSDFVolume::RenderGui()
 {
+    using namespace ImGui;
     static bool showPenal = true;
-    if (!ImGui::CollapsingHeader("Sparse Volume", 0, true, true)) {
+    if (!CollapsingHeader("Sparse Volume", 0, true, true)) {
         return;
     }
-    ImGui::Checkbox("Block Volume Update", &_blockVolumeUpdate);
-    ImGui::SameLine();
-    ImGui::Checkbox("Debug", &_readBackGPUBufStatus);
+    Checkbox("Block Volume Update", &_blockVolumeUpdate);
+    SameLine();
+    Checkbox("Debug", &_readBackGPUBufStatus);
     if (_readBackGPUBufStatus && _blockVolumeUpdate) {
         char buf[64];
         float data = (float)_readBackData[0] / _occupiedQSize;
         sprintf_s(buf, 64, "%d/%d OccupiedQ", _readBackData[0], _occupiedQSize);
-        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        ProgressBar(data, ImVec2(-1.f, 0.f), buf);
         data = (float)_readBackData[1] / _updateQSize;
         sprintf_s(buf, 64, "%d/%d UpdateQ", _readBackData[1], _updateQSize);
-        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        ProgressBar(data, ImVec2(-1.f, 0.f), buf);
         data = (float)_readBackData[2] / _newQSize;
         sprintf_s(buf, 64, "%d/%d NewQ", _readBackData[2], _newQSize);
-        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        ProgressBar(data, ImVec2(-1.f, 0.f), buf);
         data = (float)_readBackData[3] / _freedQSize;
         sprintf_s(buf, 64, "%d/%d FreeQ", _readBackData[3], _freedQSize);
-        ImGui::ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+        ProgressBar(data, ImVec2(-1.f, 0.f), buf);
     }
     if (_blockVolumeUpdate) {
-        ImGui::SliderInt("Defragment Threshold",
+        SliderInt("Defragment Threshold",
             &_cbPerCall.iDefragmentThreshold, 5000, 500000);
-        ImGui::Text("BlockUpdate CS Threadgroup Size:");
+        Text("BlockUpdate CS Threadgroup Size:");
         static int iTGSize = (int)_TGSize;
-        ImGui::RadioButton("4x4x4##TG", &iTGSize, k64);
-        ImGui::RadioButton("8x8x8##TG", &iTGSize, k512);
+        RadioButton("4x4x4##TG", &iTGSize, k64);
+        RadioButton("8x8x8##TG", &iTGSize, k512);
         if (iTGSize != (int)_TGSize) {
             if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
                 iTGSize = (int)_TGSize;
@@ -771,68 +808,55 @@ TSDFVolume::RenderGui()
             }
         }
     }
-    ImGui::Separator();
-    ImGui::Checkbox("StepInfoTex", &_useStepInfoTex);
-    ImGui::Checkbox("NoInstance", &_noInstance);
-    ImGui::SameLine();
-    ImGui::Checkbox("DebugGrid", &_stepInfoDebug);
-    ImGui::Separator();
+    Separator();
+    Checkbox("StepInfoTex", &_useStepInfoTex);
+    Checkbox("NoInstance", &_noInstance); SameLine();
+    Checkbox("DebugGrid", &_stepInfoDebug);
+    Separator();
     static int iFilterType = (int)_filterType;
-    ImGui::RadioButton("No Filter", &iFilterType, kNoFilter);
-    ImGui::RadioButton("Linear Filter", &iFilterType, kLinearFilter);
-    ImGui::RadioButton("Linear Sampler", &iFilterType, kSamplerLinear);
-    ImGui::RadioButton("Aniso Sampler", &iFilterType, kSamplerAniso);
+    RadioButton("No Filter", &iFilterType, kNoFilter);
+    RadioButton("Linear Filter", &iFilterType, kLinearFilter);
+    RadioButton("Linear Sampler", &iFilterType, kSamplerLinear);
+    RadioButton("Aniso Sampler", &iFilterType, kSamplerAniso);
     if (_volBuf.GetType() != ManagedBuf::k3DTexBuffer &&
         iFilterType > kLinearFilter) {
         iFilterType = _filterType;
     }
     _filterType = (FilterType)iFilterType;
 
-    ImGui::Separator();
-    ImGui::Text("Buffer Settings:");
-    static int uBufferBitChoice = _volBuf.GetBit();
-    static int uBufferTypeChoice = _volBuf.GetType();
-    ImGui::RadioButton("8Bit", &uBufferBitChoice,
-        ManagedBuf::k8Bit); ImGui::SameLine();
-    ImGui::RadioButton("16Bit", &uBufferBitChoice,
-        ManagedBuf::k16Bit); ImGui::SameLine();
-    ImGui::RadioButton("32Bit", &uBufferBitChoice,
-        ManagedBuf::k32Bit);
-    ImGui::RadioButton("Use Typed Buffer", &uBufferTypeChoice,
-        ManagedBuf::kTypedBuffer);
-    ImGui::RadioButton("Use Texture3D Buffer", &uBufferTypeChoice,
-        ManagedBuf::k3DTexBuffer);
+    Separator();
+    Text("Buffer Settings:");
+    static int uBit = _volBuf.GetBit();
+    static int uType = _volBuf.GetType();
+    RadioButton("8Bit", &uBit, ManagedBuf::k8Bit); SameLine();
+    RadioButton("16Bit", &uBit, ManagedBuf::k16Bit); SameLine();
+    RadioButton("32Bit", &uBit, ManagedBuf::k32Bit);
+    RadioButton("Typed Buffer", &uType, ManagedBuf::kTypedBuffer);
+    RadioButton("Tex3D Buffer", &uType, ManagedBuf::k3DTexBuffer);
     if (iFilterType > kLinearFilter &&
-        uBufferTypeChoice != ManagedBuf::k3DTexBuffer) {
-        uBufferTypeChoice = _volBuf.GetType();
+        uType != ManagedBuf::k3DTexBuffer) {
+        uType = _volBuf.GetType();
     }
-    if ((uBufferTypeChoice != _volBuf.GetType() ||
-        uBufferBitChoice != _volBuf.GetBit()) &&
-        !_volBuf.ChangeResource(_volBuf.GetReso(),
-        (ManagedBuf::Type)uBufferTypeChoice,
-            (ManagedBuf::Bit)uBufferBitChoice)) {
-        uBufferTypeChoice = _volBuf.GetType();
+    if ((uType != _volBuf.GetType() || uBit != _volBuf.GetBit()) &&
+        !_volBuf.ChangeResource(_volBuf.GetReso(), (ManagedBuf::Type)uType,
+            (ManagedBuf::Bit)uBit)) {
+        uType = _volBuf.GetType();
     }
 
-    ImGui::Separator();
-    ImGui::Columns(2, "Block Ratio");
-    ImGui::Text("FuseBlockRatio:"); ImGui::NextColumn();
-    ImGui::Text("RenderBlockRatio:"); ImGui::NextColumn();
+    Separator();
+    Columns(2, "Block Ratio");
+    Text("FuseBlockRatio:"); NextColumn();
+    Text("RenderBlockRatio:"); NextColumn();
     static int fuseBlockRatio = (int)_fuseBlockVoxelRatio;
     static int renderBlockRatio = (int)_renderBlockVoxelRatio;
-    ImGui::RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4);
-    ImGui::NextColumn();
-    ImGui::RadioButton("4x4x4##Render", &renderBlockRatio, 4);
-    ImGui::NextColumn();
-    ImGui::RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8);
-    ImGui::NextColumn();
-    ImGui::RadioButton("8x8x8##Render", &renderBlockRatio, 8);
-    ImGui::NextColumn();
-    ImGui::RadioButton("16x16x16##Fuse", &fuseBlockRatio, 16);
-    ImGui::NextColumn();
-    ImGui::RadioButton("16x16x16##Render", &renderBlockRatio, 16);
-    ImGui::NextColumn(); ImGui::NextColumn();
-    ImGui::RadioButton("32x32x32##Render", &renderBlockRatio, 32);
+    RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4); NextColumn();
+    RadioButton("4x4x4##Render", &renderBlockRatio, 4); NextColumn();
+    RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8); NextColumn();
+    RadioButton("8x8x8##Render", &renderBlockRatio, 8); NextColumn();
+    RadioButton("16x16x16##Fuse", &fuseBlockRatio, 16); NextColumn();
+    RadioButton("16x16x16##Render", &renderBlockRatio, 16); NextColumn();
+    NextColumn();
+    RadioButton("32x32x32##Render", &renderBlockRatio, 32);
 
     if (fuseBlockRatio != _fuseBlockVoxelRatio) {
         if (!(fuseBlockRatio == 4 && _TGSize != k64) &&
@@ -859,33 +883,33 @@ TSDFVolume::RenderGui()
             renderBlockRatio = _renderBlockVoxelRatio;
         }
     }
-    ImGui::Columns(1);
-    ImGui::Separator();
+    Columns(1);
+    Separator();
 
-    ImGui::Text("Volume Size Settings:");
+    Text("Volume Size Settings:");
     static uint3 uiReso = _volBuf.GetReso();
-    ImGui::AlignFirstTextHeightToWidgets();
-    ImGui::Text("X:"); ImGui::SameLine();
-    ImGui::RadioButton("128##X", (int*)&uiReso.x, 128); ImGui::SameLine();
-    ImGui::RadioButton("256##X", (int*)&uiReso.x, 256); ImGui::SameLine();
-    ImGui::RadioButton("384##X", (int*)&uiReso.x, 384); ImGui::SameLine();
-    ImGui::RadioButton("512##X", (int*)&uiReso.x, 512);
+    AlignFirstTextHeightToWidgets();
+    Text("X:"); SameLine();
+    RadioButton("128##X", (int*)&uiReso.x, 128); SameLine();
+    RadioButton("256##X", (int*)&uiReso.x, 256); SameLine();
+    RadioButton("384##X", (int*)&uiReso.x, 384); SameLine();
+    RadioButton("512##X", (int*)&uiReso.x, 512);
 
-    ImGui::AlignFirstTextHeightToWidgets();
-    ImGui::Text("Y:"); ImGui::SameLine();
-    ImGui::RadioButton("128##Y", (int*)&uiReso.y, 128); ImGui::SameLine();
-    ImGui::RadioButton("256##Y", (int*)&uiReso.y, 256); ImGui::SameLine();
-    ImGui::RadioButton("384##Y", (int*)&uiReso.y, 384); ImGui::SameLine();
-    ImGui::RadioButton("512##Y", (int*)&uiReso.y, 512);
+    AlignFirstTextHeightToWidgets();
+    Text("Y:"); SameLine();
+    RadioButton("128##Y", (int*)&uiReso.y, 128); SameLine();
+    RadioButton("256##Y", (int*)&uiReso.y, 256); SameLine();
+    RadioButton("384##Y", (int*)&uiReso.y, 384); SameLine();
+    RadioButton("512##Y", (int*)&uiReso.y, 512);
 
-    ImGui::AlignFirstTextHeightToWidgets();
-    ImGui::Text("Z:"); ImGui::SameLine();
-    ImGui::RadioButton("128##Z", (int*)&uiReso.z, 128); ImGui::SameLine();
-    ImGui::RadioButton("256##Z", (int*)&uiReso.z, 256); ImGui::SameLine();
-    ImGui::RadioButton("384##Z", (int*)&uiReso.z, 384); ImGui::SameLine();
-    ImGui::RadioButton("512##Z", (int*)&uiReso.z, 512);
+    AlignFirstTextHeightToWidgets();
+    Text("Z:"); SameLine();
+    RadioButton("128##Z", (int*)&uiReso.z, 128); SameLine();
+    RadioButton("256##Z", (int*)&uiReso.z, 256); SameLine();
+    RadioButton("384##Z", (int*)&uiReso.z, 384); SameLine();
+    RadioButton("512##Z", (int*)&uiReso.z, 512);
     if ((_IsResolutionChanged(uiReso, _submittedReso) ||
-        _volBuf.GetType() != uBufferTypeChoice) &&
+        _volBuf.GetType() != uType) &&
         _volBuf.ChangeResource(
             uiReso, _volBuf.GetType(), ManagedBuf::k32Bit)) {
         PRINTINFO("Reso:%dx%dx%d", uiReso.x, uiReso.y, uiReso.z);
@@ -893,29 +917,35 @@ TSDFVolume::RenderGui()
     } else {
         uiReso = _submittedReso;
     }
-    ImGui::SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
+    SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
     static float fVoxelSize = _volParam->fVoxelSize;
-    if (ImGui::SliderFloat("VoxelSize",
+    if (SliderFloat("VoxelSize",
         &fVoxelSize, 1.f / 256.f, 10.f / 256.f)) {
         _UpdateVolumeSettings(_curReso, fVoxelSize);
         _UpdateBlockSettings(_fuseBlockVoxelRatio,
             _renderBlockVoxelRatio, _TGSize);
     }
 
-    ImGui::Separator();
-    if (ImGui::Button("Recompile All Shaders")) {
+    Separator();
+    if (Button("Recompile All Shaders")) {
         _CreatePSOs();
     }
-    ImGui::Separator();
-    if (ImGui::Button("Reset Volume")) {
-        OnReset();
+    Separator();
+    if (Button("Reset Volume")) {
+        ResetAllResource();
     }
 }
 
 ColorBuffer*
-TSDFVolume::GetOutTex()
+TSDFVolume::GetDepthTexForProcessing()
 {
-    return &_extractedDepth;
+    return &_depthMapProc;
+}
+
+ColorBuffer*
+TSDFVolume::GetDepthTexForVisualize()
+{
+    return &_depthMapVisual;
 }
 
 void
@@ -1087,28 +1117,23 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // Add blocks to UpdateBlockQueue from OccupiedBlockQueue
         {
             GPU_PROFILE(cptCtx, L"Occupied2UpdateQ");
-            cptCtx.ResetCounter(_updateBlocksBuf);
-            cptCtx.TransitionResource(_updateBlocksBuf, UAV);
-            cptCtx.TransitionResource(_fuseBlockVol, UAV);
-            cptCtx.TransitionResource(_occupiedBlocksBuf, csSRV);
-            cptCtx.TransitionResource(_indirectParams, IARG);
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass1);
+            cptCtx.ResetCounter(_updateBlocksBuf);
+            Trans(cptCtx, _updateBlocksBuf, UAV);
+            Trans(cptCtx, _fuseBlockVol, UAV);
+            Trans(cptCtx, _occupiedBlocksBuf, csSRV);
+            Trans(cptCtx, _indirectParams, IARG);
             Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
             Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
             Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetSRV());
             Bind(cptCtx, 3, 1, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
             cptCtx.DispatchIndirect(_indirectParams, 0);
         }
-        /*cptCtx.ResetCounter(_updateBlocksBuf);
-        cptCtx.ResetCounter(_freedOccupiedBlocksBuf);
-        cptCtx.ResetCounter(_newOccupiedBlocksBuf);
-        cptCtx.ResetCounter(_occupiedBlocksBuf);
-        _CleanBlockStateVol(cptCtx,true);*/
         // Add blocks to UpdateBlockQueue from DepthMap
         {
             GPU_PROFILE(cptCtx, L"Depth2UpdateQ");
-            cptCtx.TransitionResource(_fuseBlockVol, UAV);
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
+            Trans(cptCtx, _fuseBlockVol, UAV);
             // UAV barrier for _updateBlocksBuf is omit since the order of ops
             // on it does not matter before reading it during UpdateVoxel
             Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
@@ -1120,8 +1145,8 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // Resolve UpdateBlockQueue for DispatchIndirect
         {
             GPU_PROFILE(cptCtx, L"UpdateQResolve");
-            cptCtx.TransitionResource(_indirectParams, UAV);
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Resolve);
+            Trans(cptCtx, _indirectParams, UAV);
             Bind(cptCtx, 3, 0, 1, &_updateBlocksBuf.GetCounterSRV(cmdCtx));
             Bind(cptCtx, 2, 0, 1, &_indirectParams.GetUAV());
             cptCtx.Dispatch1D(1, WARP_SIZE);
@@ -1130,15 +1155,15 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // NewOccupiedBlocks and FreedOccupiedBlocks
         {
             GPU_PROFILE(cptCtx, L"UpdateVoxels");
-            cptCtx.TransitionResource(_occupiedBlocksBuf, UAV);
-            cptCtx.TransitionResource(_renderBlockVol, UAV);
-            cptCtx.TransitionResource(_fuseBlockVol, UAV);
-            cptCtx.TransitionResource(_newFuseBlocksBuf, UAV);
-            cptCtx.TransitionResource(_freedFuseBlocksBuf, UAV);
-            cptCtx.TransitionResource(_updateBlocksBuf, csSRV);
-            cptCtx.TransitionResource(_indirectParams, IARG);
             cptCtx.SetPipelineState(
                 _cptBlockVolUpdate_Pass3[buf.type][_TGSize]);
+            Trans(cptCtx, _occupiedBlocksBuf, UAV);
+            Trans(cptCtx, _renderBlockVol, UAV);
+            Trans(cptCtx, _fuseBlockVol, UAV);
+            Trans(cptCtx, _newFuseBlocksBuf, UAV);
+            Trans(cptCtx, _freedFuseBlocksBuf, UAV);
+            Trans(cptCtx, _updateBlocksBuf, csSRV);
+            Trans(cptCtx, _indirectParams, IARG);
             Bind(cptCtx, 2, 0, 2, buf.UAV);
             Bind(cptCtx, 2, 2, 1, &_fuseBlockVol.GetUAV());
             Bind(cptCtx, 2, 3, 1, &_newFuseBlocksBuf.GetUAV());
@@ -1155,10 +1180,11 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // Read queue buffer counter back for debugging
         if (_readBackGPUBufStatus) {
             Graphics::g_cmdListMngr.WaitForFence(_readBackFence);
-            static D3D12_RANGE range = {};
-            _debugBuf.Map(nullptr, reinterpret_cast<void**>(&_readBackPtr));
+            static D3D12_RANGE range = {0, 16};
+            static D3D12_RANGE umapRange = {};
+            _debugBuf.Map(&range, reinterpret_cast<void**>(&_readBackPtr));
             memcpy(_readBackData, _readBackPtr, 4 * sizeof(uint32_t));
-            _debugBuf.Unmap(nullptr);
+            _debugBuf.Unmap(&umapRange);
             cptCtx.CopyBufferRegion(_debugBuf, 0,
                 _occupiedBlocksBuf.GetCounterBuffer(), 0, 4);
             cptCtx.CopyBufferRegion(_debugBuf, 4,
@@ -1173,8 +1199,8 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // OccupiedBlockFreedSlot and AppendingNewOccupiedBlock
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
-            cptCtx.TransitionResource(_indirectParams, UAV);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
+            Trans(cptCtx, _indirectParams, UAV);
             BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
             Bind(cptCtx, 2, 0, 1, &_newFuseBlocksBuf.GetCounterUAV(cmdCtx));
             Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cmdCtx));
@@ -1186,12 +1212,12 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // Filling in NewOccupiedBlocks into FreeSlots in OccupiedBlockQueue
         {
             GPU_PROFILE(cptCtx, L"FreedQFillIn");
-            cptCtx.TransitionResource(_occupiedBlocksBuf, UAV);
-            cptCtx.TransitionResource(_newFuseBlocksBuf, csSRV);
-            cptCtx.TransitionResource(_freedFuseBlocksBuf, csSRV);
-            cptCtx.TransitionResource(_jobParamBuf, csSRV);
-            cptCtx.TransitionResource(_indirectParams, IARG);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Pass1);
+            Trans(cptCtx, _occupiedBlocksBuf, UAV);
+            Trans(cptCtx, _newFuseBlocksBuf, csSRV);
+            Trans(cptCtx, _freedFuseBlocksBuf, csSRV);
+            Trans(cptCtx, _jobParamBuf, csSRV);
+            Trans(cptCtx, _indirectParams, IARG);
             Bind(cptCtx, 2, 0, 1, &_occupiedBlocksBuf.GetUAV());
             Bind(cptCtx, 3, 0, 1, &_newFuseBlocksBuf.GetSRV());
             Bind(cptCtx, 3, 1, 1, &_freedFuseBlocksBuf.GetSRV());
@@ -1210,8 +1236,8 @@ TSDFVolume::_UpdateVolume(CommandContext& cmdCtx,
         // Resolve OccupiedBlockQueue for next VoxelUpdate DispatchIndirect
         {
             GPU_PROFILE(cptCtx, L"OccupiedQResolve");
-            cptCtx.TransitionResource(_indirectParams, UAV);
             cptCtx.SetPipelineState(_cptBlockQUpdate_Resolve);
+            Trans(cptCtx, _indirectParams, UAV);
             Bind(cptCtx, 2, 0, 1, &_indirectParams.GetUAV());
             Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cmdCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
@@ -1237,7 +1263,6 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
         ? _gfxStepInfoSensorPSO[_noInstance]
         : _gfxStepInfoVCamPSO[_noInstance]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    gfxCtx.SetRenderTargets(1, &_nearFarTex.GetRTV());
     Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
@@ -1262,14 +1287,9 @@ TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     Bind(gfxCtx, 3, 0, 1, buf.SRV);
     if (_useStepInfoTex) {
-        Bind(gfxCtx, 3, 1, 1, &_nearFarTex.GetSRV());
+        Bind(gfxCtx, 3, 1, 1, toOutTex ?
+            &_nearFarForProcess.GetSRV() : &_nearFarForVisual.GetSRV());
         Bind(gfxCtx, 3, 2, 1, &_renderBlockVol.GetSRV());
-    }
-    if (toOutTex) {
-        gfxCtx.SetRenderTargets(1, &_extractedDepth.GetRTV());
-    } else {
-        gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),
-            Graphics::g_SceneDepthBuffer.GetDSV());
     }
     gfxCtx.Draw(3);
 }
@@ -1279,8 +1299,6 @@ TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
 {
     gfxCtx.SetPipelineState(_gfxStepInfoDebugPSO);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
-    gfxCtx.SetRenderTargets(1, &Graphics::g_SceneColorBuffer.GetRTV(),
-        Graphics::g_SceneDepthBuffer.GetDSV());
     Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
     gfxCtx.SetIndexBuffer(_cubeLineStripIB.IndexBufferView());
     const uint3 xyz = _volParam->u3VoxelReso;

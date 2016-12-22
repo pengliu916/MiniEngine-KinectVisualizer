@@ -21,11 +21,13 @@ public:
     virtual bool OnEvent(MSG* msg);
 
 private:
-    PointCloudRenderer _pointCloudRenderer;
+    void _ResizeVisWin();
     TSDFVolume _tsdfVolume;
     SeperableFilter _bilateralFilter;
     SensorTexGen _sensorTexGen;
-    NormalGenerator _normalGen;
+    NormalGenerator _normalGenForOriginalDepthMap;
+    NormalGenerator _normalGenForVisualizedSurface;
+    NormalGenerator _normalGenForTSDFDepthMap;
 
     uint16_t _width;
     uint16_t _height;

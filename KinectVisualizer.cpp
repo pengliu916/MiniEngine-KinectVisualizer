@@ -7,21 +7,30 @@ using namespace DirectX;
 using namespace Microsoft::WRL;
 
 namespace {
-    enum OnShow {
-        kTSDFVolume = 0,
-        kPointCloud,
-        kNumItem
-    };
-    OnShow _itemOnShow = kTSDFVolume;
-    DirectX::XMMATRIX _depthViewInv_T =
-        DirectX::XMMatrixTranslation(0, 0, 3);
+    DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
     bool _useBilateralFilter = false;
+    bool _visualize = true;
+    bool _windowActive = false;
+
+    ImVec2 _visWinPos = ImVec2(0, 0);
+    ImVec2 _visWinSize = ImVec2(1024, 768);
+
+    struct ImGuiResizeConstrain {
+        static void Step(ImGuiSizeConstraintCallbackData* data) {
+            float step = (float)(int)(intptr_t)data->UserData;
+            data->DesiredSize = ImVec2(
+                (int)(data->DesiredSize.x / step + 0.5f) * step,
+                (int)(data->DesiredSize.y / step + 0.5f) * step);
+        }
+    };
 }
 
 KinectVisualizer::KinectVisualizer(
     uint32_t width, uint32_t height, std::wstring name)
     : _sensorTexGen(true, true, true),
-    _normalGen(uint2(512, 424), L"NormalMap")
+    _normalGenForOriginalDepthMap(uint2(512, 424), L"NormalForOriginalDepth"),
+    _normalGenForVisualizedSurface(uint2(512, 424), L"NormalForVisSurface"),
+    _normalGenForTSDFDepthMap(uint2(512, 424), L"NormalForTSDFDepth")
 {
     _width = width;
     _height = height;
@@ -39,28 +48,24 @@ KinectVisualizer::~KinectVisualizer()
 {
 }
 
-void KinectVisualizer::OnConfiguration()
+void
+KinectVisualizer::OnConfiguration()
 {
     Core::g_config.FXAA = false;
     Core::g_config.swapChainDesc.Width = _width;
     Core::g_config.swapChainDesc.Height = _height;
     Core::g_config.swapChainDesc.BufferCount = 5;
+    Core::g_config.passThroughMsg = true;
 }
 
-HRESULT KinectVisualizer::OnCreateResource()
+HRESULT
+KinectVisualizer::OnCreateResource()
 {
     // Create resource for pointcloudrenderer
     _sensorTexGen.OnCreateResource();
     uint16_t colWidth, colHeight, depWidth, depHeight;
     _sensorTexGen.GetColorReso(colWidth, colHeight);
     _sensorTexGen.GetDepthInfrareReso(depWidth, depHeight);
-
-    _pointCloudRenderer.OnCreateResource();
-    _pointCloudRenderer.UpdateCB(
-        XMFLOAT2(colWidth, colHeight), XMFLOAT2(depWidth, depHeight),
-        XMFLOAT4(COLOR_C.x, COLOR_C.y, COLOR_F.x, COLOR_F.y),
-        XMFLOAT4(DEPTH_C.x, DEPTH_C.y, DEPTH_F.x, DEPTH_F.y),
-        DEPTH2COLOR_MAT);
 
     // Create resource for BilateralFilter
     _bilateralFilter.OnCreateResoure(DXGI_FORMAT_R16_UINT);
@@ -69,58 +74,75 @@ HRESULT KinectVisualizer::OnCreateResource()
     int2 depthReso = int2(depWidth, depHeight);
     int2 colorReso = int2(colWidth, colHeight);
 
-    _tsdfVolume.OnCreateResource(depthReso, colorReso);
+    _tsdfVolume.CreateResource(depthReso, colorReso);
 
-    _normalGen.OnCreateResource();
+    _normalGenForOriginalDepthMap.OnCreateResource();
+    _normalGenForVisualizedSurface.OnCreateResource();
+    _normalGenForTSDFDepthMap.OnCreateResource();
 
     OnSizeChanged();
 
+    _ResizeVisWin();
     return S_OK;
 }
 
-HRESULT KinectVisualizer::OnSizeChanged()
+HRESULT
+KinectVisualizer::OnSizeChanged()
 {
-    uint32_t width = Core::g_config.swapChainDesc.Width;
-    uint32_t height = Core::g_config.swapChainDesc.Height;
-
-    float fAspectRatio = width / (FLOAT)height;
-    _camera.Projection(XM_PIDIV2 / 2, fAspectRatio);
-
-    _tsdfVolume.OnResize();
-
     return S_OK;
 }
 
-void KinectVisualizer::OnUpdate()
+void
+KinectVisualizer::OnUpdate()
 {
+    _windowActive = false;
     _camera.ProcessInertia();
+    _tsdfVolume.PreProcessing();
+
     static bool showPanel = true;
     if (ImGui::Begin("KinectVisualizer", &showPanel)) {
         ImGui::Checkbox("Bilateral Filter", &_useBilateralFilter);
         if (_useBilateralFilter) {
             _bilateralFilter.RenderGui();
         }
-        ImGui::RadioButton("TSDFVolume", (int*)&_itemOnShow, kTSDFVolume);
-        ImGui::RadioButton("PointCloud", (int*)&_itemOnShow, kPointCloud);
-        switch (_itemOnShow)
-        {
-        case kPointCloud:
-            if (ImGui::CollapsingHeader("Point Cloud")) {
-                _pointCloudRenderer.RenderGui();
-            }
-            break;
-        case kTSDFVolume:
-            _tsdfVolume.OnUpdate();
-            _tsdfVolume.RenderGui();
-            break;
-        }
+        _tsdfVolume.RenderGui();
         _sensorTexGen.RenderGui();
         NormalGenerator::RenderGui();
     }
     ImGui::End();
+    ImGui::SetNextWindowSizeConstraints(ImVec2(640,480),
+        ImVec2(FLT_MAX, FLT_MAX), ImGuiResizeConstrain::Step, (void*)32);
+    if (ImGui::Begin("Visualize Image")) {
+        _visWinPos = ImGui::GetCursorScreenPos();
+        _visWinSize = ImGui::GetContentRegionAvail();
+        _visualize = true;
+        if (_visWinSize.x != _width || _visWinSize.y != _height) {
+            _width = static_cast<uint16_t>(_visWinSize.x);
+            _height = static_cast<uint16_t>(_visWinSize.y);
+            _ResizeVisWin();
+        }
+        ImTextureID tex_id =
+            (void*)&_normalGenForVisualizedSurface.GetNormalMap()->GetSRV();
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ImGui::InvisibleButton("canvas", _visWinSize);
+        ImVec2 bbmin = _visWinPos;
+        ImVec2 bbmax =
+            ImVec2(_visWinPos.x + _visWinSize.x, _visWinPos.y + _visWinSize.y);
+        draw_list->AddImage(tex_id, bbmin, bbmax);
+        if (ImGui::IsItemHovered()) {
+            _windowActive = true;
+        }
+    } else {
+        _visualize = false;
+    }
+    ImGui::End();
+
+    _normalGenForOriginalDepthMap.GetNormalMap()->GuiShow();
+    _normalGenForTSDFDepthMap.GetNormalMap()->GuiShow();
 }
 
-void KinectVisualizer::OnRender(CommandContext & EngineContext)
+void
+KinectVisualizer::OnRender(CommandContext & cmdCtx)
 {
     XMMATRIX mView_T = _camera.View();
     XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
@@ -129,49 +151,73 @@ void KinectVisualizer::OnRender(CommandContext & EngineContext)
     XMFLOAT4 viewPos;
     XMStoreFloat4(&viewPos, _camera.Eye());
 
-    EngineContext.BeginResourceTransition(Graphics::g_SceneColorBuffer,
+    cmdCtx.BeginResourceTransition(Graphics::g_SceneColorBuffer,
         D3D12_RESOURCE_STATE_RENDER_TARGET);
-    EngineContext.BeginResourceTransition(Graphics::g_SceneDepthBuffer,
+    cmdCtx.BeginResourceTransition(Graphics::g_SceneDepthBuffer,
         D3D12_RESOURCE_STATE_DEPTH_WRITE);
-    bool newData = _sensorTexGen.OnRender(EngineContext);
+
+    GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
+    ComputeContext& cptCtx = cmdCtx.GetComputeContext();
+
+    // Pull new data from Kinect
+    bool newData = _sensorTexGen.OnRender(cmdCtx);
+
+    // Bilateral filtering
     if (newData && _useBilateralFilter) {
-        _bilateralFilter.OnRender(EngineContext.GetGraphicsContext(),
+        _bilateralFilter.OnRender(gfxCtx,
             _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex));
     }
-    switch (_itemOnShow)
-    {
-    case kTSDFVolume:
-        _tsdfVolume.OnIntegrate(EngineContext,
-            _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
-            _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
-            _depthViewInv_T);
-        _tsdfVolume.OnDefragment(EngineContext.GetComputeContext());
-        _tsdfVolume.OnRender(EngineContext, mProj_T, mView_T);
-        _tsdfVolume.OnExtractSurface(EngineContext,
-            XMMatrixInverse(nullptr, _depthViewInv_T));
-        break;
-    case kPointCloud:
-        _pointCloudRenderer.UpdateLightPos(viewPos);
-        _pointCloudRenderer.OnRender(EngineContext.GetGraphicsContext(),
-            _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
-            _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
-            mProjView_T, _depthViewInv_T);
-        break;
-    default:
-        break;
+
+    // TSDF volume updating
+    _tsdfVolume.UpdateVolume(cptCtx,
+        _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex),
+        _sensorTexGen.GetOutTex(SensorTexGen::kColorTex),
+        _depthViewInv_T);
+
+    // Defragment active block queue in TSDF
+    _tsdfVolume.DefragmentActiveBlockQueue(cptCtx);
+
+    // Request visualized surface depthmap from TSDF
+    if (_visualize) {
+        _tsdfVolume.RenderSurface(gfxCtx, mProj_T, mView_T);
     }
-    _normalGen.OnProcessing(EngineContext.GetComputeContext(),
-        _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex));
-    _normalGen.GetNormalMap()->GuiShow();
+    // Request depthmap for ICP
+    _tsdfVolume.ExtractSurface(gfxCtx,
+        XMMatrixInverse(nullptr, _depthViewInv_T));
+
+    // Generate normalmap for Kinect depthmap
+    _normalGenForOriginalDepthMap.OnProcessing(
+        cptCtx, _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex));
+    // Generate normalmap for TSDF depthmap
+    _normalGenForTSDFDepthMap.OnProcessing(cmdCtx.GetComputeContext(),
+        _tsdfVolume.GetDepthTexForProcessing());
+
+    // Generate normalmap for visualized depthmap
+    if (_visualize) {
+        _normalGenForVisualizedSurface.OnProcessing(
+            cptCtx, _tsdfVolume.GetDepthTexForVisualize());
+        _tsdfVolume.RenderDebugGrid(gfxCtx,
+            _normalGenForVisualizedSurface.GetNormalMap(), mProj_T, mView_T);
+    }
 }
 
-void KinectVisualizer::OnDestroy()
+void
+KinectVisualizer::OnDestroy()
 {
     _sensorTexGen.OnDestory();
+    _normalGenForTSDFDepthMap.OnDestory();
+    _normalGenForVisualizedSurface.OnDestory();
+    _normalGenForOriginalDepthMap.OnDestory();
+    _tsdfVolume.Destory();
+    _bilateralFilter.OnDestory();
 }
 
-bool KinectVisualizer::OnEvent(MSG * msg)
+bool
+KinectVisualizer::OnEvent(MSG * msg)
 {
+    if (!_windowActive) {
+        return false;
+    }
     switch (msg->message) {
     case WM_MOUSEWHEEL: {
         auto delta = GET_WHEEL_DELTA_WPARAM(msg->wParam);
@@ -184,15 +230,6 @@ bool KinectVisualizer::OnEvent(MSG * msg)
         POINTER_INFO pointerInfo;
         if (GetPointerInfo(pointerId, &pointerInfo)) {
             if (msg->message == WM_POINTERDOWN) {
-                // Compute pointer position in render units
-                POINT p = pointerInfo.ptPixelLocation;
-                ScreenToClient(Core::g_hwnd, &p);
-                RECT clientRect;
-                GetClientRect(Core::g_hwnd, &clientRect);
-                p.x = p.x * Core::g_config.swapChainDesc.Width /
-                    (clientRect.right - clientRect.left);
-                p.y = p.y * Core::g_config.swapChainDesc.Height /
-                    (clientRect.bottom - clientRect.top);
                 // Camera manipulation
                 _camera.AddPointer(pointerId);
             }
@@ -206,4 +243,16 @@ bool KinectVisualizer::OnEvent(MSG * msg)
     }
     }
     return false;
+}
+
+void
+KinectVisualizer::_ResizeVisWin()
+{
+    Graphics::g_cmdListMngr.IdleGPU();
+    float fAspectRatio = _visWinSize.x / _visWinSize.y;
+    _camera.Projection(XM_PIDIV2 / 2, fAspectRatio);
+    uint32_t width = static_cast<uint32_t>(_visWinSize.x);
+    uint32_t height = static_cast<uint32_t>(_visWinSize.y);
+    _tsdfVolume.ResizeVisualSurface(width, height);
+    _normalGenForVisualizedSurface.OnResize(uint2(width, height));
 }
