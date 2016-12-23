@@ -76,7 +76,7 @@ GPU_Profiler::Initialize()
 
     m_timerColorArray = new XMFLOAT4[MAX_TIMER_COUNT];
 
-    m_RectData = new RectAttr[MAX_TIMER_COUNT];
+    m_RectData = new RectAttr[MAX_TIMER_COUNT * 2];
 
     m_timerHistory = new float*[MAX_TIMER_COUNT];
     for (int i = 0; i < MAX_TIMER_COUNT; ++i) {
@@ -221,6 +221,8 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
     // based on previous frame end timestamp, creat an active timer idx vector
     m_ActiveTimer.clear();
     uint64_t preEndTime = m_timeStampBufferCopy[0];
+    m_timerHistory[0][Core::g_frameCount % MAX_TIMER_HISTORY] =
+        (float)ReadTimer(0);
     for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
         if (m_timeStampBufferCopy[idx * 2] > preEndTime) {
             m_ActiveTimer.push_back(idx);
@@ -231,7 +233,7 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
         }
     }
 
-    for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
+    for (uint8_t idx = 0; idx < m_timerCount; ++idx) {
         uint8_t count = 0;
         float avg = 0.f;
         for (uint8_t i = 0; i < MAX_TIMER_HISTORY; ++i) {
@@ -284,7 +286,7 @@ GPU_Profiler::FillVertexData()
     uint8_t RectIdx = 0;
     m_RectData[RectIdx].TLBR = Corner(m_BackgroundMargin, m_BackgroundMargin,
         m_MaxBarWidth + m_WorldSpace,
-        m_BackgroundMargin + NumActiveTimer * m_EntryHeight);
+        m_BackgroundMargin + (NumActiveTimer + 1) * m_EntryHeight);
     m_RectData[RectIdx++].Col = XMFLOAT4(0.f, 0.f, 0.f, 0.3f);
     instanceCount++;
 
@@ -294,6 +296,8 @@ GPU_Profiler::FillVertexData()
             m_timeStampBufferCopy[m_ActiveTimer[0] * 2] * m_GPUTickDelta;
         uint16_t CurStartX = m_BackgroundMargin + m_EntryMargin + m_WorldSpace;
         uint16_t CurStartY = m_BackgroundMargin + m_EntryMargin;
+        uint16_t StartY = CurStartY;
+        CurStartY += m_EntryHeight;
         for (uint32_t idx = 0; idx < NumActiveTimer; idx++) {
             double LocalStartTime =
                 m_timeStampBufferCopy[m_ActiveTimer[idx] * 2] *
@@ -306,9 +310,16 @@ GPU_Profiler::FillVertexData()
                 CurStartY,
                 CurStartX + (UINT)(LocalEndTime * scale),
                 CurStartY + m_EntryWordHeight);
+            m_RectData[RectIdx + 1].TLBR = Corner(
+                CurStartX + (UINT)(LocalStartTime * scale),
+                StartY,
+                CurStartX + (UINT)(LocalEndTime * scale),
+                StartY + m_EntryWordHeight);
             CurStartY += m_EntryHeight;
-            m_RectData[RectIdx++].Col = m_timerColorArray[m_ActiveTimer[idx]];
-            instanceCount++;
+            m_RectData[RectIdx].Col = m_timerColorArray[m_ActiveTimer[idx]];
+            m_RectData[RectIdx + 1].Col = m_timerColorArray[m_ActiveTimer[idx]];
+            RectIdx += 2;
+            instanceCount += 2;
         }
     }
     return instanceCount;
@@ -321,7 +332,7 @@ GPU_Profiler::DrawStats(GraphicsContext& gfxContext)
     gfxContext.SetRootSignature(m_RootSignature);
     gfxContext.SetPipelineState(m_GraphPSO);
     gfxContext.SetDynamicSRV(
-        0, sizeof(RectAttr) * m_timerCount, m_RectData);
+        0, sizeof(RectAttr) * m_timerCount * 2, m_RectData);
     gfxContext.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     gfxContext.SetRenderTargets(
         1, &Graphics::g_pDisplayPlanes[Graphics::g_CurrentDPIdx].GetRTV());
@@ -336,8 +347,16 @@ GPU_Profiler::DrawStats(GraphicsContext& gfxContext)
     float curY = (float)(m_BackgroundMargin + m_EntryMargin);
     txtContext.ResetCursor(curX, curY);
     txtContext.SetTextSize((float)m_EntryWordHeight);
+
+    wchar_t temp[128];
+    double result = m_timeStampBufferCopy[1] * m_GPUTickDelta -
+        m_timeStampBufferCopy[0] * m_GPUTickDelta;
+    swprintf(temp, L"TotalFrameTime:%4.2fms %4.2fms \0",
+        m_timerAvg[0], ReadTimer(0));
+    txtContext.DrawString(wstring(temp));
+    curY += m_EntryHeight;
+    txtContext.ResetCursor(curX, curY);
     for (uint32_t idx = 0; idx < m_ActiveTimer.size(); idx++) {
-        wchar_t temp[128];
         GPU_Profiler::GetTimingStr(m_ActiveTimer[idx], temp);
         txtContext.DrawString(wstring(temp));
         curY += m_EntryHeight;
