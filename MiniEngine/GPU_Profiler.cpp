@@ -224,7 +224,7 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
     m_timerHistory[0][Core::g_frameCount % MAX_TIMER_HISTORY] =
         (float)ReadTimer(0);
     for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
-        if (m_timeStampBufferCopy[idx * 2] > preEndTime) {
+        if (m_timeStampBufferCopy[idx * 2] >= preEndTime) {
             m_ActiveTimer.push_back(idx);
             m_timerHistory[idx][Core::g_frameCount % MAX_TIMER_HISTORY] =
                 (float)ReadTimer(idx);
@@ -251,15 +251,10 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
     // sort timer based on timer's start time
     sort(m_ActiveTimer.begin(), m_ActiveTimer.end(), compStartTime);
 
-    {
-        //EngineContext.PIXEndEvent();
-        EngineContext.InsertTimeStamp(m_queryHeap, 1);
-        EngineContext.ResolveTimeStamps(
-            m_readbackBuffer, m_queryHeap, 2 * m_timerCount);
-        //EngineContext.PIXBeginEvent(L"Frame Start");
-        EngineContext.InsertTimeStamp(m_queryHeap, 0);
-    }
-    m_fence = EngineContext.Flush();
+    EngineContext.InsertTimeStamp(m_queryHeap, 1);
+    EngineContext.ResolveTimeStamps(
+        m_readbackBuffer, m_queryHeap, 2 * m_timerCount);
+    EngineContext.InsertTimeStamp(m_queryHeap, 0);
 }
 
 uint16_t
@@ -328,6 +323,7 @@ GPU_Profiler::FillVertexData()
 void
 GPU_Profiler::DrawStats(GraphicsContext& gfxContext)
 {
+    GPU_PROFILE(gfxContext, L"DrawPerfGraph");
     uint16_t instanceCount = FillVertexData();
     gfxContext.SetRootSignature(m_RootSignature);
     gfxContext.SetPipelineState(m_GraphPSO);
@@ -374,6 +370,12 @@ GPU_Profiler::ReadTimer(uint8_t idx, double* start, double* stop)
     if (start) *start = _start;
     if (stop) *stop = _stop;
     return _stop - _start;
+}
+
+void
+GPU_Profiler::SetFenceValue(uint64_t fenceValue)
+{
+    m_fence = fenceValue;
 }
 
 uint16_t

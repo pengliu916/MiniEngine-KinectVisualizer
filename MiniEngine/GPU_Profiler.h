@@ -17,6 +17,7 @@ namespace GPU_Profiler
     void DrawStats(GraphicsContext& gfxContext);
     double ReadTimer(
         uint8_t idx, double* start = nullptr, double* stop = nullptr);
+    void SetFenceValue(uint64_t fenceValue);
     uint16_t GetTimingStr(uint8_t idx, wchar_t* outStr);
 };
 

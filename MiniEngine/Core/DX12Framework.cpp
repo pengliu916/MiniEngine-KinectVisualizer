@@ -175,10 +175,14 @@ namespace Core
 
     void FrameworkRender(IDX12Framework& application) {
         CommandContext& EngineContext = CommandContext::Begin(L"EngineContext");
-        application.OnRender(EngineContext);
-        if (g_config.FXAA) {
-            FXAA::Render(EngineContext.GetComputeContext());
+        {
+            application.OnRender(EngineContext);
+            if (g_config.FXAA) {
+                FXAA::Render(EngineContext.GetComputeContext());
+            }
+            Graphics::WriteToBackBuffer(EngineContext.GetGraphicsContext());
         }
+        Graphics::FinishUp(EngineContext.GetGraphicsContext());
         Graphics::Present(EngineContext);
     }
 

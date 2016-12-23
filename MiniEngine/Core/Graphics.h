@@ -5,6 +5,7 @@ class ContextManager;
 class DescriptorHeap;
 class LinearAllocator;
 class CommandContext;
+class GraphicsContext;
 class CommandSignature;
 class ColorBuffer;
 class DepthBuffer;
@@ -75,6 +76,8 @@ namespace Graphics
     void Init();
     void Shutdown();
     void Resize();
+    void WriteToBackBuffer(GraphicsContext& gfxCtx);
+    void FinishUp(GraphicsContext& gfxCtx);
     void Present(CommandContext& EngineContext);
     void UpdateGUI();
     HRESULT CreateResource();

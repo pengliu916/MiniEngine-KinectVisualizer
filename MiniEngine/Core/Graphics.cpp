@@ -550,34 +550,46 @@ namespace Graphics
         FXAA::Resize();
     }
 
+    void WriteToBackBuffer(GraphicsContext& gfxCtx)
+    {
+        {
+            GPU_PROFILE(gfxCtx, L"Copy To BackBuffer");
+            gfxCtx.TransitionResource(g_SceneColorBuffer,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+            gfxCtx.TransitionResource(g_pDisplayPlanes[g_CurrentDPIdx],
+                D3D12_RESOURCE_STATE_RENDER_TARGET);
+            gfxCtx.SetRootSignature(s_PresentRS);
+            gfxCtx.SetPipelineState(s_BufferCopyPSO);
+            gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            gfxCtx.SetDynamicDescriptors(
+                0, 0, 1, &g_SceneColorBuffer.GetSRV());
+            gfxCtx.SetRenderTargets(
+                1, &g_pDisplayPlanes[g_CurrentDPIdx].GetRTV());
+            gfxCtx.SetViewport(g_DisplayPlaneViewPort);
+            gfxCtx.SetScisor(g_DisplayPlaneScissorRect);
+            gfxCtx.Draw(3);
+        }
+        GuiRenderer::Render(gfxCtx);
+    #ifndef RELEASE
+        GPU_Profiler::DrawStats(gfxCtx);
+    #endif
+    }
+
+    void FinishUp(GraphicsContext& gfxCtx)
+    {
+    #ifndef RELEASE
+        GPU_Profiler::ProcessAndReadback(gfxCtx);
+    #endif
+        gfxCtx.TransitionResource(
+            g_pDisplayPlanes[g_CurrentDPIdx], D3D12_RESOURCE_STATE_PRESENT);
+        g_stats.lastFrameEndFence = gfxCtx.Finish();
+    #ifndef RELEASE
+        GPU_Profiler::SetFenceValue(g_stats.lastFrameEndFence);
+    #endif
+    }
+
     void Present(CommandContext& EngineContext) {
         HRESULT hr;
-        GraphicsContext& Context = EngineContext.GetGraphicsContext();
-        {
-            GPU_PROFILE(Context, L"Copy To BackBuffer");
-            Context.TransitionResource(g_SceneColorBuffer,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-            Context.TransitionResource(g_pDisplayPlanes[g_CurrentDPIdx],
-                D3D12_RESOURCE_STATE_RENDER_TARGET);
-            Context.SetRootSignature(s_PresentRS);
-            Context.SetPipelineState(s_BufferCopyPSO);
-            Context.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            Context.SetDynamicDescriptors(
-                0, 0, 1, &g_SceneColorBuffer.GetSRV());
-            Context.SetRenderTargets(
-                1, &g_pDisplayPlanes[g_CurrentDPIdx].GetRTV());
-            Context.SetViewport(g_DisplayPlaneViewPort);
-            Context.SetScisor(g_DisplayPlaneScissorRect);
-            Context.Draw(3);
-        }
-        GuiRenderer::Render(Context);
-    #ifndef RELEASE
-        GPU_Profiler::DrawStats(Context);
-        GPU_Profiler::ProcessAndReadback(EngineContext);
-    #endif
-        Context.TransitionResource(
-            g_pDisplayPlanes[g_CurrentDPIdx], D3D12_RESOURCE_STATE_PRESENT);
-        g_stats.lastFrameEndFence = Context.Finish();
 
         DXGI_PRESENT_PARAMETERS param;
         param.DirtyRectsCount = 0;
