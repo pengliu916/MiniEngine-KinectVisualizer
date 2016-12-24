@@ -11,57 +11,57 @@ ctx.TransitionResource(res, state)
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
 namespace {
-    const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    const D3D12_RESOURCE_STATES psSRV =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES  csSRV =
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    const DXGI_FORMAT _normalMapFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+typedef D3D12_RESOURCE_STATES State;
+const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
-    RootSignature _rootsig;
-    ComputePSO _cptGetNormalPSO;
-    std::once_flag _psoCompiled_flag;
+const DXGI_FORMAT _normalMapFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 
-    float _fDistThreshold = FLT_MAX;
-    bool _cbStaled = true;
+RootSignature _rootsig;
+ComputePSO _cptGetNormalPSO;
+std::once_flag _psoCompiled_flag;
 
-    void _CreatePSO()
-    {
-        HRESULT hr;
-        ComPtr<ID3DBlob> getNormalCS;
-        D3D_SHADER_MACRO macros[] = {
-            {"__hlsl", "1"},
-            {nullptr, nullptr}
-        };
-        V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-            L"NormalGenerator_GetNormal_cs.hlsl").c_str(), macros,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
-            D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &getNormalCS));
-        _cptGetNormalPSO.SetRootSignature(_rootsig);
-        _cptGetNormalPSO.SetComputeShader(
-            getNormalCS->GetBufferPointer(), getNormalCS->GetBufferSize());
-        _cptGetNormalPSO.Finalize();
-    }
+float _fDistThreshold = FLT_MAX;
+bool _cbStaled = true;
 
-    void _CreateStaticResource()
-    {
-        // Create RootSignature
-        _rootsig.Reset(3, 1);
-        _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
-        _rootsig[0].InitAsConstantBuffer(0);
-        _rootsig[1].InitAsDescriptorRange(
-            D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1);
-        _rootsig[2].InitAsDescriptorRange(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1);
-        _rootsig.Finalize(L"NormalGenerator",
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS|
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+void _CreatePSO()
+{
+    HRESULT hr;
+    ComPtr<ID3DBlob> getNormalCS;
+    D3D_SHADER_MACRO macros[] = {
+        {"__hlsl", "1"},
+        {nullptr, nullptr}
+    };
+    V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+        L"NormalGenerator_GetNormal_cs.hlsl").c_str(), macros,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
+        D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &getNormalCS));
+    _cptGetNormalPSO.SetRootSignature(_rootsig);
+    _cptGetNormalPSO.SetComputeShader(
+        getNormalCS->GetBufferPointer(), getNormalCS->GetBufferSize());
+    _cptGetNormalPSO.Finalize();
+}
 
-        _CreatePSO();
-    }
+void _CreateStaticResource()
+{
+    // Create RootSignature
+    _rootsig.Reset(3, 1);
+    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
+    _rootsig[0].InitAsConstantBuffer(0);
+    _rootsig[1].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1);
+    _rootsig[2].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1);
+    _rootsig.Finalize(L"NormalGenerator",
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+
+    _CreatePSO();
+}
 }
 
 NormalGenerator::NormalGenerator(uint2 reso, const std::wstring& name)

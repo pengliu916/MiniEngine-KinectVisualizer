@@ -15,8 +15,8 @@ RWTexture2D<float4> DepthVisualTex : register(u1);
 #endif
 
 [numthreads(THREAD_PER_GROUP, 1, 1)]
-void main(uint3 Gid : SV_GroupID, 
-    uint GI : SV_GroupIndex, uint3 GTid : SV_GroupThreadID, 
+void main(uint3 Gid : SV_GroupID,
+    uint GI : SV_GroupIndex, uint3 GTid : SV_GroupThreadID,
     uint3 DTid : SV_DispatchThreadID)
 {
     uint uId = Gid.x * THREAD_PER_GROUP + GI;

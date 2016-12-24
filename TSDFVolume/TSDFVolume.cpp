@@ -19,457 +19,455 @@ ctx.TransitionResource(res, state)
 ctx.BeginResourceTransition(res, state)
 
 namespace {
-    const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    const D3D12_RESOURCE_STATES psSRV =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES  csSRV =
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES  vsSRV =
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    const D3D12_RESOURCE_STATES DSV = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    const D3D12_RESOURCE_STATES IARG = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+typedef D3D12_RESOURCE_STATES State;
+const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+const State RTV   = D3D12_RESOURCE_STATE_RENDER_TARGET;
+const State DSV   = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+const State IARG  = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
-    const UINT kBuf = ManagedBuf::kNumType;
-    const UINT kStruct = TSDFVolume::kNumStruct;
-    const UINT kFilter = TSDFVolume::kNumFilter;
-    const UINT kTG = TSDFVolume::kTG;
+const UINT kBuf    = ManagedBuf::kNumType;
+const UINT kStruct = TSDFVolume::kNumStruct;
+const UINT kFilter = TSDFVolume::kNumFilter;
+const UINT kTG     = TSDFVolume::kTG;
 
-    const DXGI_FORMAT _stepInfoTexFormat = DXGI_FORMAT_R16G16_FLOAT;
-    bool _typedLoadSupported = false;
+const DXGI_FORMAT _stepInfoTexFormat = DXGI_FORMAT_R16G16_FLOAT;
+bool _typedLoadSupported = false;
 
-    bool _useStepInfoTex = true;
-    bool _stepInfoDebug = false;
-    bool _blockVolumeUpdate = true;
-    bool _readBackGPUBufStatus = true;
-    bool _noInstance = false;
+bool _useStepInfoTex = true;
+bool _stepInfoDebug = false;
+bool _blockVolumeUpdate = true;
+bool _readBackGPUBufStatus = true;
+bool _noInstance = false;
 
-    bool _cbStaled = true;
+bool _cbStaled = true;
 
-    // define the geometry for a triangle.
-    const XMFLOAT3 cubeVertices[] = {
-        {XMFLOAT3(-0.5f, -0.5f, -0.5f)},{XMFLOAT3(-0.5f, -0.5f,  0.5f)},
-        {XMFLOAT3(-0.5f,  0.5f, -0.5f)},{XMFLOAT3(-0.5f,  0.5f,  0.5f)},
-        {XMFLOAT3(0.5f, -0.5f, -0.5f)},{XMFLOAT3(0.5f, -0.5f,  0.5f)},
-        {XMFLOAT3(0.5f,  0.5f, -0.5f)},{XMFLOAT3(0.5f,  0.5f,  0.5f)},
-    };
-    // the index buffer for triangle strip
-    const uint16_t cubeTrianglesStripIndices[CUBE_TRIANGLESTRIP_LENGTH] = {
-        6, 4, 2, 0, 1, 4, 5, 7, 1, 3, 2, 7, 6, 4
-    };
-    // the index buffer for cube wire frame (0xffff is the cut value set later)
-    const uint16_t cubeLineStripIndices[CUBE_LINESTRIP_LENGTH] = {
-        0, 1, 5, 4, 0, 2, 3, 7, 6, 2, 0xffff, 6, 4, 0xffff, 7, 5, 0xffff, 3, 1
-    };
+// define the geometry for a triangle.
+const XMFLOAT3 cubeVertices[] = {
+    {XMFLOAT3(-0.5f, -0.5f, -0.5f)},{XMFLOAT3(-0.5f, -0.5f,  0.5f)},
+    {XMFLOAT3(-0.5f,  0.5f, -0.5f)},{XMFLOAT3(-0.5f,  0.5f,  0.5f)},
+    {XMFLOAT3(0.5f, -0.5f, -0.5f)},{XMFLOAT3(0.5f, -0.5f,  0.5f)},
+    {XMFLOAT3(0.5f,  0.5f, -0.5f)},{XMFLOAT3(0.5f,  0.5f,  0.5f)},
+};
+// the index buffer for triangle strip
+const uint16_t cubeTrianglesStripIndices[CUBE_TRIANGLESTRIP_LENGTH] = {
+    6, 4, 2, 0, 1, 4, 5, 7, 1, 3, 2, 7, 6, 4
+};
+// the index buffer for cube wire frame (0xffff is the cut value set later)
+const uint16_t cubeLineStripIndices[CUBE_LINESTRIP_LENGTH] = {
+    0, 1, 5, 4, 0, 2, 3, 7, 6, 2, 0xffff, 6, 4, 0xffff, 7, 5, 0xffff, 3, 1
+};
 
-    std::once_flag _psoCompiled_flag;
-    RootSignature _rootsig;
-    // PSO for naive updating voxels
-    ComputePSO _cptUpdatePSO[kBuf][kStruct];
-    // PSOs for block voxel updating
-    ComputePSO _cptBlockVolUpdate_Pass1;
-    ComputePSO _cptBlockVolUpdate_Pass2;
-    ComputePSO _cptBlockVolUpdate_Resolve;
-    ComputePSO _cptBlockVolUpdate_Pass3[kBuf][kTG];
-    ComputePSO _cptBlockQUpdate_Prepare;
-    ComputePSO _cptBlockQUpdate_Pass1;
-    ComputePSO _cptBlockQUpdate_Pass2;
-    ComputePSO _cptBlockQUpdate_Resolve;
-    // PSO for occupied queue defragmentation
-    ComputePSO _cptBlockQDefragment;
-    // PSOs for rendering
-    GraphicsPSO _gfxVCamRenderPSO[kBuf][kStruct][kFilter];
-    GraphicsPSO _gfxSensorRenderPSO[kBuf][kStruct][kFilter];
-    GraphicsPSO _gfxStepInfoVCamPSO[2]; // index is noInstance on/off
-    GraphicsPSO _gfxStepInfoSensorPSO[2]; // index is noInstance on/off
-    GraphicsPSO _gfxStepInfoDebugPSO;
-    // PSOs for reseting
-    ComputePSO _cptFuseBlockVolResetPSO;
-    ComputePSO _cptRenderBlockVolResetPSO;
-    ComputePSO _cptTSDFBufResetPSO[kBuf];
+std::once_flag _psoCompiled_flag;
+RootSignature _rootsig;
+// PSO for naive updating voxels
+ComputePSO _cptUpdatePSO[kBuf][kStruct];
+// PSOs for block voxel updating
+ComputePSO _cptBlockVolUpdate_Pass1;
+ComputePSO _cptBlockVolUpdate_Pass2;
+ComputePSO _cptBlockVolUpdate_Resolve;
+ComputePSO _cptBlockVolUpdate_Pass3[kBuf][kTG];
+ComputePSO _cptBlockQUpdate_Prepare;
+ComputePSO _cptBlockQUpdate_Pass1;
+ComputePSO _cptBlockQUpdate_Pass2;
+ComputePSO _cptBlockQUpdate_Resolve;
+// PSO for occupied queue defragmentation
+ComputePSO _cptBlockQDefragment;
+// PSOs for rendering
+GraphicsPSO _gfxVCamRenderPSO[kBuf][kStruct][kFilter];
+GraphicsPSO _gfxSensorRenderPSO[kBuf][kStruct][kFilter];
+GraphicsPSO _gfxStepInfoVCamPSO[2]; // index is noInstance on/off
+GraphicsPSO _gfxStepInfoSensorPSO[2]; // index is noInstance on/off
+GraphicsPSO _gfxStepInfoDebugPSO;
+// PSOs for reseting
+ComputePSO _cptFuseBlockVolResetPSO;
+ComputePSO _cptRenderBlockVolResetPSO;
+ComputePSO _cptTSDFBufResetPSO[kBuf];
 
-    StructuredBuffer _cubeVB;
-    ByteAddressBuffer _cubeTriangleStripIB;
-    ByteAddressBuffer _cubeLineStripIB;
+StructuredBuffer _cubeVB;
+ByteAddressBuffer _cubeTriangleStripIB;
+ByteAddressBuffer _cubeLineStripIB;
 
-    inline bool _IsResolutionChanged(const uint3& a, const uint3& b)
+inline bool _IsResolutionChanged(const uint3& a, const uint3& b)
+{
+    return a.x != b.x || a.y != b.y || a.z != b.z;
+}
+
+inline HRESULT _Compile(LPCWSTR shaderName,
+    const D3D_SHADER_MACRO* macro, ID3DBlob** bolb)
+{
+    int iLen = (int)wcslen(shaderName);
+    char target[8];
+    wchar_t fileName[128];
+    swprintf_s(fileName, 128, L"TSDFVolume_%ls.hlsl", shaderName);
+    switch (shaderName[iLen - 2])
     {
-        return a.x != b.x || a.y != b.y || a.z != b.z;
+    case 'c': sprintf_s(target, 8, "cs_5_1"); break;
+    case 'p': sprintf_s(target, 8, "ps_5_1"); break;
+    case 'v': sprintf_s(target, 8, "vs_5_1"); break;
+    default:
+        PRINTERROR(L"Shader name: %s is Invalid!", shaderName);
     }
+    return Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+        fileName).c_str(), macro,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
+        target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, bolb);
+}
 
-    inline HRESULT _Compile(LPCWSTR shaderName,
-        const D3D_SHADER_MACRO* macro, ID3DBlob** bolb)
-    {
-        int iLen = (int)wcslen(shaderName);
-        char target[8];
-        wchar_t fileName[128];
-        swprintf_s(fileName, 128, L"TSDFVolume_%ls.hlsl", shaderName);
-        switch (shaderName[iLen-2])
-        {
-        case 'c': sprintf_s(target, 8, "cs_5_1"); break;
-        case 'p': sprintf_s(target, 8, "ps_5_1"); break;
-        case 'v': sprintf_s(target, 8, "vs_5_1"); break;
-        default:
-            PRINTERROR(L"Shader name: %s is Invalid!", shaderName);
-        }
-        return Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-            fileName).c_str(), macro,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
-            target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, bolb);
+void _CreatePSOs()
+{
+    HRESULT hr;
+    // Compile Shaders
+    ComPtr<ID3DBlob> quadVCamVS, quadSensorVS;
+    ComPtr<ID3DBlob> raycastVCamPS[kBuf][kStruct][kFilter];
+    ComPtr<ID3DBlob> raycastSensorPS[kBuf][kStruct][kFilter];
+    ComPtr<ID3DBlob> volUpdateCS[kBuf][kStruct];
+    ComPtr<ID3DBlob> blockUpdateCS[kBuf][kTG];
+    ComPtr<ID3DBlob> tsdfVolResetCS[kBuf];
+    ComPtr<ID3DBlob> fuseBlockVolResetCS;
+    ComPtr<ID3DBlob> renderBlockVolResetCS;
+
+    ComPtr<ID3DBlob> blockQCreate_Pass1CS;
+    ComPtr<ID3DBlob> blockQCreate_Pass2CS;
+    ComPtr<ID3DBlob> blockQCreate_ResolveCS;
+    ComPtr<ID3DBlob> blockQUpdate_PrepareCS;
+    ComPtr<ID3DBlob> blockQUpdate_Pass1CS;
+    ComPtr<ID3DBlob> blockQUpdate_Pass2CS;
+    ComPtr<ID3DBlob> blockQUpdate_ResolveCS;
+    ComPtr<ID3DBlob> blockQDefragmentCS;
+
+    D3D_SHADER_MACRO macro_[] = {
+        { "__hlsl", "1" },//0
+        { "PREPARE", "0" },//1
+        { "PASS_1", "0" },//2
+        { "PASS_2", "0" },//3
+        { "RESOLVE", "0" },//4
+        { nullptr, nullptr }
+    };
+
+    macro_[2].Definition = "1";
+    V(_Compile(L"BlockQueueCreate_cs", macro_, &blockQCreate_Pass1CS));
+    macro_[2].Definition = "0"; macro_[3].Definition = "1";
+    V(_Compile(L"BlockQueueCreate_cs", macro_, &blockQCreate_Pass2CS));
+    macro_[3].Definition = "0";
+    V(_Compile(L"BlockQueueResolve_cs", macro_, &blockQCreate_ResolveCS));
+    macro_[1].Definition = "1";
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_PrepareCS));
+    macro_[1].Definition = "0"; macro_[2].Definition = "1";
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_Pass1CS));
+    macro_[2].Definition = "0"; macro_[3].Definition = "1";
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_Pass2CS));
+    macro_[3].Definition = "0"; macro_[4].Definition = "1";
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_ResolveCS));
+    macro_[4].Definition = "0";
+    V(_Compile(L"QueueDefragment_cs", macro_, &blockQDefragmentCS));
+
+    D3D_SHADER_MACRO macro[] = {
+        { "__hlsl", "1" },//0
+        { "TYPED_UAV", "0" },//1
+        { "TEX3D_UAV", "0" },//2
+        { "FILTER_READ", "0" },//3
+        { "ENABLE_BRICKS", "0" },//4
+        { "NO_TYPED_LOAD", "0" },//5
+        { "TSDFVOL_RESET", "0" },//6
+        { "FUSEBLOCKVOL_RESET", "0" },//7
+        { "FOR_SENSOR", "0" },//8
+        { "FOR_VCAMERA", "0" },//9
+        { "THREAD_DIM", "8" },//10
+        { "RENDERBLOCKVOL_RESET", "0"},//11
+        { nullptr, nullptr }
+    };
+
+    if (!_typedLoadSupported) {
+        macro[5].Definition = "1";
     }
-
-    void _CreatePSOs()
-    {
-        HRESULT hr;
-        // Compile Shaders
-        ComPtr<ID3DBlob> quadVCamVS, quadSensorVS;
-        ComPtr<ID3DBlob> raycastVCamPS[kBuf][kStruct][kFilter];
-        ComPtr<ID3DBlob> raycastSensorPS[kBuf][kStruct][kFilter];
-        ComPtr<ID3DBlob> volUpdateCS[kBuf][kStruct];
-        ComPtr<ID3DBlob> blockUpdateCS[kBuf][kTG];
-        ComPtr<ID3DBlob> tsdfVolResetCS[kBuf];
-        ComPtr<ID3DBlob> fuseBlockVolResetCS;
-        ComPtr<ID3DBlob> renderBlockVolResetCS;
-
-        ComPtr<ID3DBlob> blockQCreate_Pass1CS;
-        ComPtr<ID3DBlob> blockQCreate_Pass2CS;
-        ComPtr<ID3DBlob> blockQCreate_ResolveCS;
-        ComPtr<ID3DBlob> blockQUpdate_PrepareCS;
-        ComPtr<ID3DBlob> blockQUpdate_Pass1CS;
-        ComPtr<ID3DBlob> blockQUpdate_Pass2CS;
-        ComPtr<ID3DBlob> blockQUpdate_ResolveCS;
-        ComPtr<ID3DBlob> blockQDefragmentCS;
-
-        D3D_SHADER_MACRO macro_[] = {
-            { "__hlsl", "1" },//0
-            { "PREPARE", "0" },//1
-            { "PASS_1", "0" },//2
-            { "PASS_2", "0" },//3
-            { "RESOLVE", "0" },//4
-            { nullptr, nullptr }
-        };
-
-        macro_[2].Definition = "1";
-        V(_Compile(L"BlockQueueCreate_cs", macro_, &blockQCreate_Pass1CS));
-        macro_[2].Definition = "0"; macro_[3].Definition = "1";
-        V(_Compile(L"BlockQueueCreate_cs", macro_, &blockQCreate_Pass2CS));
-        macro_[3].Definition = "0";
-        V(_Compile(L"BlockQueueResolve_cs", macro_, &blockQCreate_ResolveCS));
-        macro_[1].Definition = "1";
-        V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_PrepareCS));
-        macro_[1].Definition = "0"; macro_[2].Definition = "1";
-        V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_Pass1CS));
-        macro_[2].Definition = "0"; macro_[3].Definition = "1";
-        V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_Pass2CS));
-        macro_[3].Definition = "0"; macro_[4].Definition = "1";
-        V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_ResolveCS));
-        macro_[4].Definition = "0";
-        V(_Compile(L"QueueDefragment_cs", macro_, &blockQDefragmentCS));
-
-        D3D_SHADER_MACRO macro[] = {
-            { "__hlsl", "1" },//0
-            { "TYPED_UAV", "0" },//1
-            { "TEX3D_UAV", "0" },//2
-            { "FILTER_READ", "0" },//3
-            { "ENABLE_BRICKS", "0" },//4
-            { "NO_TYPED_LOAD", "0" },//5
-            { "TSDFVOL_RESET", "0" },//6
-            { "FUSEBLOCKVOL_RESET", "0" },//7
-            { "FOR_SENSOR", "0" },//8
-            { "FOR_VCAMERA", "0" },//9
-            { "THREAD_DIM", "8" },//10
-            { "RENDERBLOCKVOL_RESET", "0"},//11
-            { nullptr, nullptr }
-        };
-
-        if (!_typedLoadSupported) {
-            macro[5].Definition = "1";
-        }
-        macro[8].Definition = "1";
-        V(_Compile(L"RayCast_vs", macro, &quadSensorVS));
-        macro[8].Definition = "0"; macro[9].Definition = "1";
-        V(_Compile(L"RayCast_vs", macro, &quadVCamVS));
-        macro[9].Definition = "0"; macro[7].Definition = "1";
-        V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolResetCS));
-        macro[7].Definition = "0"; macro[11].Definition = "1";
-        V(_Compile(L"VolumeReset_cs", macro, &renderBlockVolResetCS));
-        macro[11].Definition = "0";
-        uint DefIdx;
-        bool compiledOnce = false;
-        for (int j = 0; j < kStruct; ++j) {
-            macro[4].Definition = j == TSDFVolume::kVoxel ? "0" : "1";
-            for (int i = 0; i < kBuf; ++i) {
-                switch ((ManagedBuf::Type)i) {
-                case ManagedBuf::kTypedBuffer: DefIdx = 1; break;
-                case ManagedBuf::k3DTexBuffer: DefIdx = 2; break;
-                }
-                macro[DefIdx].Definition = "1";
-                if (!compiledOnce) {
-                    macro[6].Definition = "1";
-                    V(_Compile(L"VolumeReset_cs", macro, &tsdfVolResetCS[i]));
-                    macro[6].Definition = "0";
-                    V(_Compile(L"BlocksUpdate_cs", macro,
-                        &blockUpdateCS[i][TSDFVolume::k512]));
-                    macro[10].Definition = "4";
-                    V(_Compile(L"BlocksUpdate_cs", macro,
-                        &blockUpdateCS[i][TSDFVolume::k64]));
-                    macro[10].Definition = "8";
-                }
-                V(_Compile(L"VolumeUpdate_cs", macro, &volUpdateCS[i][j]));
-                macro[9].Definition = "1";
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastVCamPS[i][j][TSDFVolume::kNoFilter]));
-                macro[3].Definition = "1"; // FILTER_READ
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastVCamPS[i][j][TSDFVolume::kLinearFilter]));
-                macro[3].Definition = "2"; // FILTER_READ
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerLinear]));
-                macro[3].Definition = "3"; // FILTER_READ
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerAniso]));
-                macro[3].Definition = "0"; // FILTER_READ
-                macro[9].Definition = "0"; macro[8].Definition = "1";
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastSensorPS[i][j][TSDFVolume::kNoFilter]));
-                macro[3].Definition = "1"; // FILTER_READ
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastSensorPS[i][j][TSDFVolume::kLinearFilter]));
-                macro[3].Definition = "2"; // FILTER_READ
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerLinear]));
-                macro[3].Definition = "3"; // FILTER_READ
-                V(_Compile(L"RayCast_ps",
-                    macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerAniso]));
-                macro[3].Definition = "0"; // FILTER_READ
-                macro[8].Definition = "0";
-                macro[DefIdx].Definition = "0";
+    macro[8].Definition = "1";
+    V(_Compile(L"RayCast_vs", macro, &quadSensorVS));
+    macro[8].Definition = "0"; macro[9].Definition = "1";
+    V(_Compile(L"RayCast_vs", macro, &quadVCamVS));
+    macro[9].Definition = "0"; macro[7].Definition = "1";
+    V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolResetCS));
+    macro[7].Definition = "0"; macro[11].Definition = "1";
+    V(_Compile(L"VolumeReset_cs", macro, &renderBlockVolResetCS));
+    macro[11].Definition = "0";
+    uint DefIdx;
+    bool compiledOnce = false;
+    for (int j = 0; j < kStruct; ++j) {
+        macro[4].Definition = j == TSDFVolume::kVoxel ? "0" : "1";
+        for (int i = 0; i < kBuf; ++i) {
+            switch ((ManagedBuf::Type)i) {
+            case ManagedBuf::kTypedBuffer: DefIdx = 1; break;
+            case ManagedBuf::k3DTexBuffer: DefIdx = 2; break;
             }
-            compiledOnce = true;
+            macro[DefIdx].Definition = "1";
+            if (!compiledOnce) {
+                macro[6].Definition = "1";
+                V(_Compile(L"VolumeReset_cs", macro, &tsdfVolResetCS[i]));
+                macro[6].Definition = "0";
+                V(_Compile(L"BlocksUpdate_cs", macro,
+                    &blockUpdateCS[i][TSDFVolume::k512]));
+                macro[10].Definition = "4";
+                V(_Compile(L"BlocksUpdate_cs", macro,
+                    &blockUpdateCS[i][TSDFVolume::k64]));
+                macro[10].Definition = "8";
+            }
+            V(_Compile(L"VolumeUpdate_cs", macro, &volUpdateCS[i][j]));
+            macro[9].Definition = "1";
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastVCamPS[i][j][TSDFVolume::kNoFilter]));
+            macro[3].Definition = "1"; // FILTER_READ
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastVCamPS[i][j][TSDFVolume::kLinearFilter]));
+            macro[3].Definition = "2"; // FILTER_READ
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerLinear]));
+            macro[3].Definition = "3"; // FILTER_READ
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerAniso]));
+            macro[3].Definition = "0"; // FILTER_READ
+            macro[9].Definition = "0"; macro[8].Definition = "1";
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastSensorPS[i][j][TSDFVolume::kNoFilter]));
+            macro[3].Definition = "1"; // FILTER_READ
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastSensorPS[i][j][TSDFVolume::kLinearFilter]));
+            macro[3].Definition = "2"; // FILTER_READ
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerLinear]));
+            macro[3].Definition = "3"; // FILTER_READ
+            V(_Compile(L"RayCast_ps",
+                macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerAniso]));
+            macro[3].Definition = "0"; // FILTER_READ
+            macro[8].Definition = "0";
+            macro[DefIdx].Definition = "0";
         }
-        // Create Rootsignature
-        _rootsig.Reset(4, 1);
-        _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
-        _rootsig[0].InitAsConstantBuffer(0);
-        _rootsig[1].InitAsConstantBuffer(1);
-        _rootsig[2].InitAsDescriptorRange(
-            D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 7);
-        _rootsig[3].InitAsDescriptorRange(
-            D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 4);
-        _rootsig.Finalize(L"TSDFVolume",
-            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
+        compiledOnce = true;
+    }
+    // Create Rootsignature
+    _rootsig.Reset(4, 1);
+    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
+    _rootsig[0].InitAsConstantBuffer(0);
+    _rootsig[1].InitAsConstantBuffer(1);
+    _rootsig[2].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 7);
+    _rootsig[3].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 4);
+    _rootsig.Finalize(L"TSDFVolume",
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
 
-        // Define the vertex input layout.
-        D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
-            {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-            D3D12_APPEND_ALIGNED_ELEMENT,
-            D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
-        };
+    // Define the vertex input layout.
+    D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+        D3D12_APPEND_ALIGNED_ELEMENT,
+        D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+    };
 
-        // Create PSO for volume update and volume render
-        DXGI_FORMAT ColorBufFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
-        DXGI_FORMAT DepthBufFormat = Graphics::g_SceneDepthBuffer.GetFormat();
-        DXGI_FORMAT DepthMapFormat = DXGI_FORMAT_R16_UINT;
-        //DXGI_FORMAT ExtractTexFormat = DXGI_FORMAT_R16_UINT;
+    // Create PSO for volume update and volume render
+    DXGI_FORMAT ColorBufFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+    DXGI_FORMAT DepthBufFormat = Graphics::g_SceneDepthBuffer.GetFormat();
+    DXGI_FORMAT DepthMapFormat = DXGI_FORMAT_R16_UINT;
+    //DXGI_FORMAT ExtractTexFormat = DXGI_FORMAT_R16_UINT;
 
 #define CreatePSO( ObjName, Shader)\
 ObjName.SetRootSignature(_rootsig);\
 ObjName.SetComputeShader(Shader->GetBufferPointer(), Shader->GetBufferSize());\
 ObjName.Finalize();
 
-        CreatePSO(_cptFuseBlockVolResetPSO, fuseBlockVolResetCS);
-        CreatePSO(_cptRenderBlockVolResetPSO, renderBlockVolResetCS);
-        CreatePSO(_cptBlockVolUpdate_Pass1, blockQCreate_Pass1CS);
-        CreatePSO(_cptBlockVolUpdate_Pass2, blockQCreate_Pass2CS);
-        CreatePSO(_cptBlockVolUpdate_Resolve, blockQCreate_ResolveCS);
-        CreatePSO(_cptBlockQUpdate_Prepare, blockQUpdate_PrepareCS);
-        CreatePSO(_cptBlockQUpdate_Pass1, blockQUpdate_Pass1CS);
-        CreatePSO(_cptBlockQUpdate_Pass2, blockQUpdate_Pass2CS);
-        CreatePSO(_cptBlockQUpdate_Resolve, blockQUpdate_ResolveCS);
-        CreatePSO(_cptBlockQDefragment, blockQDefragmentCS);
+    CreatePSO(_cptFuseBlockVolResetPSO, fuseBlockVolResetCS);
+    CreatePSO(_cptRenderBlockVolResetPSO, renderBlockVolResetCS);
+    CreatePSO(_cptBlockVolUpdate_Pass1, blockQCreate_Pass1CS);
+    CreatePSO(_cptBlockVolUpdate_Pass2, blockQCreate_Pass2CS);
+    CreatePSO(_cptBlockVolUpdate_Resolve, blockQCreate_ResolveCS);
+    CreatePSO(_cptBlockQUpdate_Prepare, blockQUpdate_PrepareCS);
+    CreatePSO(_cptBlockQUpdate_Pass1, blockQUpdate_Pass1CS);
+    CreatePSO(_cptBlockQUpdate_Pass2, blockQUpdate_Pass2CS);
+    CreatePSO(_cptBlockQUpdate_Resolve, blockQUpdate_ResolveCS);
+    CreatePSO(_cptBlockQDefragment, blockQDefragmentCS);
 
-        compiledOnce = false;
-        for (int k = 0; k < kStruct; ++k) {
-            for (int i = 0; i < kBuf; ++i) {
-                for (int j = 0; j < kFilter; ++j) {
-                    _gfxVCamRenderPSO[i][k][j].SetRootSignature(_rootsig);
-                    _gfxVCamRenderPSO[i][k][j].SetInputLayout(0, nullptr);
-                    _gfxVCamRenderPSO[i][k][j].SetRasterizerState(
-                        Graphics::g_RasterizerDefault);
-                    _gfxVCamRenderPSO[i][k][j].SetBlendState(
-                        Graphics::g_BlendDisable);
-                    _gfxVCamRenderPSO[i][k][j].SetDepthStencilState(
-                        Graphics::g_DepthStateReadWrite);
-                    _gfxVCamRenderPSO[i][k][j].SetSampleMask(UINT_MAX);
-                    _gfxVCamRenderPSO[i][k][j].SetPrimitiveTopologyType(
-                        D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-                    _gfxVCamRenderPSO[i][k][j].SetRenderTargetFormats(
-                        1, &DepthMapFormat, DepthBufFormat);
-                    _gfxVCamRenderPSO[i][k][j].SetPixelShader(
-                        raycastVCamPS[i][k][j]->GetBufferPointer(),
-                        raycastVCamPS[i][k][j]->GetBufferSize());
-                    _gfxSensorRenderPSO[i][k][j] = _gfxVCamRenderPSO[i][k][j];
-                    _gfxSensorRenderPSO[i][k][j].SetDepthStencilState(
-                        Graphics::g_DepthStateDisabled);
-                    _gfxSensorRenderPSO[i][k][j].SetVertexShader(
-                        quadSensorVS->GetBufferPointer(),
-                        quadSensorVS->GetBufferSize());
-                    _gfxSensorRenderPSO[i][k][j].SetRenderTargetFormats(
-                        1, &DepthMapFormat, DXGI_FORMAT_UNKNOWN);
-                    _gfxSensorRenderPSO[i][k][j].SetPixelShader(
-                        raycastSensorPS[i][k][j]->GetBufferPointer(),
-                        raycastSensorPS[i][k][j]->GetBufferSize());
-                    _gfxSensorRenderPSO[i][k][j].Finalize();
-                    _gfxVCamRenderPSO[i][k][j].SetVertexShader(
-                        quadVCamVS->GetBufferPointer(),
-                        quadVCamVS->GetBufferSize());
-                    _gfxVCamRenderPSO[i][k][j].Finalize();
-                }
-                CreatePSO(_cptUpdatePSO[i][k], volUpdateCS[i][k]);
-                if (!compiledOnce) {
-                    CreatePSO(_cptTSDFBufResetPSO[i], tsdfVolResetCS[i]);
-                    CreatePSO(_cptBlockVolUpdate_Pass3[i][TSDFVolume::k512],
-                        blockUpdateCS[i][TSDFVolume::k512]);
-                    CreatePSO(_cptBlockVolUpdate_Pass3[i][TSDFVolume::k64],
-                        blockUpdateCS[i][TSDFVolume::k64]);
-                }
+    compiledOnce = false;
+    for (int k = 0; k < kStruct; ++k) {
+        for (int i = 0; i < kBuf; ++i) {
+            for (int j = 0; j < kFilter; ++j) {
+                _gfxVCamRenderPSO[i][k][j].SetRootSignature(_rootsig);
+                _gfxVCamRenderPSO[i][k][j].SetInputLayout(0, nullptr);
+                _gfxVCamRenderPSO[i][k][j].SetRasterizerState(
+                    Graphics::g_RasterizerDefault);
+                _gfxVCamRenderPSO[i][k][j].SetBlendState(
+                    Graphics::g_BlendDisable);
+                _gfxVCamRenderPSO[i][k][j].SetDepthStencilState(
+                    Graphics::g_DepthStateReadWrite);
+                _gfxVCamRenderPSO[i][k][j].SetSampleMask(UINT_MAX);
+                _gfxVCamRenderPSO[i][k][j].SetPrimitiveTopologyType(
+                    D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+                _gfxVCamRenderPSO[i][k][j].SetRenderTargetFormats(
+                    1, &DepthMapFormat, DepthBufFormat);
+                _gfxVCamRenderPSO[i][k][j].SetPixelShader(
+                    raycastVCamPS[i][k][j]->GetBufferPointer(),
+                    raycastVCamPS[i][k][j]->GetBufferSize());
+                _gfxSensorRenderPSO[i][k][j] = _gfxVCamRenderPSO[i][k][j];
+                _gfxSensorRenderPSO[i][k][j].SetDepthStencilState(
+                    Graphics::g_DepthStateDisabled);
+                _gfxSensorRenderPSO[i][k][j].SetVertexShader(
+                    quadSensorVS->GetBufferPointer(),
+                    quadSensorVS->GetBufferSize());
+                _gfxSensorRenderPSO[i][k][j].SetRenderTargetFormats(
+                    1, &DepthMapFormat, DXGI_FORMAT_UNKNOWN);
+                _gfxSensorRenderPSO[i][k][j].SetPixelShader(
+                    raycastSensorPS[i][k][j]->GetBufferPointer(),
+                    raycastSensorPS[i][k][j]->GetBufferSize());
+                _gfxSensorRenderPSO[i][k][j].Finalize();
+                _gfxVCamRenderPSO[i][k][j].SetVertexShader(
+                    quadVCamVS->GetBufferPointer(),
+                    quadVCamVS->GetBufferSize());
+                _gfxVCamRenderPSO[i][k][j].Finalize();
             }
-            compiledOnce = true;
+            CreatePSO(_cptUpdatePSO[i][k], volUpdateCS[i][k]);
+            if (!compiledOnce) {
+                CreatePSO(_cptTSDFBufResetPSO[i], tsdfVolResetCS[i]);
+                CreatePSO(_cptBlockVolUpdate_Pass3[i][TSDFVolume::k512],
+                    blockUpdateCS[i][TSDFVolume::k512]);
+                CreatePSO(_cptBlockVolUpdate_Pass3[i][TSDFVolume::k64],
+                    blockUpdateCS[i][TSDFVolume::k64]);
+            }
         }
+        compiledOnce = true;
+    }
 #undef  CreatePSO
 
-        // Create PSO for render near far plane
-        ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS;
-        ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2];
-        D3D_SHADER_MACRO macro1[] = {
-            {"__hlsl", "1"},
-            {"DEBUG_VIEW", "0"},
-            {"FOR_VCAMERA", "1"},
-            {"FOR_SENSOR", "0"},
-            {nullptr, nullptr}
-        };
-        V(_Compile(L"StepInfo_ps", macro1, &stepInfoPS));
-        V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS[0]));
-        V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoVCamVS[1]));
-        macro1[2].Definition = "0"; macro1[3].Definition = "1";
-        V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS[0]));
-        V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoSensorVS[1]));
-        macro1[1].Definition = "1";
-        V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
+    // Create PSO for render near far plane
+    ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS;
+    ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2];
+    D3D_SHADER_MACRO macro1[] = {
+        {"__hlsl", "1"},
+        {"DEBUG_VIEW", "0"},
+        {"FOR_VCAMERA", "1"},
+        {"FOR_SENSOR", "0"},
+        {nullptr, nullptr}
+    };
+    V(_Compile(L"StepInfo_ps", macro1, &stepInfoPS));
+    V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS[0]));
+    V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoVCamVS[1]));
+    macro1[2].Definition = "0"; macro1[3].Definition = "1";
+    V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS[0]));
+    V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoSensorVS[1]));
+    macro1[1].Definition = "1";
+    V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
 
-        _gfxStepInfoVCamPSO[0].SetRootSignature(_rootsig);
-        _gfxStepInfoVCamPSO[0].SetPrimitiveRestart(
-            D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
-        _gfxStepInfoVCamPSO[0].SetInputLayout(
-            _countof(inputElementDescs), inputElementDescs);
-        _gfxStepInfoVCamPSO[0].SetDepthStencilState(
-            Graphics::g_DepthStateDisabled);
-        _gfxStepInfoVCamPSO[0].SetSampleMask(UINT_MAX);
-        _gfxStepInfoVCamPSO[0].SetVertexShader(
-            stepInfoVCamVS[0]->GetBufferPointer(),
-            stepInfoVCamVS[0]->GetBufferSize());
-        _gfxStepInfoDebugPSO = _gfxStepInfoVCamPSO[0];
-        _gfxStepInfoDebugPSO.SetDepthStencilState(
-            Graphics::g_DepthStateReadOnly);
-        _gfxStepInfoVCamPSO[0].SetRasterizerState(
-            Graphics::g_RasterizerTwoSided);
-        D3D12_RASTERIZER_DESC rastDesc = Graphics::g_RasterizerTwoSided;
-        rastDesc.FillMode = D3D12_FILL_MODE_WIREFRAME;
-        _gfxStepInfoDebugPSO.SetRasterizerState(rastDesc);
-        _gfxStepInfoDebugPSO.SetBlendState(Graphics::g_BlendDisable);
-        D3D12_BLEND_DESC blendDesc = {};
-        blendDesc.AlphaToCoverageEnable = false;
-        blendDesc.IndependentBlendEnable = false;
-        blendDesc.RenderTarget[0].BlendEnable = true;
-        blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_MIN;
-        blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
-        blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
-        blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_MAX;
-        blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-        blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
-        blendDesc.RenderTarget[0].RenderTargetWriteMask =
-            D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN;
-        _gfxStepInfoVCamPSO[0].SetBlendState(blendDesc);
-        _gfxStepInfoVCamPSO[0].SetPrimitiveTopologyType(
-            D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-        _gfxStepInfoDebugPSO.SetPrimitiveTopologyType(
-            D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
-        _gfxStepInfoDebugPSO.SetRenderTargetFormats(
-            1, &ColorBufFormat, DepthBufFormat);
-        _gfxStepInfoVCamPSO[0].SetRenderTargetFormats(
-            1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
-        _gfxStepInfoVCamPSO[0].SetPixelShader(
-            stepInfoPS->GetBufferPointer(), stepInfoPS->GetBufferSize());
-        _gfxStepInfoDebugPSO.SetPixelShader(
-            stepInfoDebugPS->GetBufferPointer(),
-            stepInfoDebugPS->GetBufferSize());
-        _gfxStepInfoSensorPSO[0] = _gfxStepInfoVCamPSO[0];
-        _gfxStepInfoSensorPSO[1] = _gfxStepInfoSensorPSO[0];
-        _gfxStepInfoSensorPSO[1].SetInputLayout(0, nullptr);
-        _gfxStepInfoSensorPSO[0].SetVertexShader(
-            stepInfoSensorVS[0]->GetBufferPointer(),
-            stepInfoSensorVS[0]->GetBufferSize());
-        _gfxStepInfoSensorPSO[1].SetVertexShader(
-            stepInfoSensorVS[1]->GetBufferPointer(),
-            stepInfoSensorVS[1]->GetBufferSize());
-        _gfxStepInfoSensorPSO[0].Finalize();
-        _gfxStepInfoSensorPSO[1].Finalize();
-        _gfxStepInfoVCamPSO[1] = _gfxStepInfoVCamPSO[0];
-        _gfxStepInfoVCamPSO[1].SetInputLayout(0, nullptr);
-        _gfxStepInfoVCamPSO[1].SetVertexShader(
-            stepInfoVCamVS[1]->GetBufferPointer(),
-            stepInfoVCamVS[1]->GetBufferSize());
-        _gfxStepInfoVCamPSO[0].Finalize();
-        _gfxStepInfoVCamPSO[1].Finalize();
-        _gfxStepInfoDebugPSO.Finalize();
-    }
+    _gfxStepInfoVCamPSO[0].SetRootSignature(_rootsig);
+    _gfxStepInfoVCamPSO[0].SetPrimitiveRestart(
+        D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
+    _gfxStepInfoVCamPSO[0].SetInputLayout(
+        _countof(inputElementDescs), inputElementDescs);
+    _gfxStepInfoVCamPSO[0].SetDepthStencilState(
+        Graphics::g_DepthStateDisabled);
+    _gfxStepInfoVCamPSO[0].SetSampleMask(UINT_MAX);
+    _gfxStepInfoVCamPSO[0].SetVertexShader(
+        stepInfoVCamVS[0]->GetBufferPointer(),
+        stepInfoVCamVS[0]->GetBufferSize());
+    _gfxStepInfoDebugPSO = _gfxStepInfoVCamPSO[0];
+    _gfxStepInfoDebugPSO.SetDepthStencilState(
+        Graphics::g_DepthStateReadOnly);
+    _gfxStepInfoVCamPSO[0].SetRasterizerState(
+        Graphics::g_RasterizerTwoSided);
+    D3D12_RASTERIZER_DESC rastDesc = Graphics::g_RasterizerTwoSided;
+    rastDesc.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    _gfxStepInfoDebugPSO.SetRasterizerState(rastDesc);
+    _gfxStepInfoDebugPSO.SetBlendState(Graphics::g_BlendDisable);
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = false;
+    blendDesc.IndependentBlendEnable = false;
+    blendDesc.RenderTarget[0].BlendEnable = true;
+    blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_MIN;
+    blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_ONE;
+    blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_ONE;
+    blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_MAX;
+    blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+    blendDesc.RenderTarget[0].RenderTargetWriteMask =
+        D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN;
+    _gfxStepInfoVCamPSO[0].SetBlendState(blendDesc);
+    _gfxStepInfoVCamPSO[0].SetPrimitiveTopologyType(
+        D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+    _gfxStepInfoDebugPSO.SetPrimitiveTopologyType(
+        D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
+    _gfxStepInfoDebugPSO.SetRenderTargetFormats(
+        1, &ColorBufFormat, DepthBufFormat);
+    _gfxStepInfoVCamPSO[0].SetRenderTargetFormats(
+        1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
+    _gfxStepInfoVCamPSO[0].SetPixelShader(
+        stepInfoPS->GetBufferPointer(), stepInfoPS->GetBufferSize());
+    _gfxStepInfoDebugPSO.SetPixelShader(
+        stepInfoDebugPS->GetBufferPointer(),
+        stepInfoDebugPS->GetBufferSize());
+    _gfxStepInfoSensorPSO[0] = _gfxStepInfoVCamPSO[0];
+    _gfxStepInfoSensorPSO[1] = _gfxStepInfoSensorPSO[0];
+    _gfxStepInfoSensorPSO[1].SetInputLayout(0, nullptr);
+    _gfxStepInfoSensorPSO[0].SetVertexShader(
+        stepInfoSensorVS[0]->GetBufferPointer(),
+        stepInfoSensorVS[0]->GetBufferSize());
+    _gfxStepInfoSensorPSO[1].SetVertexShader(
+        stepInfoSensorVS[1]->GetBufferPointer(),
+        stepInfoSensorVS[1]->GetBufferSize());
+    _gfxStepInfoSensorPSO[0].Finalize();
+    _gfxStepInfoSensorPSO[1].Finalize();
+    _gfxStepInfoVCamPSO[1] = _gfxStepInfoVCamPSO[0];
+    _gfxStepInfoVCamPSO[1].SetInputLayout(0, nullptr);
+    _gfxStepInfoVCamPSO[1].SetVertexShader(
+        stepInfoVCamVS[1]->GetBufferPointer(),
+        stepInfoVCamVS[1]->GetBufferSize());
+    _gfxStepInfoVCamPSO[0].Finalize();
+    _gfxStepInfoVCamPSO[1].Finalize();
+    _gfxStepInfoDebugPSO.Finalize();
+}
 
-    void _CreateResource()
-    {
-        HRESULT hr;
-        // Feature support checking
-        D3D12_FEATURE_DATA_D3D12_OPTIONS FeatureData = {};
-        V(Graphics::g_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS,
-            &FeatureData, sizeof(FeatureData)));
-        if (SUCCEEDED(hr)) {
-            if (FeatureData.TypedUAVLoadAdditionalFormats) {
-                D3D12_FEATURE_DATA_FORMAT_SUPPORT FormatSupport =
-                {DXGI_FORMAT_R8_SNORM, D3D12_FORMAT_SUPPORT1_NONE,
-                    D3D12_FORMAT_SUPPORT2_NONE};
-                V(Graphics::g_device->CheckFeatureSupport(
-                    D3D12_FEATURE_FORMAT_SUPPORT, &FormatSupport,
-                    sizeof(FormatSupport)));
-                if (FAILED(hr)) {
-                    PRINTERROR("Checking Feature Support Failed");
-                }
-                if ((FormatSupport.Support2 &
-                    D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) != 0) {
-                    _typedLoadSupported = true;
-                    PRINTINFO("Typed load is supported");
-                } else {
-                    PRINTWARN("Typed load is not supported");
-                }
-            } else {
-                PRINTWARN("TypedLoad AdditionalFormats load is not supported");
+void _CreateResource()
+{
+    HRESULT hr;
+    // Feature support checking
+    D3D12_FEATURE_DATA_D3D12_OPTIONS FeatureData = {};
+    V(Graphics::g_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS,
+        &FeatureData, sizeof(FeatureData)));
+    if (SUCCEEDED(hr)) {
+        if (FeatureData.TypedUAVLoadAdditionalFormats) {
+            D3D12_FEATURE_DATA_FORMAT_SUPPORT FormatSupport =
+            {DXGI_FORMAT_R8_SNORM, D3D12_FORMAT_SUPPORT1_NONE,
+                D3D12_FORMAT_SUPPORT2_NONE};
+            V(Graphics::g_device->CheckFeatureSupport(
+                D3D12_FEATURE_FORMAT_SUPPORT, &FormatSupport,
+                sizeof(FormatSupport)));
+            if (FAILED(hr)) {
+                PRINTERROR("Checking Feature Support Failed");
             }
+            if ((FormatSupport.Support2 &
+                D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) != 0) {
+                _typedLoadSupported = true;
+                PRINTINFO("Typed load is supported");
+            } else {
+                PRINTWARN("Typed load is not supported");
+            }
+        } else {
+            PRINTWARN("TypedLoad AdditionalFormats load is not supported");
         }
-
-        _CreatePSOs();
-
-        const uint32_t vertexBufferSize = sizeof(cubeVertices);
-        _cubeVB.Create(L"Vertex Buffer", ARRAYSIZE(cubeVertices),
-            sizeof(XMFLOAT3), (void*)cubeVertices);
-
-        _cubeTriangleStripIB.Create(L"Cube TriangleStrip Index Buffer",
-            ARRAYSIZE(cubeTrianglesStripIndices), sizeof(uint16_t),
-            (void*)cubeTrianglesStripIndices);
-
-        _cubeLineStripIB.Create(L"Cube LineStrip Index Buffer",
-            ARRAYSIZE(cubeLineStripIndices), sizeof(uint16_t),
-            (void*)cubeLineStripIndices);
     }
+
+    _CreatePSOs();
+
+    const uint32_t vertexBufferSize = sizeof(cubeVertices);
+    _cubeVB.Create(L"Vertex Buffer", ARRAYSIZE(cubeVertices),
+        sizeof(XMFLOAT3), (void*)cubeVertices);
+
+    _cubeTriangleStripIB.Create(L"Cube TriangleStrip Index Buffer",
+        ARRAYSIZE(cubeTrianglesStripIndices), sizeof(uint16_t),
+        (void*)cubeTrianglesStripIndices);
+
+    _cubeLineStripIB.Create(L"Cube LineStrip Index Buffer",
+        ARRAYSIZE(cubeLineStripIndices), sizeof(uint16_t),
+        (void*)cubeLineStripIndices);
+}
 }
 
 TSDFVolume::TSDFVolume()
@@ -843,7 +841,7 @@ TSDFVolume::RenderGui()
     }
     if ((uType != _volBuf.GetType() || uBit != _volBuf.GetBit()) &&
         !_volBuf.ChangeResource(_volBuf.GetReso(), (ManagedBuf::Type)uType,
-            (ManagedBuf::Bit)uBit)) {
+        (ManagedBuf::Bit)uBit)) {
         uType = _volBuf.GetType();
     }
 
@@ -969,15 +967,15 @@ TSDFVolume::_CreateFuseBlockVolAndRelatedBuf(
     _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
     cptCtx.Finish(true);
-    
+
     _updateBlocksBuf.Destroy();
     _updateQSize = blockCount;
     _updateBlocksBuf.Create(L"UpdateBlockQueue", _updateQSize, 4);
-    
+
     _occupiedBlocksBuf.Destroy();
     _occupiedQSize = blockCount;
     _occupiedBlocksBuf.Create(L"OccupiedBlockQueue", _updateQSize, 4);
-    
+
     _newFuseBlocksBuf.Destroy();
     _newQSize = (uint32_t)(_occupiedQSize * 0.3f);
     _newFuseBlocksBuf.Create(L"NewOccupiedBlockBuf",

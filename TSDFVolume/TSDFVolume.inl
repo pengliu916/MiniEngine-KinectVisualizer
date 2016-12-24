@@ -83,7 +83,7 @@ CBUFFER_ALIGN STRUCT(cbuffer) PerFrameDataCB REGISTER(b0)
     matrix mViewInv;
 #if !__hlsl
     void* operator new(size_t i) {
-        return _aligned_malloc(i, 
+        return _aligned_malloc(i,
             D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
     };
     void operator delete(void* p) {
@@ -106,7 +106,7 @@ CBUFFER_ALIGN STRUCT(cbuffer) PerCallDataCB REGISTER(b1)
     int iDefragmentThreshold;
 #if !__hlsl
     void* operator new(size_t i) {
-        return _aligned_malloc(i, 
+        return _aligned_malloc(i,
             D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
     };
     void operator delete(void* p) {

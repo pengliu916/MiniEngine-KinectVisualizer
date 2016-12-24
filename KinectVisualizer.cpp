@@ -16,34 +16,32 @@ ctx.TransitionResource(res, state, true)
 ctx.BeginResourceTransition(res, state)
 
 namespace {
-    const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    const D3D12_RESOURCE_STATES psSRV =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES  csSRV =
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES  vsSRV =
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    const D3D12_RESOURCE_STATES DSV = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+typedef D3D12_RESOURCE_STATES State;
+const State RTV   = D3D12_RESOURCE_STATE_RENDER_TARGET;
+const State DSV   = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
-    LinearAllocator _uploadHeapAlloc = {kCpuWritable};
+LinearAllocator _uploadHeapAlloc = {kCpuWritable};
 
-    DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
-    bool _useBilateralFilter = false;
-    bool _visualize = true;
-    bool _windowActive = false;
+DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
+bool _useBilateralFilter = false;
+bool _visualize = true;
+bool _windowActive = false;
 
-    ImVec2 _visWinPos = ImVec2(0, 0);
-    ImVec2 _visWinSize = ImVec2(1024, 768);
+ImVec2 _visWinPos = ImVec2(0, 0);
+ImVec2 _visWinSize = ImVec2(1024, 768);
 
-    struct ImGuiResizeConstrain {
-        static void Step(ImGuiSizeConstraintCallbackData* data) {
-            float step = (float)(int)(intptr_t)data->UserData;
-            data->DesiredSize = ImVec2(
-                (int)(data->DesiredSize.x / step + 0.5f) * step,
-                (int)(data->DesiredSize.y / step + 0.5f) * step);
-        }
-    };
+struct ImGuiResizeConstrain {
+    static void Step(ImGuiSizeConstraintCallbackData* data) {
+        float step = (float)(int)(intptr_t)data->UserData;
+        data->DesiredSize = ImVec2(
+            (int)(data->DesiredSize.x / step + 0.5f) * step,
+            (int)(data->DesiredSize.y / step + 0.5f) * step);
+    }
+};
 }
 
 KinectVisualizer::KinectVisualizer(
@@ -129,7 +127,7 @@ KinectVisualizer::OnUpdate()
         NormalGenerator::RenderGui();
     }
     ImGui::End();
-    ImGui::SetNextWindowSizeConstraints(ImVec2(640,480),
+    ImGui::SetNextWindowSizeConstraints(ImVec2(640, 480),
         ImVec2(FLT_MAX, FLT_MAX), ImGuiResizeConstrain::Step, (void*)32);
     if (ImGui::Begin("Visualize Image")) {
         _visWinPos = ImGui::GetCursorScreenPos();

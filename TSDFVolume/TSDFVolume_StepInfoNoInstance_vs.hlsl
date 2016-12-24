@@ -24,7 +24,7 @@ void main(uint uVertID : SV_VertexID,
         uint uMask = 1 << (uVertID % TRISTRIPSIZE);
         uint3 u3Pos = (uint3(MAGICFORX, MAGICFORY, MAGICFORZ) & uMask) != 0;
         float4 f4Pos = float4(u3Pos, 1.f);
-        float3 f3BrickOffset = 
+        float3 f3BrickOffset =
             u3Idx * vParam.uVoxelRenderBlockRatio * vParam.fVoxelSize -
             (vParam.u3VoxelReso >> 1) * vParam.fVoxelSize;
         f4Pos.xyz = f4Pos.xyz * vParam.fVoxelSize *

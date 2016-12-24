@@ -7,7 +7,7 @@ float4
 float2
 #endif // DEBUG_VIEW
 main(float4 f4ProjPos : SV_POSITION,
-    float2 f2Depth: NORMAL0) : SV_Target
+    float2 f2Depth : NORMAL0) : SV_Target
 {
     // Alpha blend will store the smallest RG channel, so to keep track of both
     // min/max length, G channel will need to be multiplied by -1

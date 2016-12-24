@@ -126,7 +126,7 @@ private:
     // [22-31] z idx
     StructuredBuffer _updateBlocksBuf;
     uint32_t _updateQSize;
-    
+
     // 32bit element buffer for allocated blocks(occupied), and its element size
     // [0] not used
     // [1] freed flag

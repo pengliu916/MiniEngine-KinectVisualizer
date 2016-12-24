@@ -2,19 +2,19 @@
 #include "ManagedBuf.h"
 
 namespace {
-    enum ResourceState {
-        kNormal = 0,
-        kNewBufferCooking,
-        kNewBufferReady,
-        kRetiringOldBuffer,
-        kOldBufferRetired,
-        kNumStates
-    };
+enum ResourceState {
+    kNormal = 0,
+    kNewBufferCooking,
+    kNewBufferReady,
+    kRetiringOldBuffer,
+    kOldBufferRetired,
+    kNumStates
+};
 
-    std::atomic<ResourceState> _bufState(kNormal);
-    uint8_t _activeIndex = 0;
-    uint64_t _fenceValue = 0;
-    std::unique_ptr<thread_guard> _backgroundThread;
+std::atomic<ResourceState> _bufState(kNormal);
+uint8_t _activeIndex = 0;
+uint64_t _fenceValue = 0;
+std::unique_ptr<thread_guard> _backgroundThread;
 };
 
 ManagedBuf::ManagedBuf(DirectX::XMUINT3 reso,

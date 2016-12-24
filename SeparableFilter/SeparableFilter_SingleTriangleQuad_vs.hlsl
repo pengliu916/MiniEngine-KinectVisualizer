@@ -1,6 +1,6 @@
 #include "SeparableFilter.inl"
 
-void main(in uint VertID : SV_VertexID, 
+void main(in uint VertID : SV_VertexID,
     out float2 Tex : TEXCOORD0, out float4 Pos : SV_Position)
 {
     // Texture coordinates range [0, 2], but only [0, 1] appears on screen.

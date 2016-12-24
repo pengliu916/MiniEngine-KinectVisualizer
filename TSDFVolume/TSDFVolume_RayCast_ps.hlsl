@@ -197,12 +197,13 @@ void main(
     float3 f3Pos : POSITION1,
     float4 f4ProjPos : SV_POSITION,
 #if FOR_SENSOR
-    out uint uDepth : SV_Target)
+    out uint uDepth : SV_Target
 #endif // FOR_SENSOR
 #if FOR_VCAMERA
     out uint uDepth : SV_Target,
-    out float fDepth : SV_Depth)
+    out float fDepth : SV_Depth
 #endif // FOR_VCAMERA
+)
 {
     // calculate ray intersection with bounding box
     float fTnear, fTfar;

@@ -13,7 +13,7 @@ void main(uint uInstanceID : SV_InstanceID, in float4 f4Pos : POSITION,
     f2Depths = nan();
     // check whether it is occupied 
     if (tex_srvRenderBlockVol[u3Idx] != 0) {
-        float3 f3BrickOffset = 
+        float3 f3BrickOffset =
             u3Idx * vParam.uVoxelRenderBlockRatio * vParam.fVoxelSize -
             (vParam.u3VoxelReso >> 1) * vParam.fVoxelSize;
         f4Pos.xyz = (f4Pos.xyz + 0.5f) * vParam.fVoxelSize *

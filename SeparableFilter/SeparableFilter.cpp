@@ -17,17 +17,16 @@ ctx.TransitionResource(res, state, true)
 ctx.BeginResourceTransition(res, state)
 
 namespace {
-    const D3D12_RESOURCE_STATES psSRV =
-        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES  csSRV =
-        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    const D3D12_RESOURCE_STATES RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
+typedef D3D12_RESOURCE_STATES State;
+const State RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
+const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
-    GraphicsPSO _hPassPSO[SeperableFilter::kNumKernelDiameter];
-    GraphicsPSO _vPassPSO[SeperableFilter::kNumKernelDiameter];
-    RootSignature _rootSignature;
+GraphicsPSO _hPassPSO[SeperableFilter::kNumKernelDiameter];
+GraphicsPSO _vPassPSO[SeperableFilter::kNumKernelDiameter];
+RootSignature _rootSignature;
 
-    bool _cbStaled = true;
+bool _cbStaled = true;
 }
 
 SeperableFilter::SeperableFilter()
@@ -71,8 +70,8 @@ HRESULT SeperableFilter::OnCreateResoure(
         {nullptr, nullptr}
     };
     V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        L"SeparableFilter_SingleTriangleQuad_vs.hlsl").c_str(), macro, 
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1", 
+        L"SeparableFilter_SingleTriangleQuad_vs.hlsl").c_str(), macro,
+        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1",
         compileFlags, 0, &quadVS));
     char kernelSizeStr[8];
     for (int i = 0; i < kNumKernelDiameter; ++i) {
@@ -80,8 +79,8 @@ HRESULT SeperableFilter::OnCreateResoure(
         macro[2].Definition = kernelSizeStr;
         macro[1].Definition = "0";
         V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-            L"SeparableFilter_BilateralFilter_ps.hlsl").c_str(), macro, 
-            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", 
+            L"SeparableFilter_BilateralFilter_ps.hlsl").c_str(), macro,
+            D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
             "ps_5_1", compileFlags, 0, &vPassPS[i]));
         macro[1].Definition = "1";
         V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
@@ -129,7 +128,7 @@ void SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
         if (_intermediateBuf.GetResource() != nullptr) {
             _intermediateBuf.Destroy();
         }
-        _intermediateBuf.Create(L"BilateralTemp", 
+        _intermediateBuf.Create(L"BilateralTemp",
             (uint32_t)reso.x, (uint32_t)reso.y, 1, _outTexFormat);
         _dataCB.u2Reso = reso;
         _viewport.Width = static_cast<float>(reso.x);
@@ -174,9 +173,9 @@ void SeperableFilter::OnRender(
 void SeperableFilter::RenderGui()
 {
     if (ImGui::CollapsingHeader("BilateralFilter Settings")) {
-        ImGui::SliderInt("Kernel Radius", 
+        ImGui::SliderInt("Kernel Radius",
             (int*)&_kernelSizeInUse, 0, kNumKernelDiameter - 1);
-        _cbStaled = ImGui::DragFloat("Range Variance", 
+        _cbStaled = ImGui::DragFloat("Range Variance",
             &_dataCB.fGaussianVar, 1.f, 100, 2500);
     }
 }

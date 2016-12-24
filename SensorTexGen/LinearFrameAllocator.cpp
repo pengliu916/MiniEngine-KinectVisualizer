@@ -6,11 +6,11 @@ using namespace std;
 //-----------------------------------------------------------------------------
 // KinectBuffer
 //-----------------------------------------------------------------------------
-KinectBuffer::KinectBuffer(DXGI_FORMAT format, uint32_t numElements, 
+KinectBuffer::KinectBuffer(DXGI_FORMAT format, uint32_t numElements,
     uint32_t elementSize)
-    : _elementCount(numElements), 
-      _elementSize(elementSize), 
-      _dataFormat(format)
+    : _elementCount(numElements),
+    _elementSize(elementSize),
+    _dataFormat(format)
 {
     _bufferSize = numElements * elementSize;
     // [NOTE] Upload heap resource can't have many resource flags
@@ -42,7 +42,7 @@ KinectBuffer::Create(const std::wstring& name)
 
     HRESULT hr;
     V(Graphics::g_device->CreateCommittedResource(
-        &heapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc, 
+        &heapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc,
         m_UsageState, nullptr, IID_PPV_ARGS(&m_pResource)));
 
     m_GpuVirtualAddress = m_pResource->GetGPUVirtualAddress();
@@ -106,9 +106,9 @@ KinectBuffer::CreateDerivedViews()
 //-----------------------------------------------------------------------------
 LinearFrameAllocator::LinearFrameAllocator(
     uint32_t numElements, uint32_t elementSize, DXGI_FORMAT format)
-    : _numElements(numElements), 
-      _elementSize(elementSize), 
-      _bufferFormat(format)
+    : _numElements(numElements),
+    _elementSize(elementSize),
+    _bufferFormat(format)
 {
 }
 
@@ -119,7 +119,7 @@ LinearFrameAllocator::~LinearFrameAllocator()
 KinectBuffer*
 LinearFrameAllocator::RequestFrameBuffer()
 {
-    while (!_retiredBuffers.empty() && 
+    while (!_retiredBuffers.empty() &&
         Graphics::g_cmdListMngr.IsFenceComplete(
             _retiredBuffers.front().first)) {
         _availableBuffers.push(_retiredBuffers.front().second);
@@ -152,7 +152,7 @@ LinearFrameAllocator::Destory()
 KinectBuffer*
 LinearFrameAllocator::CreateNewFrameBuffer()
 {
-    KinectBuffer* bufferPtr = 
+    KinectBuffer* bufferPtr =
         new KinectBuffer(_bufferFormat, _numElements, _elementSize);
     return bufferPtr;
 }

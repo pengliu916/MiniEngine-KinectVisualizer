@@ -12,7 +12,7 @@ float3 GetValidPos(uint2 u2uv)
     return f3Pos;
 }
 
-[numthreads(8 ,8, 1)]
+[numthreads(8, 8, 1)]
 void main(uint3 u3DTid : SV_DispatchThreadID)
 {
     float4 f4Output = float4(-1.f, -1.f, -1.f, -1.f);
