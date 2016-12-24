@@ -27,6 +27,7 @@ GraphicsPSO _vPassPSO[SeperableFilter::kNumKernelDiameter];
 RootSignature _rootSignature;
 
 bool _cbStaled = true;
+bool _enabled = false;
 }
 
 SeperableFilter::SeperableFilter()
@@ -149,6 +150,10 @@ void
 SeperableFilter::OnRender(
     GraphicsContext& gfxCtx, ColorBuffer* pInputTex)
 {
+    if (!_enabled) {
+        return;
+    }
+
     if (_cbStaled) {
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
@@ -160,7 +165,7 @@ SeperableFilter::OnRender(
     BeginTrans(gfxCtx, _outBuf, RTV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
     gfxCtx.SetRootSignature(_rootSignature);
-    gfxCtx.SetPipelineState(_hPassPSO[_kernelSizeInUse]);
+    gfxCtx.SetPipelineState(_hPassPSO[_kernelSize]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     gfxCtx.SetRenderTargets(1, &_intermediateBuf.GetRTV());
     gfxCtx.SetViewport(_viewport);
@@ -170,7 +175,7 @@ SeperableFilter::OnRender(
     gfxCtx.Draw(3);
     Trans(gfxCtx, _outBuf, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
-    gfxCtx.SetPipelineState(_vPassPSO[_kernelSizeInUse]);
+    gfxCtx.SetPipelineState(_vPassPSO[_kernelSize]);
     gfxCtx.SetRenderTargets(1, &_outBuf.GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     gfxCtx.Draw(3);
@@ -180,16 +185,17 @@ SeperableFilter::OnRender(
 void
 SeperableFilter::RenderGui()
 {
-    if (ImGui::CollapsingHeader("BilateralFilter Settings")) {
-        ImGui::SliderInt("Kernel Radius",
-            (int*)&_kernelSizeInUse, 0, kNumKernelDiameter - 1);
-        _cbStaled = ImGui::DragFloat("Range Variance",
-            &_dataCB.fGaussianVar, 1.f, 100, 2500);
+    using namespace ImGui;
+    if (!CollapsingHeader("BilateralFilter Settings")) {
+        return;
     }
+    _cbStaled |= Checkbox("Enable Bilateral Filter", &_enabled);
+    SliderInt("Kernel Radius", (int*)&_kernelSize, 0, kNumKernelDiameter - 1);
+    _cbStaled |= DragFloat("Range Var", &_dataCB.fGaussianVar, 1.f, 100, 2500);
 }
 
 ColorBuffer*
 SeperableFilter::GetOutTex()
 {
-    return &_outBuf;
+    return _enabled ? &_outBuf : nullptr;
 }

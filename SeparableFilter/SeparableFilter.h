@@ -28,7 +28,7 @@ private:
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
-    KernelSize _kernelSizeInUse = k7KernelDiameter;
+    KernelSize _kernelSize = k7KernelDiameter;
     ColorBuffer _intermediateBuf;
     ColorBuffer _outBuf;
     D3D12_VIEWPORT _viewport = {};

@@ -27,7 +27,6 @@ const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 LinearAllocator _uploadHeapAlloc = {kCpuWritable};
 
 DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
-bool _useBilateralFilter = false;
 bool _visualize = true;
 bool _windowActive = false;
 
@@ -118,10 +117,7 @@ KinectVisualizer::OnUpdate()
 
     static bool showPanel = true;
     if (ImGui::Begin("KinectVisualizer", &showPanel)) {
-        ImGui::Checkbox("Bilateral Filter", &_useBilateralFilter);
-        if (_useBilateralFilter) {
-            _bilateralFilter.RenderGui();
-        }
+        _bilateralFilter.RenderGui();
         _tsdfVolume.RenderGui();
         _sensorTexGen.RenderGui();
         NormalGenerator::RenderGui();
@@ -167,7 +163,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     ColorBuffer* pTSDFDepth_vis = _tsdfVolume.GetDepthTexForVisualize();
     ColorBuffer* pNormal_vis = _normalGenForVisualizedSurface.GetNormalMap();
     ColorBuffer* pFilteredDepth = _bilateralFilter.GetOutTex();
-    ColorBuffer* pKinectDepth = pRawDepth;
 
     XMMATRIX mView_T = _camera.View();
     XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
@@ -190,9 +185,9 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     BeginTrans(cmdCtx, *pRawDepth, psSRV | csSRV);
 
     // Bilateral filtering
-    if (newData && _useBilateralFilter) {
-        _bilateralFilter.OnRender(gfxCtx, pRawDepth);
-        BeginTrans(cmdCtx, *pFilteredDepth, psSRV | csSRV);
+    _bilateralFilter.OnRender(gfxCtx, pRawDepth);
+    if (pFilteredDepth) {
+        BeginTrans(cmdCtx, *pFilteredDepth, csSRV);
     }
 
     // TSDF volume updating
@@ -222,10 +217,8 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     // Generate normalmap for TSDF depthmap
     _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
     // Generate normalmap for Kinect depthmap
-    if (_useBilateralFilter) {
-        pKinectDepth = pFilteredDepth;
-    }
-    _normalGenForOriginalDepthMap.OnProcessing(cptCtx, pKinectDepth);
+    _normalGenForOriginalDepthMap.OnProcessing(
+        cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth);
 }
 
 void
