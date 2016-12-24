@@ -706,20 +706,22 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
         }
     }
     if (RT & kForProc) {
+        Trans(gfxCtx, _nearFarForProcess, psSRV);
+        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Proc");
             gfxCtx.ClearColor(_depthMapProc);
             gfxCtx.SetViewport(_depthViewPort);
             gfxCtx.SetScisor(_depthSissorRect);
             gfxCtx.SetRenderTarget(_depthMapProc.GetRTV());
-            Trans(gfxCtx, _nearFarForProcess, psSRV);
-            Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
             _RenderVolume(gfxCtx, _curBufInterface, true);
-            BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
-            BeginTrans(gfxCtx, _nearFarForProcess, RTV);
         }
+        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
+        BeginTrans(gfxCtx, _nearFarForProcess, RTV);
     }
     if (RT & kForVisu) {
+        Trans(gfxCtx, _nearFarForVisual, psSRV);
+        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Visu");
             gfxCtx.ClearColor(_depthMapVisual);
@@ -728,12 +730,10 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
             gfxCtx.SetScisor(_depthVisSissorRect);
             gfxCtx.SetRenderTargets(
                 1, &_depthMapVisual.GetRTV(), _depthBufVisual.GetDSV());
-            Trans(gfxCtx, _nearFarForVisual, psSRV);
-            Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
             _RenderVolume(gfxCtx, _curBufInterface);
-            BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
-            BeginTrans(gfxCtx, _nearFarForVisual, RTV);
         }
+        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
+        BeginTrans(gfxCtx, _nearFarForVisual, RTV);
     }
 }
 
@@ -746,18 +746,18 @@ TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor)
 
     Trans(gfxCtx, *pColor, RTV);
     Trans(gfxCtx, _depthBufVisual, DSV);
+    {
+        GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
+        gfxCtx.SetRootSignature(_rootsig);
+        BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
+        BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+        gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
+        gfxCtx.SetViewport(_depthVisViewPort);
+        gfxCtx.SetScisor(_depthVisSissorRect);
+        gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), _depthBufVisual.GetDSV());
 
-    gfxCtx.SetRootSignature(_rootsig);
-    BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
-    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
-    gfxCtx.SetViewport(_depthVisViewPort);
-    gfxCtx.SetScisor(_depthVisSissorRect);
-    gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), _depthBufVisual.GetDSV());
-
-    GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
-    _RenderBrickGrid(gfxCtx);
-    Trans(gfxCtx, *pColor, psSRV);
+        _RenderBrickGrid(gfxCtx);
+    }
 }
 
 void
