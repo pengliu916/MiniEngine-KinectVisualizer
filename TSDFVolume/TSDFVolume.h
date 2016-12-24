@@ -63,8 +63,8 @@ private:
         const uint renderBlockVoxelRatio, const ThreadGroup TG);
     void _ClearBlockQueues(ComputeContext& cptCtx);
     void _CleanTSDFVols(ComputeContext& cptCtx,
-        const ManagedBuf::BufInterface& buf, bool updateCB = false);
-    void _CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB = false);
+        const ManagedBuf::BufInterface& buf);
+    void _CleanFuseBlockVol(ComputeContext& cptCtx);
     void _CleanRenderBlockVol(ComputeContext& cptCtx);
     void _UpdateVolume(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex);

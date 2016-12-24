@@ -547,6 +547,7 @@ TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso,
     _UpdateBlockSettings(_fuseBlockVoxelRatio, _renderBlockVoxelRatio, _TGSize);
 
     // Create Spacial Structure Buffer
+    Graphics::g_cmdListMngr.IdleGPU();
     _CreateRenderBlockVol(reso, _renderBlockVoxelRatio);
     _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
 }
@@ -607,7 +608,7 @@ TSDFVolume::ResetAllResource()
 {
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetContext");
     cptCtx.SetRootSignature(_rootsig);
-    _UpdateAndBindConstantBuffer(cptCtx);
+    cptCtx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
     _CleanTSDFVols(cptCtx, _curBufInterface);
     _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
@@ -629,6 +630,7 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
     if (_IsResolutionChanged(reso, _curReso)) {
         _curReso = reso;
         _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
+        Graphics::g_cmdListMngr.IdleGPU();
         _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
     }
 }
@@ -804,6 +806,7 @@ TSDFVolume::RenderGui()
                 _TGSize = (ThreadGroup)iTGSize;
                 _UpdateBlockSettings(_fuseBlockVoxelRatio,
                     _renderBlockVoxelRatio, _TGSize);
+                Graphics::g_cmdListMngr.IdleGPU();
                 _CreateFuseBlockVolAndRelatedBuf(
                     _curReso, _fuseBlockVoxelRatio);
             }
@@ -865,6 +868,7 @@ TSDFVolume::RenderGui()
             _fuseBlockVoxelRatio = fuseBlockRatio;
             _UpdateBlockSettings(_fuseBlockVoxelRatio,
                 _renderBlockVoxelRatio, _TGSize);
+            Graphics::g_cmdListMngr.IdleGPU();
             _CreateFuseBlockVolAndRelatedBuf(
                 _curReso, _fuseBlockVoxelRatio);
         } else {
@@ -876,6 +880,7 @@ TSDFVolume::RenderGui()
             _renderBlockVoxelRatio = renderBlockRatio;
             _UpdateBlockSettings(_fuseBlockVoxelRatio,
                 _renderBlockVoxelRatio, _TGSize);
+            Graphics::g_cmdListMngr.IdleGPU();
             _CreateRenderBlockVol(
                 _volBuf.GetReso(), _renderBlockVoxelRatio);
             _CreateFuseBlockVolAndRelatedBuf(
@@ -953,13 +958,15 @@ void
 TSDFVolume::_CreateFuseBlockVolAndRelatedBuf(
     const uint3& reso, const uint ratio)
 {
-    Graphics::g_cmdListMngr.IdleGPU();
     uint32_t blockCount = (uint32_t)(reso.x * reso.y * reso.z / pow(ratio, 3));
     _fuseBlockVol.Destroy();
     _fuseBlockVol.Create(L"BlockVol", reso.x / ratio, reso.y / ratio,
         reso.z / ratio, 1, DXGI_FORMAT_R32_UINT);
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetBlockVol");
-    _CleanFuseBlockVol(cptCtx, true);
+    cptCtx.SetRootSignature(_rootsig);
+    _UpdatePerCallCB(cptCtx);
+    cptCtx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
+    _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
     cptCtx.Finish(true);
     
@@ -985,7 +992,6 @@ TSDFVolume::_CreateFuseBlockVolAndRelatedBuf(
 void
 TSDFVolume::_CreateRenderBlockVol(const uint3& reso, const uint ratio)
 {
-    Graphics::g_cmdListMngr.IdleGPU();
     _renderBlockVol.Destroy();
     _renderBlockVol.Create(L"RenderBlockVol", reso.x / ratio, reso.y / ratio,
         reso.z / ratio, 1, DXGI_FORMAT_R32_UINT);
@@ -1068,26 +1074,18 @@ TSDFVolume::_ClearBlockQueues(ComputeContext& cptCtx)
 
 void
 TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
-    const ManagedBuf::BufInterface& buf, bool updateCB)
+    const ManagedBuf::BufInterface& buf)
 {
     cptCtx.SetPipelineState(_cptTSDFBufResetPSO[buf.type]);
-    cptCtx.SetRootSignature(_rootsig);
-    if (updateCB) {
-        _UpdateAndBindConstantBuffer(cptCtx);
-    }
     Bind(cptCtx, 2, 0, 2, buf.UAV);
     const uint3 xyz = _volParam->u3VoxelReso;
     cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
 }
 
 void
-TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB)
+TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx)
 {
     cptCtx.SetPipelineState(_cptFuseBlockVolResetPSO);
-    cptCtx.SetRootSignature(_rootsig);
-    if (updateCB) {
-        _UpdateAndBindConstantBuffer(cptCtx);
-    }
     Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelFuseBlockRatio;
@@ -1099,7 +1097,6 @@ void
 TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 {
     cptCtx.SetPipelineState(_cptRenderBlockVolResetPSO);
-    cptCtx.SetRootSignature(_rootsig);
     Bind(cptCtx, 2, 0, 1, &_renderBlockVol.GetUAV());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _renderBlockVoxelRatio;
@@ -1113,7 +1110,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
 {
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
     const uint3 xyz = _volParam->u3VoxelReso;
-    cptCtx.SetRootSignature(_rootsig);
     if (_blockVolumeUpdate) {
         BeginTrans(cptCtx, _renderBlockVol, UAV);
         // Add blocks to UpdateBlockQueue from OccupiedBlockQueue
