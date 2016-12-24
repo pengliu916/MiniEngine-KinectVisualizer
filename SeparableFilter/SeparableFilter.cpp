@@ -42,7 +42,8 @@ SeperableFilter::~SeperableFilter()
 {
 }
 
-HRESULT SeperableFilter::OnCreateResoure(
+HRESULT
+SeperableFilter::OnCreateResoure(
     DXGI_FORMAT bufferFormat, LinearAllocator& uploadHeapAlloc)
 {
     HRESULT hr = S_OK;
@@ -115,20 +116,24 @@ HRESULT SeperableFilter::OnCreateResoure(
     return hr;
 }
 
-void SeperableFilter::OnDestory()
+void
+SeperableFilter::OnDestory()
 {
     delete _pUploadCB;
     _gpuCB.Destroy();
+    _outBuf.Destroy();
     _intermediateBuf.Destroy();
 }
 
-void SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
+void
+SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
 {
     if (_dataCB.u2Reso.x != reso.x || _dataCB.u2Reso.y != reso.y) {
-        if (_intermediateBuf.GetResource() != nullptr) {
-            _intermediateBuf.Destroy();
-        }
+        _intermediateBuf.Destroy();
         _intermediateBuf.Create(L"BilateralTemp",
+            (uint32_t)reso.x, (uint32_t)reso.y, 1, _outTexFormat);
+        _outBuf.Destroy();
+        _outBuf.Create(L"BilateralOut",
             (uint32_t)reso.x, (uint32_t)reso.y, 1, _outTexFormat);
         _dataCB.u2Reso = reso;
         _viewport.Width = static_cast<float>(reso.x);
@@ -140,7 +145,8 @@ void SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
     }
 }
 
-void SeperableFilter::OnRender(
+void
+SeperableFilter::OnRender(
     GraphicsContext& gfxCtx, ColorBuffer* pInputTex)
 {
     if (_cbStaled) {
@@ -151,6 +157,7 @@ void SeperableFilter::OnRender(
     }
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
     Trans(gfxCtx, _intermediateBuf, RTV);
+    BeginTrans(gfxCtx, _outBuf, RTV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
     gfxCtx.SetRootSignature(_rootSignature);
     gfxCtx.SetPipelineState(_hPassPSO[_kernelSizeInUse]);
@@ -161,16 +168,17 @@ void SeperableFilter::OnRender(
     gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(gfxCtx, 1, 0, 1, &pInputTex->GetSRV());
     gfxCtx.Draw(3);
-    Trans(gfxCtx, *pInputTex, RTV);
+    Trans(gfxCtx, _outBuf, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
     gfxCtx.SetPipelineState(_vPassPSO[_kernelSizeInUse]);
-    gfxCtx.SetRenderTargets(1, &pInputTex->GetRTV());
+    gfxCtx.SetRenderTargets(1, &_outBuf.GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     gfxCtx.Draw(3);
     BeginTrans(gfxCtx, _intermediateBuf, RTV);
 }
 
-void SeperableFilter::RenderGui()
+void
+SeperableFilter::RenderGui()
 {
     if (ImGui::CollapsingHeader("BilateralFilter Settings")) {
         ImGui::SliderInt("Kernel Radius",
@@ -178,4 +186,10 @@ void SeperableFilter::RenderGui()
         _cbStaled = ImGui::DragFloat("Range Variance",
             &_dataCB.fGaussianVar, 1.f, 100, 2500);
     }
+}
+
+ColorBuffer*
+SeperableFilter::GetOutTex()
+{
+    return &_outBuf;
 }

@@ -22,6 +22,7 @@ public:
     void UpdateCB(DirectX::XMUINT2 reso);
     void OnRender(GraphicsContext& gfxContext, ColorBuffer* pInputTex);
     void RenderGui();
+    ColorBuffer* GetOutTex();
 
 private:
     DynAlloc* _pUploadCB;
@@ -29,6 +30,7 @@ private:
     CBuffer _dataCB;
     KernelSize _kernelSizeInUse = k7KernelDiameter;
     ColorBuffer _intermediateBuf;
+    ColorBuffer _outBuf;
     D3D12_VIEWPORT _viewport = {};
     D3D12_RECT _scisorRact = {};
     DXGI_FORMAT _outTexFormat;
