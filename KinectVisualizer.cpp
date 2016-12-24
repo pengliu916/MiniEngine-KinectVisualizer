@@ -26,6 +26,8 @@ namespace {
     const D3D12_RESOURCE_STATES RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
     const D3D12_RESOURCE_STATES DSV = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 
+    LinearAllocator _uploadHeapAlloc = {kCpuWritable};
+
     DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
     bool _useBilateralFilter = false;
     bool _visualize = true;
@@ -81,22 +83,22 @@ HRESULT
 KinectVisualizer::OnCreateResource()
 {
     uint16_t colWidth, colHeight, depWidth, depHeight;
-    _sensorTexGen.OnCreateResource();
+    _sensorTexGen.OnCreateResource(_uploadHeapAlloc);
     _sensorTexGen.GetColorReso(colWidth, colHeight);
     _sensorTexGen.GetDepthInfrareReso(depWidth, depHeight);
 
     // Create resource for BilateralFilter
-    _bilateralFilter.OnCreateResoure(DXGI_FORMAT_R16_UINT);
+    _bilateralFilter.OnCreateResoure(DXGI_FORMAT_R16_UINT, _uploadHeapAlloc);
     _bilateralFilter.UpdateCB(XMUINT2(depWidth, depHeight));
 
     int2 depthReso = int2(depWidth, depHeight);
     int2 colorReso = int2(colWidth, colHeight);
 
-    _tsdfVolume.CreateResource(depthReso, colorReso);
+    _tsdfVolume.CreateResource(depthReso, colorReso, _uploadHeapAlloc);
 
-    _normalGenForOriginalDepthMap.OnCreateResource();
-    _normalGenForVisualizedSurface.OnCreateResource();
-    _normalGenForTSDFDepthMap.OnCreateResource();
+    _normalGenForOriginalDepthMap.OnCreateResource(_uploadHeapAlloc);
+    _normalGenForVisualizedSurface.OnCreateResource(_uploadHeapAlloc);
+    _normalGenForTSDFDepthMap.OnCreateResource(_uploadHeapAlloc);
 
     OnSizeChanged();
 

@@ -16,13 +16,16 @@ public:
     };
     SeperableFilter();
     ~SeperableFilter();
-    HRESULT OnCreateResoure(DXGI_FORMAT bufferFormat);
+    HRESULT OnCreateResoure(DXGI_FORMAT bufferFormat,
+        LinearAllocator& uploadHeapAlloc);
     void OnDestory();
     void UpdateCB(DirectX::XMUINT2 reso);
     void OnRender(GraphicsContext& gfxContext, ColorBuffer* pInputTex);
     void RenderGui();
 
 private:
+    DynAlloc* _pUploadCB;
+    ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
     KernelSize _kernelSizeInUse = k7KernelDiameter;
     ColorBuffer _intermediateBuf;

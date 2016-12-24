@@ -33,7 +33,8 @@ public:
 
     TSDFVolume();
     ~TSDFVolume();
-    void CreateResource(const int2& depthReso, const int2& colorReso);
+    void CreateResource(const int2& depthReso, const int2& colorReso,
+        LinearAllocator& uploadHeapAlloc);
     void Destory();
     void ResizeVisualSurface(uint32_t width, uint32_t height);
     void ResetAllResource();
@@ -71,8 +72,9 @@ private:
         const ManagedBuf::BufInterface& buf, bool toOutTex = false);
     void _RenderNearFar(GraphicsContext& gfxCtx, bool toSurface = false);
     void _RenderBrickGrid(GraphicsContext& gfxCtx);
+    void _UpdatePerCallCB(CommandContext& cmdCtx);
     template<class T>
-    void _UpdateConstantBuffer(T& ctx);
+    void _UpdateAndBindConstantBuffer(T& ctx);
 
     // Resource for extracting depthmap
     D3D12_VIEWPORT _depthViewPort = {};
@@ -171,6 +173,9 @@ private:
 
     // GPU constant buffer for per call update basis
     PerCallDataCB _cbPerCall;
+    DynAlloc* _pUploadCB;
+    ByteAddressBuffer _gpuCB;
+
     // Point to vol data section in _cbPerCall
     VolumeParam* _volParam;
 

@@ -7,9 +7,6 @@ using namespace Microsoft::WRL;
 #define Bind(ctx, rootIdx, offset, count, resource) \
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
-#define BindCB(ctx, rootIdx, size, ptr) \
-ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
-
 #define Trans(ctx, res, state) \
 ctx.TransitionResource(res, state)
 
@@ -29,6 +26,8 @@ namespace {
     GraphicsPSO _hPassPSO[SeperableFilter::kNumKernelDiameter];
     GraphicsPSO _vPassPSO[SeperableFilter::kNumKernelDiameter];
     RootSignature _rootSignature;
+
+    bool _cbStaled = true;
 }
 
 SeperableFilter::SeperableFilter()
@@ -44,7 +43,8 @@ SeperableFilter::~SeperableFilter()
 {
 }
 
-HRESULT SeperableFilter::OnCreateResoure(DXGI_FORMAT bufferFormat)
+HRESULT SeperableFilter::OnCreateResoure(
+    DXGI_FORMAT bufferFormat, LinearAllocator& uploadHeapAlloc)
 {
     HRESULT hr = S_OK;
     _outTexFormat = bufferFormat;
@@ -109,11 +109,17 @@ HRESULT SeperableFilter::OnCreateResoure(DXGI_FORMAT bufferFormat)
             hPassPS[i]->GetBufferPointer(), hPassPS[i]->GetBufferSize());
         _hPassPSO[i].Finalize();
     }
+    _gpuCB.Create(L"SeparableFilter_CB", 1, sizeof(CBuffer),
+        (void*)&_dataCB);
+    _pUploadCB = new DynAlloc(
+        std::move(uploadHeapAlloc.Allocate(sizeof(CBuffer))));
     return hr;
 }
 
 void SeperableFilter::OnDestory()
 {
+    delete _pUploadCB;
+    _gpuCB.Destroy();
     _intermediateBuf.Destroy();
 }
 
@@ -131,12 +137,19 @@ void SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
         _viewport.MaxDepth = 1.0;
         _scisorRact.right = static_cast<LONG>(reso.x);
         _scisorRact.bottom = static_cast<LONG>(reso.y);
+        _cbStaled = true;
     }
 }
 
 void SeperableFilter::OnRender(
     GraphicsContext& gfxCtx, ColorBuffer* pInputTex)
 {
+    if (_cbStaled) {
+        memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
+        gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
+            _pUploadCB->Offset, sizeof(CBuffer));
+        _cbStaled = false;
+    }
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
     Trans(gfxCtx, _intermediateBuf, RTV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
@@ -146,7 +159,7 @@ void SeperableFilter::OnRender(
     gfxCtx.SetRenderTargets(1, &_intermediateBuf.GetRTV());
     gfxCtx.SetViewport(_viewport);
     gfxCtx.SetScisor(_scisorRact);
-    BindCB(gfxCtx, 0, sizeof(CBuffer), (void*)&_dataCB);
+    gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(gfxCtx, 1, 0, 1, &pInputTex->GetSRV());
     gfxCtx.Draw(3);
     Trans(gfxCtx, *pInputTex, RTV);
@@ -163,7 +176,7 @@ void SeperableFilter::RenderGui()
     if (ImGui::CollapsingHeader("BilateralFilter Settings")) {
         ImGui::SliderInt("Kernel Radius", 
             (int*)&_kernelSizeInUse, 0, kNumKernelDiameter - 1);
-        ImGui::DragFloat("Range Variance", 
+        _cbStaled = ImGui::DragFloat("Range Variance", 
             &_dataCB.fGaussianVar, 1.f, 100, 2500);
     }
 }

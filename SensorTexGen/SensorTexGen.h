@@ -33,7 +33,7 @@ public:
 
     SensorTexGen(bool enableColor, bool enableDepth, bool enableInfrared);
     ~SensorTexGen();
-    void OnCreateResource();
+    void OnCreateResource(LinearAllocator& uploadHeapAlloc);
     void OnDestory();
     // return true if get new data, false otherwise
     bool OnRender(CommandContext& EngineContext);
@@ -54,6 +54,8 @@ private:
     LinearFrameAllocator* _pFrameAlloc[IRGBDStreamer::kNumBufferTypes] = {};
     KinectBuffer* _pKinectBuf[IRGBDStreamer::kNumBufferTypes] = {};
     RenderCB _cbKinect;
+    DynAlloc* _pUploadCB;
+    ByteAddressBuffer _gpuCB;
 
     D3D12_VIEWPORT _depthInfraredViewport = {};
     D3D12_RECT _depthInfraredScissorRect = {};

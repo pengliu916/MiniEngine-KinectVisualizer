@@ -10,9 +10,6 @@ ctx.TransitionResource(res, state)
 #define Bind(ctx, rootIdx, offset, count, resource) \
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
-#define BindCB(ctx, rootIdx, size, ptr) \
-ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
-
 namespace {
     const D3D12_RESOURCE_STATES UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     const D3D12_RESOURCE_STATES psSRV =
@@ -26,6 +23,7 @@ namespace {
     std::once_flag _psoCompiled_flag;
 
     float _fDistThreshold = FLT_MAX;
+    bool _cbStaled = true;
 
     void _CreatePSO()
     {
@@ -78,22 +76,29 @@ NormalGenerator::~NormalGenerator()
 }
 
 void
-NormalGenerator::OnCreateResource()
+NormalGenerator::OnCreateResource(LinearAllocator& uploadHeapAlloc)
 {
     std::call_once(_psoCompiled_flag, _CreateStaticResource);
     _normalMap.Create(_name.c_str(),
         _dataCB.u2Reso.x, _dataCB.u2Reso.y, 1, _normalMapFormat);
+    _gpuCB.Create(L"NormalGenerator_CB", 1, sizeof(CBuffer),
+        (void*)&_dataCB);
+    _pUploadCB = new DynAlloc(
+        std::move(uploadHeapAlloc.Allocate(sizeof(CBuffer))));
 }
 
 void
 NormalGenerator::OnDestory()
 {
+    delete _pUploadCB;
+    _gpuCB.Destroy();
     _normalMap.Destroy();
 }
 
 void
 NormalGenerator::OnResize(uint2 reso)
 {
+    _cbStaled = true;
     _dataCB.u2Reso = reso;
     _normalMap.Destroy();
     _normalMap.Create(_name.c_str(), reso.x, reso.y, 1, _normalMapFormat);
@@ -103,13 +108,19 @@ void
 NormalGenerator::OnProcessing(
     ComputeContext& cptCtx, ColorBuffer* pInputTex)
 {
+    if (_cbStaled) {
+        _dataCB.fDistThreshold = _fDistThreshold;
+        memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
+        cptCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
+            _pUploadCB->Offset, sizeof(CBuffer));
+        _cbStaled = false;
+    }
     Trans(cptCtx, *pInputTex, csSRV);
     GPU_PROFILE(cptCtx, _name.c_str());
     cptCtx.SetPipelineState(_cptGetNormalPSO);
     cptCtx.SetRootSignature(_rootsig);
     cptCtx.TransitionResource(*pInputTex, UAV);
-    _dataCB.fDistThreshold = _fDistThreshold;
-    BindCB(cptCtx, 0, sizeof(_dataCB), (void*)&_dataCB);
+    cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(cptCtx, 1, 0, 1, &_normalMap.GetUAV());
     Bind(cptCtx, 2, 0, 1, &pInputTex->GetSRV());
     cptCtx.Dispatch2D(_dataCB.u2Reso.x, _dataCB.u2Reso.y);
@@ -118,13 +129,14 @@ NormalGenerator::OnProcessing(
 void
 NormalGenerator::RenderGui()
 {
-    if (!ImGui::CollapsingHeader("NormalGenerator Settings")) {
+    using namespace ImGui;
+    if (!CollapsingHeader("NormalGenerator Settings")) {
         return;
     }
-    if (ImGui::Button("Recompile Shaders")) {
+    if (Button("Recompile Shaders")) {
         _CreatePSO();
     }
-    ImGui::SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
+    _cbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
 }
 
 ColorBuffer*

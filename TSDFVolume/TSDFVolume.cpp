@@ -15,9 +15,6 @@ ctx.SetDynamicConstantBufferView(rootIdx, size, ptr)
 #define Trans(ctx, res, state) \
 ctx.TransitionResource(res, state)
 
-#define TransFlush(ctx, res, state) \
-ctx.TransitionResource(res, state, true)
-
 #define BeginTrans(ctx, res, state) \
 ctx.BeginResourceTransition(res, state)
 
@@ -46,6 +43,8 @@ namespace {
     bool _blockVolumeUpdate = true;
     bool _readBackGPUBufStatus = true;
     bool _noInstance = false;
+
+    bool _cbStaled = true;
 
     // define the geometry for a triangle.
     const XMFLOAT3 cubeVertices[] = {
@@ -490,7 +489,8 @@ TSDFVolume::~TSDFVolume()
 }
 
 void
-TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso)
+TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso,
+    LinearAllocator& uploadHeapAlloc)
 {
     ASSERT(Graphics::g_device);
     // Create resource for volume
@@ -523,6 +523,11 @@ TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso)
 
     _cbPerCall.i2ColorReso = colorReso;
     _cbPerCall.i2DepthReso = depthReso;
+
+    _gpuCB.Create(L"TSDFVolume_CB", 1, sizeof(PerCallDataCB),
+        (void*)&_cbPerCall);
+    _pUploadCB = new DynAlloc(
+        std::move(uploadHeapAlloc.Allocate(sizeof(PerCallDataCB))));
 
     _depthViewPort.Width = static_cast<float>(depthReso.x);
     _depthViewPort.Height = static_cast<float>(depthReso.y);
@@ -572,6 +577,7 @@ TSDFVolume::Destory()
 void
 TSDFVolume::ResizeVisualSurface(uint32_t width, uint32_t height)
 {
+    _cbStaled = true;
     float fAspectRatio = width / (FLOAT)height;
     _cbPerCall.fWideHeightRatio = fAspectRatio;
     _cbPerCall.fClipDist = 0.1f;
@@ -601,8 +607,7 @@ TSDFVolume::ResetAllResource()
 {
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetContext");
     cptCtx.SetRootSignature(_rootsig);
-    BindCB(cptCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+    _UpdateAndBindConstantBuffer(cptCtx);
     _CleanTSDFVols(cptCtx, _curBufInterface);
     _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
@@ -654,7 +659,7 @@ void
 TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex)
 {
     cptCtx.SetRootSignature(_rootsig);
-    _UpdateConstantBuffer(cptCtx);
+    _UpdateAndBindConstantBuffer(cptCtx);
     Trans(cptCtx, _renderBlockVol, UAV);
     Trans(cptCtx, *_curBufInterface.resource[0], UAV);
     Trans(cptCtx, *_curBufInterface.resource[1], UAV);
@@ -679,7 +684,7 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
     }
 
     gfxCtx.SetRootSignature(_rootsig);
-    _UpdateConstantBuffer(gfxCtx);
+    _UpdateAndBindConstantBuffer(gfxCtx);
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
 
     Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
@@ -749,8 +754,7 @@ TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor)
     {
         GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
         gfxCtx.SetRootSignature(_rootsig);
-        BindCB(gfxCtx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-        BindCB(gfxCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+        _UpdateAndBindConstantBuffer(gfxCtx);
         gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
@@ -787,7 +791,7 @@ TSDFVolume::RenderGui()
         ProgressBar(data, ImVec2(-1.f, 0.f), buf);
     }
     if (_blockVolumeUpdate) {
-        SliderInt("Defragment Threshold",
+        _cbStaled |= SliderInt("Defragment Threshold",
             &_cbPerCall.iDefragmentThreshold, 5000, 500000);
         Text("BlockUpdate CS Threadgroup Size:");
         static int iTGSize = (int)_TGSize;
@@ -1006,6 +1010,7 @@ TSDFVolume::_UpdateSensorData(const DirectX::XMMATRIX& mSensor_T)
 void
 TSDFVolume::_UpdateVolumeSettings(const uint3 reso, const float voxelSize)
 {
+    _cbStaled = true;
     uint3& xyz = _volParam->u3VoxelReso;
     if (xyz.x == reso.x && xyz.y == reso.y && xyz.z == reso.z &&
         voxelSize == _volParam->fVoxelSize) {
@@ -1032,6 +1037,7 @@ void
 TSDFVolume::_UpdateBlockSettings(const uint fuseBlockVoxelRatio,
     const uint renderBlockVoxelRatio, const TSDFVolume::ThreadGroup tg)
 {
+    _cbStaled = true;
     _volParam->uVoxelFuseBlockRatio = fuseBlockVoxelRatio;
     _volParam->uVoxelRenderBlockRatio = renderBlockVoxelRatio;
     _volParam->fFuseBlockSize = fuseBlockVoxelRatio * _volParam->fVoxelSize;
@@ -1067,7 +1073,7 @@ TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
     cptCtx.SetPipelineState(_cptTSDFBufResetPSO[buf.type]);
     cptCtx.SetRootSignature(_rootsig);
     if (updateCB) {
-        _UpdateConstantBuffer<ComputeContext>(cptCtx);
+        _UpdateAndBindConstantBuffer(cptCtx);
     }
     Bind(cptCtx, 2, 0, 2, buf.UAV);
     const uint3 xyz = _volParam->u3VoxelReso;
@@ -1080,7 +1086,7 @@ TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx, bool updateCB)
     cptCtx.SetPipelineState(_cptFuseBlockVolResetPSO);
     cptCtx.SetRootSignature(_rootsig);
     if (updateCB) {
-        _UpdateConstantBuffer<ComputeContext>(cptCtx);
+        _UpdateAndBindConstantBuffer(cptCtx);
     }
     Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
     const uint3 xyz = _volParam->u3VoxelReso;
@@ -1206,7 +1212,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
-            BindCB(cptCtx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
+            cptCtx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
             Bind(cptCtx, 2, 0, 1, &_newFuseBlocksBuf.GetCounterUAV(cptCtx));
             Bind(cptCtx, 2, 1, 1, &_freedFuseBlocksBuf.GetCounterUAV(cptCtx));
             Bind(cptCtx, 2, 2, 1, &_indirectParams.GetUAV());
@@ -1317,10 +1323,22 @@ TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
     gfxCtx.DrawIndexedInstanced(CUBE_LINESTRIP_LENGTH, BrickCount, 0, 0, 0);
 }
 
+void
+TSDFVolume::_UpdatePerCallCB(CommandContext& cmdCtx)
+{
+    if (_cbStaled) {
+        memcpy(_pUploadCB->DataPtr, &_cbPerCall, sizeof(PerCallDataCB));
+        cmdCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
+            _pUploadCB->Offset, sizeof(PerCallDataCB));
+        _cbStaled = false;
+    }
+}
+
 template<class T>
 void
-TSDFVolume::_UpdateConstantBuffer(T& ctx)
+TSDFVolume::_UpdateAndBindConstantBuffer(T& ctx)
 {
+    _UpdatePerCallCB(ctx);
+    ctx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
     BindCB(ctx, 0, sizeof(_cbPerFrame), (void*)&_cbPerFrame);
-    BindCB(ctx, 1, sizeof(_cbPerCall), (void*)&_cbPerCall);
 }

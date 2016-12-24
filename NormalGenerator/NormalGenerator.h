@@ -7,7 +7,7 @@ public:
 
     NormalGenerator(uint2 reso, const std::wstring& name);
     ~NormalGenerator();
-    void OnCreateResource();
+    void OnCreateResource(LinearAllocator& uploadHeapAlloc);
     void OnDestory();
     void OnResize(uint2 reso);
     void OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex);
@@ -16,6 +16,8 @@ public:
 
 private:
     std::wstring _name;
+    DynAlloc* _pUploadCB;
+    ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
     ColorBuffer _normalMap;
 };
