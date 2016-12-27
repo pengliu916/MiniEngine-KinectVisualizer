@@ -20,4 +20,5 @@ private:
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
     ColorBuffer _normalMap;
+    bool _cbStaled = true;
 };

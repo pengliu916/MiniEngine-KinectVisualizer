@@ -23,8 +23,7 @@ ComputePSO _cptGetNormalPSO;
 std::once_flag _psoCompiled_flag;
 
 float _fDistThreshold = FLT_MAX;
-bool _cbStaled = true;
-
+bool _scbStaled = true;
 void _CreatePSO()
 {
     HRESULT hr;
@@ -108,7 +107,7 @@ void
 NormalGenerator::OnProcessing(
     ComputeContext& cptCtx, ColorBuffer* pInputTex)
 {
-    if (_cbStaled) {
+    if (_cbStaled || _scbStaled) {
         _dataCB.fDistThreshold = _fDistThreshold;
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         cptCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
@@ -117,9 +116,8 @@ NormalGenerator::OnProcessing(
     }
     Trans(cptCtx, *pInputTex, csSRV);
     GPU_PROFILE(cptCtx, _name.c_str());
-    cptCtx.SetPipelineState(_cptGetNormalPSO);
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.TransitionResource(*pInputTex, UAV);
+    cptCtx.SetPipelineState(_cptGetNormalPSO);
     cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(cptCtx, 1, 0, 1, &_normalMap.GetUAV());
     Bind(cptCtx, 2, 0, 1, &pInputTex->GetSRV());
@@ -136,7 +134,7 @@ NormalGenerator::RenderGui()
     if (Button("Recompile Shaders")) {
         _CreatePSO();
     }
-    _cbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
+    _scbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
 }
 
 ColorBuffer*
