@@ -39,6 +39,7 @@ namespace Core
         bool FXAA = true;
         bool showPerf = true;
         bool passThroughMsg = false;
+        bool useSceneBuf = true;
     };
 
     class IDX12Framework

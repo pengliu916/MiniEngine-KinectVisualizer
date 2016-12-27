@@ -552,12 +552,12 @@ namespace Graphics
 
     void WriteToBackBuffer(GraphicsContext& gfxCtx)
     {
-        {
+        gfxCtx.TransitionResource(g_pDisplayPlanes[g_CurrentDPIdx],
+            D3D12_RESOURCE_STATE_RENDER_TARGET);
+        if (Core::g_config.useSceneBuf) {
             GPU_PROFILE(gfxCtx, L"Copy To BackBuffer");
             gfxCtx.TransitionResource(g_SceneColorBuffer,
                 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-            gfxCtx.TransitionResource(g_pDisplayPlanes[g_CurrentDPIdx],
-                D3D12_RESOURCE_STATE_RENDER_TARGET);
             gfxCtx.SetRootSignature(s_PresentRS);
             gfxCtx.SetPipelineState(s_BufferCopyPSO);
             gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -568,6 +568,9 @@ namespace Graphics
             gfxCtx.SetViewport(g_DisplayPlaneViewPort);
             gfxCtx.SetScisor(g_DisplayPlaneScissorRect);
             gfxCtx.Draw(3);
+        } else {
+            gfxCtx.FlushResourceBarriers();
+            gfxCtx.ClearColor(g_pDisplayPlanes[g_CurrentDPIdx]);
         }
         GuiRenderer::Render(gfxCtx);
     #ifndef RELEASE

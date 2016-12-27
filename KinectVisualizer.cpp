@@ -74,6 +74,7 @@ KinectVisualizer::OnConfiguration()
     Core::g_config.swapChainDesc.Height = _height;
     Core::g_config.swapChainDesc.BufferCount = 5;
     Core::g_config.passThroughMsg = true;
+    Core::g_config.useSceneBuf = false;
 }
 
 HRESULT
