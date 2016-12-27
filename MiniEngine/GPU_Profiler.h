@@ -3,12 +3,16 @@
 class CommandContext;
 class GraphicsContext;
 
+#define RECORD_TIME_HISTORY 0
 namespace GPU_Profiler
 {
     const uint8_t MAX_TIMER_NAME_LENGTH = 32;
     const uint8_t MAX_TIMER_COUNT = 128;
+#if RECORD_TIME_HISTORY
     const uint8_t MAX_TIMER_HISTORY = 128;
-
+#else
+    const float AVG_COUNT_FACTOR = 256.f;
+#endif
     void Initialize();
     HRESULT CreateResource();
     void ShutDown();

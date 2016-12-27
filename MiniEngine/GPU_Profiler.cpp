@@ -23,7 +23,9 @@ namespace {
     unordered_map<wstring, uint8_t> m_timerNameIdxMap;
     wstring* m_timerNameArray;
     XMFLOAT4* m_timerColorArray;
+#if RECORD_TIME_HISTORY
     float** m_timerHistory;
+#endif
     float* m_timerAvg;
     uint64_t* m_timeStampBufferCopy;
 
@@ -77,14 +79,15 @@ GPU_Profiler::Initialize()
     m_timerColorArray = new XMFLOAT4[MAX_TIMER_COUNT];
 
     m_RectData = new RectAttr[MAX_TIMER_COUNT * 2];
-
+#if RECORD_TIME_HISTORY
     m_timerHistory = new float*[MAX_TIMER_COUNT];
     for (int i = 0; i < MAX_TIMER_COUNT; ++i) {
         m_timerHistory[i] = new float[MAX_TIMER_HISTORY];
         memset((void*)m_timerHistory[i], 0, sizeof(float) * MAX_TIMER_HISTORY);
     }
-
+#endif
     m_timerAvg = new float[MAX_TIMER_COUNT];
+    memset((void*)m_timerAvg, 0, sizeof(float) * MAX_TIMER_COUNT);
 
     m_ActiveTimer.reserve(MAX_TIMER_COUNT);
 
@@ -191,12 +194,12 @@ GPU_Profiler::ShutDown()
     m_timerColorArray = nullptr;
     delete[] m_timeStampBufferCopy;
     m_timeStampBufferCopy = nullptr;
-
+#if RECORD_TIME_HISTORY
     for (int i = 0; i < MAX_TIMER_COUNT; ++i) {
         delete[] m_timerHistory[i];
     }
     delete[] m_timerHistory;
-
+#endif
     delete[] m_timerAvg;
 
     DeleteCriticalSection(&m_critialSection);
@@ -221,6 +224,7 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
     // based on previous frame end timestamp, creat an active timer idx vector
     m_ActiveTimer.clear();
     uint64_t preEndTime = m_timeStampBufferCopy[0];
+#if RECORD_TIME_HISTORY
     m_timerHistory[0][Core::g_frameCount % MAX_TIMER_HISTORY] =
         (float)ReadTimer(0);
     for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
@@ -247,7 +251,20 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
             m_timerAvg[idx] = avg / count;
         }
     }
-
+#else
+    m_timerAvg[0] = (m_timerAvg[0] * AVG_COUNT_FACTOR + (float)ReadTimer(0))/
+        (AVG_COUNT_FACTOR + 1);
+    for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
+        if (m_timeStampBufferCopy[idx * 2] >= preEndTime) {
+            m_ActiveTimer.push_back(idx);
+            m_timerAvg[idx] =
+                (m_timerAvg[idx] * AVG_COUNT_FACTOR + (float)ReadTimer(idx)) /
+                (AVG_COUNT_FACTOR + 1);
+        } else {
+            m_timerAvg[idx] = 0.f;
+        }
+    }
+#endif
     // sort timer based on timer's start time
     sort(m_ActiveTimer.begin(), m_ActiveTimer.end(), compStartTime);
 
@@ -369,7 +386,8 @@ GPU_Profiler::ReadTimer(uint8_t idx, double* start, double* stop)
     double _stop = m_timeStampBufferCopy[idx * 2 + 1] * m_GPUTickDelta;
     if (start) *start = _start;
     if (stop) *stop = _stop;
-    return _stop - _start;
+    double _duration = _stop - _start;
+    return (_duration > 100.f || _duration < 0.f) ? 0.0 : _stop - _start;
 }
 
 void
