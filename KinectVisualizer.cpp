@@ -86,7 +86,7 @@ KinectVisualizer::OnCreateResource()
     _sensorTexGen.GetDepthInfrareReso(depWidth, depHeight);
 
     // Create resource for BilateralFilter
-    _bilateralFilter.OnCreateResoure(DXGI_FORMAT_R16_UINT, _uploadHeapAlloc);
+    _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
     _bilateralFilter.UpdateCB(XMUINT2(depWidth, depHeight));
 
     int2 depthReso = int2(depWidth, depHeight);
@@ -118,10 +118,10 @@ KinectVisualizer::OnUpdate()
 
     static bool showPanel = true;
     if (ImGui::Begin("KinectVisualizer", &showPanel)) {
-        _bilateralFilter.RenderGui();
-        _tsdfVolume.RenderGui();
         _sensorTexGen.RenderGui();
+        SeperableFilter::RenderGui();
         NormalGenerator::RenderGui();
+        _tsdfVolume.RenderGui();
     }
     ImGui::End();
     ImGui::SetNextWindowSizeConstraints(ImVec2(640, 480),
@@ -206,11 +206,11 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         BeginTrans(gfxCtx, *pTSDFDepth_vis, csSRV);
     }
 
-    // Generate normalmap for TSDF depthmap
-    _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
     // Generate normalmap for Kinect depthmap
     _normalGenForOriginalDepthMap.OnProcessing(
         cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth);
+    // Generate normalmap for TSDF depthmap
+    _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
     // Generate normalmap for visualized depthmap
     if (_visualize) {
         _normalGenForVisualizedSurface.OnProcessing(cptCtx, pTSDFDepth_vis);

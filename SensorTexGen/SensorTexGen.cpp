@@ -399,8 +399,8 @@ SensorTexGen::RenderGui()
 #define M(x) _cbStaled |= x
     using namespace ImGui;
     static bool showImage[kNumTargetTex] = {};
-    if (CollapsingHeader("Sensor Tex Generator")) {
-        if (Button("Recompile Shaders")) {
+    if (CollapsingHeader("SensorTexGen")) {
+        if (Button("RecompileShaders##SensorTexGen")) {
             _CreatePSOs();
         }
         Separator();

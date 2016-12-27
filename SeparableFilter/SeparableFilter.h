@@ -14,24 +14,22 @@ public:
         k13KernelDiameter = 6,
         kNumKernelDiameter
     };
+    static void RenderGui();
+
     SeperableFilter();
     ~SeperableFilter();
-    HRESULT OnCreateResoure(DXGI_FORMAT bufferFormat,
-        LinearAllocator& uploadHeapAlloc);
+    HRESULT OnCreateResoure(LinearAllocator& uploadHeapAlloc);
     void OnDestory();
     void UpdateCB(DirectX::XMUINT2 reso);
     void OnRender(GraphicsContext& gfxContext, ColorBuffer* pInputTex);
-    void RenderGui();
     ColorBuffer* GetOutTex();
 
 private:
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
-    KernelSize _kernelSize = k7KernelDiameter;
     ColorBuffer _intermediateBuf;
     ColorBuffer _outBuf;
     D3D12_VIEWPORT _viewport = {};
     D3D12_RECT _scisorRact = {};
-    DXGI_FORMAT _outTexFormat;
 };

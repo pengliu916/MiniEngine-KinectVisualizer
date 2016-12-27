@@ -778,12 +778,40 @@ TSDFVolume::RenderGui()
 {
     using namespace ImGui;
     static bool showPenal = true;
-    if (!CollapsingHeader("Sparse Volume", 0, true, true)) {
+    if (!CollapsingHeader("TSDFVolume", 0, true, true)) {
         return;
     }
+    if (Button("RecompileShaders##TSDFVolume")) {
+        _CreatePSOs();
+    }
+    SameLine();
+    if (Button("ResetVolume##TSDFVolume")) {
+        ResetAllResource();
+    }
+    Separator();
     Checkbox("Block Volume Update", &_blockVolumeUpdate);
     SameLine();
     Checkbox("Debug", &_readBackGPUBufStatus);
+    if (_blockVolumeUpdate) {
+        _cbStaled |= SliderInt("Defragment Threshold",
+            &_cbPerCall.iDefragmentThreshold, 5000, 500000);
+        Text("BlockUpdate CS Threadgroup Size:");
+        static int iTGSize = (int)_TGSize;
+        RadioButton("4x4x4##TG", &iTGSize, k64); SameLine();
+        RadioButton("8x8x8##TG", &iTGSize, k512);
+        if (iTGSize != (int)_TGSize) {
+            if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
+                iTGSize = (int)_TGSize;
+            } else {
+                _TGSize = (ThreadGroup)iTGSize;
+                _UpdateBlockSettings(_fuseBlockVoxelRatio,
+                    _renderBlockVoxelRatio, _TGSize);
+                Graphics::g_cmdListMngr.IdleGPU();
+                _CreateFuseBlockVolAndRelatedBuf(
+                    _curReso, _fuseBlockVoxelRatio);
+            }
+        }
+    }
     if (_readBackGPUBufStatus && _blockVolumeUpdate) {
         char buf[64];
         float data = (float)_readBackData[0] / _occupiedQSize;
@@ -799,35 +827,15 @@ TSDFVolume::RenderGui()
         sprintf_s(buf, 64, "%d/%d FreeQ", _readBackData[3], _freedQSize);
         ProgressBar(data, ImVec2(-1.f, 0.f), buf);
     }
-    if (_blockVolumeUpdate) {
-        _cbStaled |= SliderInt("Defragment Threshold",
-            &_cbPerCall.iDefragmentThreshold, 5000, 500000);
-        Text("BlockUpdate CS Threadgroup Size:");
-        static int iTGSize = (int)_TGSize;
-        RadioButton("4x4x4##TG", &iTGSize, k64);
-        RadioButton("8x8x8##TG", &iTGSize, k512);
-        if (iTGSize != (int)_TGSize) {
-            if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
-                iTGSize = (int)_TGSize;
-            } else {
-                _TGSize = (ThreadGroup)iTGSize;
-                _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                    _renderBlockVoxelRatio, _TGSize);
-                Graphics::g_cmdListMngr.IdleGPU();
-                _CreateFuseBlockVolAndRelatedBuf(
-                    _curReso, _fuseBlockVoxelRatio);
-            }
-        }
-    }
     Separator();
-    Checkbox("StepInfoTex", &_useStepInfoTex);
+    Checkbox("StepInfoTex", &_useStepInfoTex); SameLine();
     Checkbox("NoInstance", &_noInstance); SameLine();
     Checkbox("DebugGrid", &_stepInfoDebug);
     Separator();
     static int iFilterType = (int)_filterType;
-    RadioButton("No Filter", &iFilterType, kNoFilter);
+    RadioButton("No Filter", &iFilterType, kNoFilter); SameLine();
     RadioButton("Linear Filter", &iFilterType, kLinearFilter);
-    RadioButton("Linear Sampler", &iFilterType, kSamplerLinear);
+    RadioButton("Linear Sampler", &iFilterType, kSamplerLinear); SameLine();
     RadioButton("Aniso Sampler", &iFilterType, kSamplerAniso);
     if (_volBuf.GetType() != ManagedBuf::k3DTexBuffer &&
         iFilterType > kLinearFilter) {
@@ -842,7 +850,7 @@ TSDFVolume::RenderGui()
     RadioButton("8Bit", &uBit, ManagedBuf::k8Bit); SameLine();
     RadioButton("16Bit", &uBit, ManagedBuf::k16Bit); SameLine();
     RadioButton("32Bit", &uBit, ManagedBuf::k32Bit);
-    RadioButton("Typed Buffer", &uType, ManagedBuf::kTypedBuffer);
+    RadioButton("Typed Buffer", &uType, ManagedBuf::kTypedBuffer); SameLine();
     RadioButton("Tex3D Buffer", &uType, ManagedBuf::k3DTexBuffer);
     if (iFilterType > kLinearFilter &&
         uType != ManagedBuf::k3DTexBuffer) {
@@ -937,14 +945,6 @@ TSDFVolume::RenderGui()
         _UpdateVolumeSettings(_curReso, fVoxelSize);
         _UpdateBlockSettings(_fuseBlockVoxelRatio,
             _renderBlockVoxelRatio, _TGSize);
-    }
-
-    Separator();
-    if (Button("Recompile All Shaders")) {
-        _CreatePSOs();
-    }
-    Separator();
-    if (Button("Reset Volume")) {
         ResetAllResource();
     }
 }

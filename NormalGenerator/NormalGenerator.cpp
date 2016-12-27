@@ -22,7 +22,7 @@ RootSignature _rootsig;
 ComputePSO _cptGetNormalPSO;
 std::once_flag _psoCompiled_flag;
 
-float _fDistThreshold = FLT_MAX;
+float _fDistThreshold = 0.1;
 bool _scbStaled = true;
 void _CreatePSO()
 {
@@ -67,7 +67,7 @@ NormalGenerator::NormalGenerator(uint2 reso, const std::wstring& name)
     : _name(name)
 {
     _dataCB.u2Reso = reso;
-    _dataCB.fDistThreshold = 0.1f;
+    _dataCB.fDistThreshold = _fDistThreshold;
 }
 
 NormalGenerator::~NormalGenerator()
@@ -128,10 +128,10 @@ void
 NormalGenerator::RenderGui()
 {
     using namespace ImGui;
-    if (!CollapsingHeader("NormalGenerator Settings")) {
+    if (!CollapsingHeader("NormalGenerator")) {
         return;
     }
-    if (Button("Recompile Shaders")) {
+    if (Button("RecompileShaders##NormalGenerator")) {
         _CreatePSO();
     }
     _scbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);

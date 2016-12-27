@@ -26,29 +26,16 @@ GraphicsPSO _hPassPSO[SeperableFilter::kNumKernelDiameter];
 GraphicsPSO _vPassPSO[SeperableFilter::kNumKernelDiameter];
 RootSignature _rootSignature;
 
+std::once_flag _psoCompiled_flag;
+
+SeperableFilter::KernelSize _kernelSize = SeperableFilter::k7KernelDiameter;
+float _fGaussianVar = 625;
 bool _cbStaled = true;
 bool _enabled = false;
-}
 
-SeperableFilter::SeperableFilter()
+void _CreatePSOs()
 {
-    _dataCB.u2Reso = XMUINT2(0, 0);
-    // We set 50mm as edge threshold, so 50 will be 2*deviation
-    // ->deviation = 25;
-    // ->variance = 625
-    _dataCB.fGaussianVar = 625;
-}
-
-SeperableFilter::~SeperableFilter()
-{
-}
-
-HRESULT
-SeperableFilter::OnCreateResoure(
-    DXGI_FORMAT bufferFormat, LinearAllocator& uploadHeapAlloc)
-{
-    HRESULT hr = S_OK;
-    _outTexFormat = bufferFormat;
+    HRESULT hr;
     // Create Rootsignature
     _rootSignature.Reset(2);
     _rootSignature[0].InitAsConstantBuffer(0);
@@ -61,8 +48,8 @@ SeperableFilter::OnCreateResoure(
 
     // Create PSO
     ComPtr<ID3DBlob> quadVS;
-    ComPtr<ID3DBlob> hPassPS[kNumKernelDiameter];
-    ComPtr<ID3DBlob> vPassPS[kNumKernelDiameter];
+    ComPtr<ID3DBlob> hPassPS[SeperableFilter::kNumKernelDiameter];
+    ComPtr<ID3DBlob> vPassPS[SeperableFilter::kNumKernelDiameter];
 
     uint32_t compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
     D3D_SHADER_MACRO macro[] = {
@@ -76,7 +63,7 @@ SeperableFilter::OnCreateResoure(
         D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1",
         compileFlags, 0, &quadVS));
     char kernelSizeStr[8];
-    for (int i = 0; i < kNumKernelDiameter; ++i) {
+    for (int i = 0; i < SeperableFilter::kNumKernelDiameter; ++i) {
         sprintf_s(kernelSizeStr, 8, "%d", i);
         macro[2].Definition = kernelSizeStr;
         macro[1].Definition = "0";
@@ -98,8 +85,9 @@ SeperableFilter::OnCreateResoure(
         _hPassPSO[i].SetInputLayout(0, nullptr);
         _hPassPSO[i].SetVertexShader(
             quadVS->GetBufferPointer(), quadVS->GetBufferSize());
+        DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
         _hPassPSO[i].SetRenderTargetFormats(
-            1, &bufferFormat, DXGI_FORMAT_UNKNOWN);
+            1, &format, DXGI_FORMAT_UNKNOWN);
         _hPassPSO[i].SetPrimitiveTopologyType(
             D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
         _vPassPSO[i] = _hPassPSO[i];
@@ -110,6 +98,27 @@ SeperableFilter::OnCreateResoure(
             hPassPS[i]->GetBufferPointer(), hPassPS[i]->GetBufferSize());
         _hPassPSO[i].Finalize();
     }
+}
+}
+
+SeperableFilter::SeperableFilter()
+{
+    _dataCB.u2Reso = XMUINT2(0, 0);
+    // We set 50mm as edge threshold, so 50 will be 2*deviation
+    // ->deviation = 25;
+    // ->variance = 625
+    _dataCB.fGaussianVar = _fGaussianVar;
+}
+
+SeperableFilter::~SeperableFilter()
+{
+}
+
+HRESULT
+SeperableFilter::OnCreateResoure(LinearAllocator& uploadHeapAlloc)
+{
+    HRESULT hr = S_OK;
+    std::call_once(_psoCompiled_flag, _CreatePSOs);
     _gpuCB.Create(L"SeparableFilter_CB", 1, sizeof(CBuffer),
         (void*)&_dataCB);
     _pUploadCB = new DynAlloc(
@@ -132,10 +141,10 @@ SeperableFilter::UpdateCB(DirectX::XMUINT2 reso)
     if (_dataCB.u2Reso.x != reso.x || _dataCB.u2Reso.y != reso.y) {
         _intermediateBuf.Destroy();
         _intermediateBuf.Create(L"BilateralTemp",
-            (uint32_t)reso.x, (uint32_t)reso.y, 1, _outTexFormat);
+            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
         _outBuf.Destroy();
         _outBuf.Create(L"BilateralOut",
-            (uint32_t)reso.x, (uint32_t)reso.y, 1, _outTexFormat);
+            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
         _dataCB.u2Reso = reso;
         _viewport.Width = static_cast<float>(reso.x);
         _viewport.Height = static_cast<float>(reso.y);
@@ -155,6 +164,7 @@ SeperableFilter::OnRender(
     }
 
     if (_cbStaled) {
+        _dataCB.fGaussianVar = _fGaussianVar;
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
@@ -186,12 +196,15 @@ void
 SeperableFilter::RenderGui()
 {
     using namespace ImGui;
-    if (!CollapsingHeader("BilateralFilter Settings")) {
+    if (!CollapsingHeader("BilateralFilter")) {
         return;
+    }
+    if (Button("RecompileShaders##NormalGenerator")) {
+        _CreatePSOs();
     }
     _cbStaled |= Checkbox("Enable Bilateral Filter", &_enabled);
     SliderInt("Kernel Radius", (int*)&_kernelSize, 0, kNumKernelDiameter - 1);
-    _cbStaled |= DragFloat("Range Var", &_dataCB.fGaussianVar, 1.f, 100, 2500);
+    _cbStaled |= DragFloat("Range Var", &_fGaussianVar, 1.f, 100, 2500);
 }
 
 ColorBuffer*
