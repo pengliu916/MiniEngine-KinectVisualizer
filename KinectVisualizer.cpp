@@ -173,7 +173,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
 
     _tsdfVolume.PreProcessing(mProj_T, mView_T, _depthViewInv_T);
 
-    BeginTrans(cmdCtx, Graphics::g_SceneColorBuffer, RTV);
     BeginTrans(cmdCtx, Graphics::g_SceneDepthBuffer, DSV);
 
     GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
@@ -182,11 +181,9 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     // Pull new data from Kinect
     bool newData = _sensorTexGen.OnRender(cmdCtx);
 
-    BeginTrans(cmdCtx, *pRawDepth, psSRV | csSRV);
-
     // Bilateral filtering
-    _bilateralFilter.OnRender(gfxCtx, pRawDepth);
     if (pFilteredDepth) {
+        _bilateralFilter.OnRender(gfxCtx, pRawDepth);
         BeginTrans(cmdCtx, *pFilteredDepth, csSRV);
     }
 
@@ -208,17 +205,17 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         BeginTrans(gfxCtx, *pTSDFDepth_vis, csSRV);
     }
 
-    // Generate normalmap for visualized depthmap
-    if (_visualize) {
-        _normalGenForVisualizedSurface.OnProcessing(cptCtx, pTSDFDepth_vis);
-        _tsdfVolume.RenderDebugGrid(gfxCtx, pNormal_vis);
-        BeginTrans(gfxCtx, *pNormal_vis, psSRV);
-    }
     // Generate normalmap for TSDF depthmap
     _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
     // Generate normalmap for Kinect depthmap
     _normalGenForOriginalDepthMap.OnProcessing(
         cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth);
+    // Generate normalmap for visualized depthmap
+    if (_visualize) {
+        _normalGenForVisualizedSurface.OnProcessing(cptCtx, pTSDFDepth_vis);
+        _tsdfVolume.RenderDebugGrid(gfxCtx, pNormal_vis);
+        Trans(gfxCtx, *pNormal_vis, psSRV);
+    }
 }
 
 void

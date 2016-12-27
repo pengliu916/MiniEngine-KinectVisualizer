@@ -660,11 +660,12 @@ TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex)
 {
     cptCtx.SetRootSignature(_rootsig);
     _UpdateAndBindConstantBuffer(cptCtx);
-    Trans(cptCtx, _renderBlockVol, UAV);
+    BeginTrans(cptCtx, _renderBlockVol, UAV);
     Trans(cptCtx, *_curBufInterface.resource[0], UAV);
     Trans(cptCtx, *_curBufInterface.resource[1], UAV);
     _UpdateVolume(cptCtx, _curBufInterface, pDepthTex);
     BeginTrans(cptCtx, *_curBufInterface.resource[0], psSRV);
+    BeginTrans(cptCtx, *_curBufInterface.resource[1], UAV);
     if (_useStepInfoTex) {
         BeginTrans(cptCtx, _renderBlockVol, vsSRV | psSRV);
     }
@@ -675,6 +676,7 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
 {
     if (RT & kForProc) Trans(gfxCtx, _depthMapProc, RTV);
     if (RT & kForVisu) Trans(gfxCtx, _depthMapVisual, RTV);
+    if (RT & kForVisu) Trans(gfxCtx, _depthBufVisual, DSV);
     if (_useStepInfoTex) {
         if (RT & kForProc) Trans(gfxCtx, _nearFarForProcess, RTV);
         if (RT & kForVisu) Trans(gfxCtx, _nearFarForVisual, RTV);
@@ -689,29 +691,31 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
 
     Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
     if (RT & kForProc) {
-        gfxCtx.ClearColor(_nearFarForProcess);
         gfxCtx.SetViewport(_depthViewPort);
         gfxCtx.SetScisor(_depthSissorRect);
         if (_useStepInfoTex) {
             GPU_PROFILE(gfxCtx, L"NearFar_Proc");
+            gfxCtx.ClearColor(_nearFarForProcess);
             gfxCtx.SetRenderTarget(_nearFarForProcess.GetRTV());
             _RenderNearFar(gfxCtx, true);
-            BeginTrans(gfxCtx, _nearFarForProcess, psSRV);
         }
     }
     if (RT & kForVisu) {
-        gfxCtx.ClearColor(_nearFarForVisual);
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
         if (_useStepInfoTex) {
+            BeginTrans(gfxCtx, _nearFarForProcess, psSRV);
             GPU_PROFILE(gfxCtx, L"NearFar_Visu");
+            gfxCtx.ClearColor(_nearFarForVisual);
             gfxCtx.SetRenderTarget(_nearFarForVisual.GetRTV());
             _RenderNearFar(gfxCtx);
-            BeginTrans(gfxCtx, _nearFarForVisual, psSRV);
         }
     }
     if (RT & kForProc) {
-        Trans(gfxCtx, _nearFarForProcess, psSRV);
+        if (_useStepInfoTex) {
+            BeginTrans(gfxCtx, _nearFarForVisual, psSRV);
+            Trans(gfxCtx, _nearFarForProcess, psSRV);
+        }
         Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Proc");
@@ -721,11 +725,14 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
             gfxCtx.SetRenderTarget(_depthMapProc.GetRTV());
             _RenderVolume(gfxCtx, _curBufInterface, true);
         }
-        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
-        BeginTrans(gfxCtx, _nearFarForProcess, RTV);
+        if (_useStepInfoTex) {
+            BeginTrans(gfxCtx, _nearFarForProcess, RTV);
+        }
     }
     if (RT & kForVisu) {
-        Trans(gfxCtx, _nearFarForVisual, psSRV);
+        if (_useStepInfoTex) {
+            Trans(gfxCtx, _nearFarForVisual, psSRV);
+        }
         Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Visu");
@@ -737,9 +744,11 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
                 1, &_depthMapVisual.GetRTV(), _depthBufVisual.GetDSV());
             _RenderVolume(gfxCtx, _curBufInterface);
         }
-        BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
-        BeginTrans(gfxCtx, _nearFarForVisual, RTV);
+        if (_useStepInfoTex) {
+            BeginTrans(gfxCtx, _nearFarForVisual, RTV);
+        }
     }
+    BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
 }
 
 void
@@ -1109,7 +1118,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
     const uint3 xyz = _volParam->u3VoxelReso;
     if (_blockVolumeUpdate) {
-        BeginTrans(cptCtx, _renderBlockVol, UAV);
         // Add blocks to UpdateBlockQueue from OccupiedBlockQueue
         Trans(cptCtx, _updateBlocksBuf, UAV);
         Trans(cptCtx, _fuseBlockVol, UAV);
@@ -1251,7 +1259,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cptCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
-        BeginTrans(cptCtx, _indirectParams, IARG);
     } else {
         GPU_PROFILE(cptCtx, L"Volume Updating");
         _CleanRenderBlockVol(cptCtx);
