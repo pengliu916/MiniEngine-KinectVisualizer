@@ -4,32 +4,23 @@ class SeperableFilter
 {
 #include "SeparableFilter.inl"
 public:
-    enum KernelSize {
-        k1KernelDiamiter = 0,
-        k3KernelDiameter = 1,
-        k5KernelDiameter = 2,
-        k7KernelDiameter = 3,
-        k9KernelDiameter = 4,
-        k11KernelDiameter = 5,
-        k13KernelDiameter = 6,
-        kNumKernelDiameter
-    };
     static void RenderGui();
 
     SeperableFilter();
     ~SeperableFilter();
     HRESULT OnCreateResoure(LinearAllocator& uploadHeapAlloc);
     void OnDestory();
-    void UpdateCB(DirectX::XMUINT2 reso);
+    void OnResize(DirectX::XMUINT2 reso);
     void OnRender(GraphicsContext& gfxContext, ColorBuffer* pInputTex);
-    ColorBuffer* GetOutTex();
+    ColorBuffer* GetFilteredTex();
 
 private:
+    void _UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius);
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
     ColorBuffer _intermediateBuf;
-    ColorBuffer _outBuf;
+    ColorBuffer _filteredBuf;
     D3D12_VIEWPORT _viewport = {};
     D3D12_RECT _scisorRact = {};
 };

@@ -87,7 +87,7 @@ KinectVisualizer::OnCreateResource()
 
     // Create resource for BilateralFilter
     _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
-    _bilateralFilter.UpdateCB(XMUINT2(depWidth, depHeight));
+    _bilateralFilter.OnResize(XMUINT2(depWidth, depHeight));
 
     int2 depthReso = int2(depWidth, depHeight);
     int2 colorReso = int2(colWidth, colHeight);
@@ -163,7 +163,7 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     ColorBuffer* pTSDFDepth = _tsdfVolume.GetDepthTexForProcessing();
     ColorBuffer* pTSDFDepth_vis = _tsdfVolume.GetDepthTexForVisualize();
     ColorBuffer* pNormal_vis = _normalGenForVisualizedSurface.GetNormalMap();
-    ColorBuffer* pFilteredDepth = _bilateralFilter.GetOutTex();
+    ColorBuffer* pFilteredDepth = _bilateralFilter.GetFilteredTex();
 
     XMMATRIX mView_T = _camera.View();
     XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
