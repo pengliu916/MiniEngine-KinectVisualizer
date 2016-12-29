@@ -259,7 +259,10 @@ public:
         return CommandContext::Begin(ID).GetGraphicsContext();
     }
 
-    void ClearUAV(GpuBuffer& Target);
+    void ClearUAV(GpuBuffer& Target, const UINT ClearVal[4]);
+    void ClearUAV(GpuBuffer& Target, const FLOAT ClearVal[4]);
+    void ClearUAV(ColorBuffer& Target, const UINT ClearVal[4]);
+    void ClearUAV(ColorBuffer& Target, const FLOAT ClearVal[4]);
     void ClearColor(ColorBuffer& Target);
     void ClearDepth(DepthBuffer& Target);
     void ClearStencil(DepthBuffer& Target);
@@ -595,7 +598,10 @@ public:
     static ComputeContext& Begin(
         const std::wstring& ID = L"", bool Async = false);
 
-    void ClearUAV(GpuBuffer& Target);
+    void ClearUAV(GpuBuffer& Target, const UINT ClearVal[4]);
+    void ClearUAV(GpuBuffer& Target, const FLOAT ClearVal[4]);
+    void ClearUAV(ColorBuffer& Target, const UINT ClearVal[4]);
+    void ClearUAV(ColorBuffer& Target, const FLOAT ClearVal[4]);
     //void ClearUAV(ColorBuffer& Target);
 
     void SetRootSignature(const RootSignature& RootSig);

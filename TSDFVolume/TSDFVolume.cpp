@@ -1069,13 +1069,14 @@ TSDFVolume::_UpdateBlockSettings(const uint fuseBlockVoxelRatio,
 void
 TSDFVolume::_ClearBlockQueues(ComputeContext& cptCtx)
 {
-    cptCtx.ClearUAV(_occupiedBlocksBuf);
+    static UINT ClearVal[4] = {};
+    cptCtx.ClearUAV(_occupiedBlocksBuf, ClearVal);
     cptCtx.ResetCounter(_occupiedBlocksBuf);
-    cptCtx.ClearUAV(_updateBlocksBuf);
+    cptCtx.ClearUAV(_updateBlocksBuf, ClearVal);
     cptCtx.ResetCounter(_updateBlocksBuf);
-    cptCtx.ClearUAV(_newFuseBlocksBuf);
+    cptCtx.ClearUAV(_newFuseBlocksBuf, ClearVal);
     cptCtx.ResetCounter(_newFuseBlocksBuf);
-    cptCtx.ClearUAV(_freedFuseBlocksBuf);
+    cptCtx.ClearUAV(_freedFuseBlocksBuf, ClearVal);
     cptCtx.ResetCounter(_freedFuseBlocksBuf);
 }
 

@@ -416,13 +416,39 @@ CommandContext::BindDescriptorHeaps()
 // GraphicsContext
 //------------------------------------------------------------------------------
 void
-GraphicsContext::ClearUAV(GpuBuffer& Target)
+GraphicsContext::ClearUAV(GpuBuffer& Target, const UINT ClearVal[4])
 {
     D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
         m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
-    const UINT ClearColor[4] = {};
     m_CommandList->ClearUnorderedAccessViewUint(GpuVisibleHandle,
-        Target.GetUAV(), Target.GetResource(), ClearColor, 0, nullptr);
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
+}
+
+void
+GraphicsContext::ClearUAV(GpuBuffer& Target, const FLOAT ClearVal[4])
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
+        m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
+    m_CommandList->ClearUnorderedAccessViewFloat(GpuVisibleHandle,
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
+}
+
+void
+GraphicsContext::ClearUAV(ColorBuffer& Target, const UINT ClearVal[4])
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
+        m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
+    m_CommandList->ClearUnorderedAccessViewUint(GpuVisibleHandle,
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
+}
+
+void
+GraphicsContext::ClearUAV(ColorBuffer& Target, const FLOAT ClearVal[4])
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
+        m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
+    m_CommandList->ClearUnorderedAccessViewFloat(GpuVisibleHandle,
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
 }
 
 void
@@ -533,11 +559,37 @@ ComputeContext::Begin(
 }
 
 void
-ComputeContext::ClearUAV(GpuBuffer& Target)
+ComputeContext::ClearUAV(GpuBuffer& Target, const UINT ClearVal[4])
 {
     D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
         m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
-    const UINT ClearColor[4] = {};
     m_CommandList->ClearUnorderedAccessViewUint(GpuVisibleHandle,
-        Target.GetUAV(), Target.GetResource(), ClearColor, 0, nullptr);
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
+}
+
+void
+ComputeContext::ClearUAV(GpuBuffer& Target, const FLOAT ClearVal[4])
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
+        m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
+    m_CommandList->ClearUnorderedAccessViewFloat(GpuVisibleHandle,
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
+}
+
+void
+ComputeContext::ClearUAV(ColorBuffer& Target, const UINT ClearVal[4])
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
+        m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
+    m_CommandList->ClearUnorderedAccessViewUint(GpuVisibleHandle,
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
+}
+
+void
+ComputeContext::ClearUAV(ColorBuffer& Target, const FLOAT ClearVal[4])
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE GpuVisibleHandle =
+        m_DynamicDescriptorHeap.UploadDirect(Target.GetUAV());
+    m_CommandList->ClearUnorderedAccessViewFloat(GpuVisibleHandle,
+        Target.GetUAV(), Target.GetResource(), ClearVal, 0, nullptr);
 }
