@@ -607,6 +607,7 @@ namespace Graphics
     }
 
     void UpdateGUI() {
+        GPU_Profiler::RenderGui();
         if (!ImGui::CollapsingHeader("Stats", (const char*)0, true, true)) {
             return;
         }

@@ -6,6 +6,7 @@
 #include "CmdListMngr.h"
 #include "TextRenderer.h"
 #include "Graphics.h"
+#include "imgui.h"
 
 #include <unordered_map>
 #include <string>
@@ -18,46 +19,55 @@ using namespace std;
 using namespace DirectX;
 
 namespace {
-    double m_GPUTickDelta;
-    uint8_t m_timerCount = 1;
-    unordered_map<wstring, uint8_t> m_timerNameIdxMap;
-    wstring* m_timerNameArray;
-    XMFLOAT4* m_timerColorArray;
+enum PerfMode {
+    kTotalOnly = 0,
+    kMajor = 1,
+    kAll = 2,
+};
+
+PerfMode m_perfMode = kMajor;
+float m_perfThreshold = 0.5f;
+
+double m_GPUTickDelta;
+uint8_t m_timerCount = 1;
+unordered_map<wstring, uint8_t> m_timerNameIdxMap;
+wstring* m_timerNameArray;
+XMFLOAT4* m_timerColorArray;
 #if RECORD_TIME_HISTORY
-    float** m_timerHistory;
+float** m_timerHistory;
 #endif
-    float* m_timerAvg;
-    uint64_t* m_timeStampBufferCopy;
+float* m_timerAvg;
+uint64_t* m_timeStampBufferCopy;
 
-    ID3D12Resource* m_readbackBuffer;
-    ID3D12QueryHeap* m_queryHeap;
-    uint64_t* m_timeStampBuffer;
+ID3D12Resource* m_readbackBuffer;
+ID3D12QueryHeap* m_queryHeap;
+uint64_t* m_timeStampBuffer;
 
-    uint64_t m_fence = 0;
+uint64_t m_fence = 0;
 
-    RootSignature m_RootSignature;
-    GraphicsPSO m_GraphPSO;
+RootSignature m_RootSignature;
+GraphicsPSO m_GraphPSO;
 
-    CRITICAL_SECTION m_critialSection;
+CRITICAL_SECTION m_critialSection;
 
-    vector<uint8_t> m_ActiveTimer;
+vector<uint8_t> m_ActiveTimer;
 
-    bool compStartTime(uint8_t i, uint8_t j) {
-        return m_timeStampBufferCopy[i * 2] < m_timeStampBufferCopy[j * 2];
-    }
+bool compStartTime(uint8_t i, uint8_t j) {
+    return m_timeStampBufferCopy[i * 2] < m_timeStampBufferCopy[j * 2];
+}
 
-    struct RectAttr {
-        XMFLOAT4 TLBR;
-        XMFLOAT4 Col;
-    };
+struct RectAttr {
+    XMFLOAT4 TLBR;
+    XMFLOAT4 Col;
+};
 
-    RectAttr* m_RectData;
-    uint16_t m_BackgroundMargin;
-    uint16_t m_EntryMargin;
-    uint16_t m_EntryHeight;
-    uint16_t m_EntryWordHeight;
-    uint16_t m_MaxBarWidth;
-    uint16_t m_WorldSpace;
+RectAttr* m_RectData;
+uint16_t m_BackgroundMargin;
+uint16_t m_EntryMargin;
+uint16_t m_EntryHeight;
+uint16_t m_EntryWordHeight;
+uint16_t m_MaxBarWidth;
+uint16_t m_WorldSpace;
 }
 
 void
@@ -252,7 +262,7 @@ GPU_Profiler::ProcessAndReadback(CommandContext& EngineContext)
         }
     }
 #else
-    m_timerAvg[0] = (m_timerAvg[0] * AVG_COUNT_FACTOR + (float)ReadTimer(0))/
+    m_timerAvg[0] = (m_timerAvg[0] * AVG_COUNT_FACTOR + (float)ReadTimer(0)) /
         (AVG_COUNT_FACTOR + 1);
     for (uint8_t idx = 1; idx < m_timerCount; ++idx) {
         if (m_timeStampBufferCopy[idx * 2] >= preEndTime) {
@@ -295,14 +305,10 @@ GPU_Profiler::FillVertexData()
     };
 
     uint8_t NumActiveTimer = (uint8_t)m_ActiveTimer.size();
-    uint8_t RectIdx = 0;
-    m_RectData[RectIdx].TLBR = Corner(m_BackgroundMargin, m_BackgroundMargin,
-        m_MaxBarWidth + m_WorldSpace,
-        m_BackgroundMargin + (NumActiveTimer + 1) * m_EntryHeight);
-    m_RectData[RectIdx++].Col = XMFLOAT4(0.f, 0.f, 0.f, 0.3f);
-    instanceCount++;
+    uint8_t RectIdx = 2;
 
     float scale = m_MaxBarWidth / 33.f;
+    uint8_t ShownItem = 0;
     if (m_ActiveTimer.size() > 0) {
         double FrameStartTime =
             m_timeStampBufferCopy[m_ActiveTimer[0] * 2] * m_GPUTickDelta;
@@ -310,30 +316,90 @@ GPU_Profiler::FillVertexData()
         uint16_t CurStartY = m_BackgroundMargin + m_EntryMargin;
         uint16_t StartY = CurStartY;
         CurStartY += m_EntryHeight;
-        for (uint32_t idx = 0; idx < NumActiveTimer; idx++) {
-            double LocalStartTime =
-                m_timeStampBufferCopy[m_ActiveTimer[idx] * 2] *
-                m_GPUTickDelta - FrameStartTime;
-            double LocalEndTime =
-                m_timeStampBufferCopy[m_ActiveTimer[idx] * 2 + 1] *
-                m_GPUTickDelta - FrameStartTime;
-            m_RectData[RectIdx].TLBR = Corner(
-                CurStartX + (UINT)(LocalStartTime * scale),
-                CurStartY,
-                CurStartX + (UINT)(LocalEndTime * scale),
-                CurStartY + m_EntryWordHeight);
-            m_RectData[RectIdx + 1].TLBR = Corner(
-                CurStartX + (UINT)(LocalStartTime * scale),
-                StartY,
-                CurStartX + (UINT)(LocalEndTime * scale),
-                StartY + m_EntryWordHeight);
-            CurStartY += m_EntryHeight;
-            m_RectData[RectIdx].Col = m_timerColorArray[m_ActiveTimer[idx]];
-            m_RectData[RectIdx + 1].Col = m_timerColorArray[m_ActiveTimer[idx]];
-            RectIdx += 2;
-            instanceCount += 2;
+        double startT, endT, durT;
+        switch (m_perfMode)
+        {
+        case kTotalOnly:
+            for (uint32_t idx = 0; idx < NumActiveTimer; idx++) {
+                durT = ReadTimer(m_ActiveTimer[idx], &startT, &endT);
+                startT -= FrameStartTime;
+                endT -= FrameStartTime;
+                m_RectData[RectIdx].TLBR = Corner(
+                    CurStartX + (UINT)(startT * scale), StartY,
+                    CurStartX + (UINT)(endT * scale),
+                    StartY + m_EntryWordHeight);
+                m_RectData[RectIdx].Col = m_timerColorArray[m_ActiveTimer[idx]];
+                RectIdx++;
+                instanceCount++;
+            }
+            break;
+        case kMajor:
+            for (uint32_t idx = 0; idx < NumActiveTimer; idx++) {
+                durT = ReadTimer(m_ActiveTimer[idx], &startT, &endT);
+                startT -= FrameStartTime;
+                endT -= FrameStartTime;
+                if ((endT - startT) > m_perfThreshold) {
+                    m_RectData[RectIdx].TLBR = Corner(
+                        CurStartX + (UINT)(startT * scale), CurStartY,
+                        CurStartX + (UINT)(endT * scale),
+                        CurStartY + m_EntryWordHeight);
+                    m_RectData[RectIdx].Col =
+                        m_timerColorArray[m_ActiveTimer[idx]];
+                    RectIdx++;
+                    instanceCount++;
+                    ShownItem++;
+                    CurStartY += m_EntryHeight;
+                }
+                m_RectData[RectIdx].TLBR = Corner(
+                    CurStartX + (UINT)(startT * scale), StartY,
+                    CurStartX + (UINT)(endT * scale),
+                    StartY + m_EntryWordHeight);
+                m_RectData[RectIdx].Col = m_timerColorArray[m_ActiveTimer[idx]];
+                RectIdx++;
+                instanceCount++;
+            }
+            break;
+        case kAll:
+            for (uint32_t idx = 0; idx < NumActiveTimer; idx++) {
+                durT = ReadTimer(m_ActiveTimer[idx], &startT, &endT);
+                startT -= FrameStartTime;
+                endT -= FrameStartTime;
+                m_RectData[RectIdx].TLBR = Corner(
+                    CurStartX + (UINT)(startT * scale),
+                    CurStartY,
+                    CurStartX + (UINT)(endT * scale),
+                    CurStartY + m_EntryWordHeight);
+                m_RectData[RectIdx + 1].TLBR = Corner(
+                    CurStartX + (UINT)(startT * scale),
+                    StartY,
+                    CurStartX + (UINT)(endT * scale),
+                    StartY + m_EntryWordHeight);
+                CurStartY += m_EntryHeight;
+                m_RectData[RectIdx].Col = m_timerColorArray[m_ActiveTimer[idx]];
+                m_RectData[RectIdx + 1].Col =
+                    m_timerColorArray[m_ActiveTimer[idx]];
+                RectIdx += 2;
+                instanceCount += 2;
+                ShownItem++;
+            }
+            break;
+        default:
+            break;
         }
     }
+    double t = ReadTimer(0);
+    m_RectData[1].TLBR = Corner(
+        m_BackgroundMargin + m_EntryMargin + m_WorldSpace,
+        m_BackgroundMargin + m_EntryMargin,
+        m_BackgroundMargin + m_EntryMargin + m_WorldSpace + (UINT)(t * scale),
+        m_BackgroundMargin + m_EntryMargin + m_EntryWordHeight);
+    m_RectData[1].Col = XMFLOAT4(0.8f, 0.8f, 1.f, 0.5f);
+    ShownItem++;
+    m_RectData[0].TLBR = Corner(m_BackgroundMargin, m_BackgroundMargin,
+        m_MaxBarWidth + m_WorldSpace,
+        m_BackgroundMargin + (ShownItem) * m_EntryHeight);
+    m_RectData[0].Col = XMFLOAT4(0.f, 0.f, 0.f, 0.3f);
+    instanceCount++;
     return instanceCount;
 }
 
@@ -367,15 +433,34 @@ GPU_Profiler::DrawStats(GraphicsContext& gfxContext)
     swprintf(temp, L"TotalFrameTime:%4.2fms %4.2fms \0",
         m_timerAvg[0], ReadTimer(0));
     txtContext.DrawString(wstring(temp));
+    if (m_perfMode == kTotalOnly) {
+        return;
+    }
     curY += m_EntryHeight;
     txtContext.ResetCursor(curX, curY);
     for (uint32_t idx = 0; idx < m_ActiveTimer.size(); idx++) {
-        GPU_Profiler::GetTimingStr(m_ActiveTimer[idx], temp);
-        txtContext.DrawString(wstring(temp));
-        curY += m_EntryHeight;
-        txtContext.ResetCursor(curX, curY);
+        if (m_perfMode != kMajor ||
+            ReadTimer(m_ActiveTimer[idx]) > m_perfThreshold) {
+            GPU_Profiler::GetTimingStr(m_ActiveTimer[idx], temp);
+            txtContext.DrawString(wstring(temp));
+            curY += m_EntryHeight;
+            txtContext.ResetCursor(curX, curY);
+        }
     }
     txtContext.End();
+}
+
+void
+GPU_Profiler::RenderGui()
+{
+    using namespace ImGui;
+    if (!CollapsingHeader("GPU Profiler", (const char*)0)) {
+        return;
+    }
+    RadioButton("TotalOnly##Prof", (int*)&m_perfMode, kTotalOnly); SameLine();
+    RadioButton("Major##Prof",(int*)&m_perfMode, kMajor);SameLine();
+    RadioButton("All##Perf", (int*)&m_perfMode, kAll);
+    SliderFloat("Threshold##Perf", &m_perfThreshold, 0.01f, 2.f, "%.3fms");
 }
 
 double

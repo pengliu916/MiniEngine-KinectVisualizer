@@ -19,6 +19,7 @@ namespace GPU_Profiler
     void ProcessAndReadback(CommandContext& EngineContext);
     uint16_t FillVertexData();
     void DrawStats(GraphicsContext& gfxContext);
+    void RenderGui();
     double ReadTimer(
         uint8_t idx, double* start = nullptr, double* stop = nullptr);
     void SetFenceValue(uint64_t fenceValue);
