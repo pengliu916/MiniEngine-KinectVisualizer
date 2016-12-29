@@ -656,14 +656,16 @@ TSDFVolume::DefragmentActiveBlockQueue(ComputeContext& cptCtx)
 }
 
 void
-TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex)
+TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
+    ColorBuffer* pWeightTex)
 {
     cptCtx.SetRootSignature(_rootsig);
     _UpdateAndBindConstantBuffer(cptCtx);
     BeginTrans(cptCtx, _renderBlockVol, UAV);
+    BeginTrans(cptCtx, *pWeightTex, csSRV);
     Trans(cptCtx, *_curBufInterface.resource[0], UAV);
     Trans(cptCtx, *_curBufInterface.resource[1], UAV);
-    _UpdateVolume(cptCtx, _curBufInterface, pDepthTex);
+    _UpdateVolume(cptCtx, _curBufInterface, pDepthTex, pWeightTex);
     BeginTrans(cptCtx, *_curBufInterface.resource[0], psSRV);
     BeginTrans(cptCtx, *_curBufInterface.resource[1], UAV);
     if (_useStepInfoTex) {
@@ -1114,7 +1116,8 @@ TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 
 void
 TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
-    const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex)
+    const ManagedBuf::BufInterface& buf,
+    ColorBuffer* pDepthTex, ColorBuffer* pWeightTex)
 {
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
     const uint3 xyz = _volParam->u3VoxelReso;
@@ -1139,6 +1142,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         // Add blocks to UpdateBlockQueue from DepthMap
         Trans(cptCtx, _fuseBlockVol, UAV);
         Trans(cptCtx, *pDepthTex, psSRV | csSRV);
+        Trans(cptCtx, *pWeightTex, csSRV);
         {
             GPU_PROFILE(cptCtx, L"Depth2UpdateQ");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
@@ -1147,6 +1151,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 2, 0, 1, &_updateBlocksBuf.GetUAV());
             Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
             Bind(cptCtx, 3, 0, 1, &pDepthTex->GetSRV());
+            Bind(cptCtx, 3, 1, 1, &pWeightTex->GetSRV());
             cptCtx.Dispatch2D(
                 _cbPerCall.i2DepthReso.x, _cbPerCall.i2DepthReso.y);
         }
@@ -1181,9 +1186,8 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 2, 5, 1, &_occupiedBlocksBuf.GetUAV());
             Bind(cptCtx, 2, 6, 1, &_renderBlockVol.GetUAV());
             Bind(cptCtx, 3, 0, 1, &pDepthTex->GetSRV());
-            if (!_typedLoadSupported) {
-                Bind(cptCtx, 3, 1, 2, buf.SRV);
-            }
+            Bind(cptCtx, 3, 1, 1, &pWeightTex->GetSRV());
+            if (!_typedLoadSupported) Bind(cptCtx, 3, 1, 2, buf.SRV);
             Bind(cptCtx, 3, 3, 1, &_updateBlocksBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 12);
         }

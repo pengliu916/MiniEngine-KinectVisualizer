@@ -94,6 +94,7 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
 //------------------------------------------------------------------------------
 #if PASS_2
 Texture2D<uint> tex_srvDepth : register(t0);
+Texture2D<float> tex_srvWeight : register(t1);
 
 uint3 GetBlockIdx(float3 f3Pos)
 {
@@ -114,7 +115,8 @@ void InterlockedAddToUpdateQueue(uint3 u3BlockIdx)
 bool GetValidReprojectedPoint(uint2 u2Idx, out float3 f3Pos)
 {
     f3Pos = 0.f;
-    if (any(int2(u2Idx) >= i2DepthReso)) {
+    if (any(int2(u2Idx) >= i2DepthReso) ||
+        tex_srvWeight.Load(uint3(u2Idx, 0)) <= 0.05f) {
         return false;
     }
     float z = tex_srvDepth.Load(uint3(u2Idx.xy, 0)) * -0.001f;

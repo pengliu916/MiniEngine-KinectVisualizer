@@ -21,6 +21,7 @@ ctx.BeginResourceTransition(res, state)
 namespace {
 typedef D3D12_RESOURCE_STATES State;
 const State CBV = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+const State UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
@@ -64,10 +65,12 @@ void _CreatePSOs()
 {
     HRESULT hr;
     // Create Rootsignature
-    _rootSignature.Reset(2);
+    _rootSignature.Reset(3);
     _rootSignature[0].InitAsConstantBuffer(0);
     _rootSignature[1].InitAsDescriptorRange(
         D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 2);
+    _rootSignature[2].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1);
     _rootSignature.Finalize(L"SeparableFilter",
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -160,6 +163,7 @@ SeperableFilter::OnDestory()
     delete _pUploadCB;
     _gpuCB.Destroy();
     _filteredBuf.Destroy();
+    _weightBuf.Destroy();
     _intermediateBuf.Destroy();
     _gaussianWeightBuf.Destroy();
 }
@@ -174,6 +178,9 @@ SeperableFilter::OnResize(DirectX::XMUINT2 reso)
         _filteredBuf.Destroy();
         _filteredBuf.Create(L"FilteredlOut",
             (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
+        _weightBuf.Destroy();
+        _weightBuf.Create(L"WeightOut",
+            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R8_UNORM);
         _viewport.Width = static_cast<float>(reso.x);
         _viewport.Height = static_cast<float>(reso.y);
         _viewport.MaxDepth = 1.0;
@@ -192,9 +199,8 @@ void
 SeperableFilter::OnRender(
     GraphicsContext& gfxCtx, ColorBuffer* pInputTex)
 {
-    if (!_enabled) {
-        return;
-    }
+    static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
+    _weightBuf.GuiShow();
     if (_cbStaled) {
         _UpdateCB(_dataCB.u2Reso, _fRangeVar, _iKernelRadius);
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
@@ -208,10 +214,25 @@ SeperableFilter::OnRender(
         Trans(gfxCtx, _gpuCB, CBV);
         Trans(gfxCtx, _gaussianWeightBuf, psSRV);
         _cbStaled = false;
+        if (!_enabled) {
+            Trans(gfxCtx, _weightBuf, UAV);
+            gfxCtx.FlushResourceBarriers();
+            gfxCtx.ClearUAV(_weightBuf, ClearVal);
+            // [TODO]: The following barrier necessary?
+            Trans(gfxCtx, _weightBuf, UAV);
+        }
+    }
+    if (!_enabled) {
+        return;
     }
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
     Trans(gfxCtx, _intermediateBuf, RTV);
+    Trans(gfxCtx, _weightBuf, UAV);
     BeginTrans(gfxCtx, _filteredBuf, RTV);
+    gfxCtx.FlushResourceBarriers();
+    gfxCtx.ClearUAV(_weightBuf, ClearVal);
+    // [TODO]: The following barrier necessary?
+    Trans(gfxCtx, _weightBuf, UAV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
     gfxCtx.SetRootSignature(_rootSignature);
     gfxCtx.SetPipelineState(_hPassPSO);
@@ -222,13 +243,16 @@ SeperableFilter::OnRender(
     gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(gfxCtx, 1, 0, 1, &pInputTex->GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
+    Bind(gfxCtx, 2, 0, 1, &_weightBuf.GetUAV());
     gfxCtx.Draw(3);
     Trans(gfxCtx, _filteredBuf, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
+    //Trans(gfxCtx, _weightBuf, UAV);
     gfxCtx.SetPipelineState(_vPassPSO);
     gfxCtx.SetRenderTargets(1, &_filteredBuf.GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
+    Bind(gfxCtx, 2, 0, 1, &_weightBuf.GetUAV());
     gfxCtx.Draw(3);
     BeginTrans(gfxCtx, _intermediateBuf, RTV);
 }
@@ -257,6 +281,11 @@ SeperableFilter::GetFilteredTex()
     return _enabled ? &_filteredBuf : nullptr;
 }
 
+ColorBuffer*
+SeperableFilter::GetWeightTex()
+{
+    return &_weightBuf;
+}
 
 void
 SeperableFilter::_UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius)

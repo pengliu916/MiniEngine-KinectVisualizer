@@ -13,6 +13,7 @@ public:
     void OnResize(DirectX::XMUINT2 reso);
     void OnRender(GraphicsContext& gfxContext, ColorBuffer* pInputTex);
     ColorBuffer* GetFilteredTex();
+    ColorBuffer* GetWeightTex();
 
 private:
     void _UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius);
@@ -21,6 +22,7 @@ private:
     CBuffer _dataCB;
     ColorBuffer _intermediateBuf;
     ColorBuffer _filteredBuf;
+    ColorBuffer _weightBuf;
     D3D12_VIEWPORT _viewport = {};
     D3D12_RECT _scisorRact = {};
 };

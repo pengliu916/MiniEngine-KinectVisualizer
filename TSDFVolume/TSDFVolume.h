@@ -42,7 +42,8 @@ public:
         const DirectX::XMMATRIX& mVCamView_T,
         const DirectX::XMMATRIX& mSensor_T);
     void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
-    void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex);
+    void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
+        ColorBuffer* pWeightTex);
     void ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT);
     void RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor);
     void RenderGui();
@@ -67,7 +68,8 @@ private:
     void _CleanFuseBlockVol(ComputeContext& cptCtx);
     void _CleanRenderBlockVol(ComputeContext& cptCtx);
     void _UpdateVolume(ComputeContext& cptCtx,
-        const ManagedBuf::BufInterface& buf, ColorBuffer* pDepthTex);
+        const ManagedBuf::BufInterface& buf,
+        ColorBuffer* pDepthTex, ColorBuffer* pWeightTex);
     void _RenderVolume(GraphicsContext& gfxCtx,
         const ManagedBuf::BufInterface& buf, bool toOutTex = false);
     void _RenderNearFar(GraphicsContext& gfxCtx, bool toSurface = false);

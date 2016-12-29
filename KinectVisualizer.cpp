@@ -164,6 +164,7 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     ColorBuffer* pTSDFDepth_vis = _tsdfVolume.GetDepthTexForVisualize();
     ColorBuffer* pNormal_vis = _normalGenForVisualizedSurface.GetNormalMap();
     ColorBuffer* pFilteredDepth = _bilateralFilter.GetFilteredTex();
+    ColorBuffer* pWeightTex = _bilateralFilter.GetWeightTex();
 
     XMMATRIX mView_T = _camera.View();
     XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
@@ -183,13 +184,11 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     bool newData = _sensorTexGen.OnRender(cmdCtx);
 
     // Bilateral filtering
-    if (pFilteredDepth) {
-        _bilateralFilter.OnRender(gfxCtx, pRawDepth);
-        BeginTrans(cmdCtx, *pFilteredDepth, csSRV);
-    }
+    _bilateralFilter.OnRender(gfxCtx, pRawDepth);
+    //    BeginTrans(cmdCtx, *pFilteredDepth, csSRV);
 
     // TSDF volume updating
-    _tsdfVolume.UpdateVolume(cptCtx, pRawDepth);
+    _tsdfVolume.UpdateVolume(cptCtx, pRawDepth, pWeightTex);
 
     // Defragment active block queue in TSDF
     _tsdfVolume.DefragmentActiveBlockQueue(cptCtx);
