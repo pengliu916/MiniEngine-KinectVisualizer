@@ -185,7 +185,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
 
     // Bilateral filtering
     _bilateralFilter.OnRender(gfxCtx, pRawDepth);
-    //    BeginTrans(cmdCtx, *pFilteredDepth, csSRV);
 
     // TSDF volume updating
     _tsdfVolume.UpdateVolume(cptCtx, pRawDepth, pWeightTex);

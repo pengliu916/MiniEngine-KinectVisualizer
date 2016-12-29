@@ -12,13 +12,15 @@ ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 #define Trans(ctx, res, state) \
 ctx.TransitionResource(res, state)
 
-#define TransFlush(ctx, res, state) \
-ctx.TransitionResource(res, state, true)
-
 #define BeginTrans(ctx, res, state) \
 ctx.BeginResourceTransition(res, state)
 
 namespace {
+enum EdgeRemoval {
+    kKeepEdge = 0,
+    kRemoveEdge = 1,
+    kEdgeOption = 2
+};
 typedef D3D12_RESOURCE_STATES State;
 const State CBV = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 const State UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -26,9 +28,10 @@ const State RTV = D3D12_RESOURCE_STATE_RENDER_TARGET;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
-GraphicsPSO _hPassPSO;
-GraphicsPSO _vPassPSO;
+GraphicsPSO _hPassPSO[kEdgeOption];
+GraphicsPSO _vPassPSO[kEdgeOption];
 RootSignature _rootSignature;
+
 
 std::once_flag _psoCompiled_flag;
 
@@ -36,10 +39,36 @@ StructuredBuffer _gaussianWeightBuf;
 DynAlloc* _gaussianWeightUploadBuf;
 
 int _iKernelRadius = 3;
-float _fRangeVar = 625;
+int _iEdgePixel = 2;
+int _iEdgeThreshold = 100;
+float _fRangeSigma = 25;
 float _fGaussianWeight[64] = {};
 bool _cbStaled = true;
 bool _enabled = false;
+bool _edgeRemoval = true;
+
+inline HRESULT _Compile(LPCWSTR shaderName,
+    const D3D_SHADER_MACRO* macro, ID3DBlob** bolb)
+{
+    UINT compilerFlag = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#if defined(DEBUG) || defined(_DEBUG)
+    compilerFlag = D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_DEBUG;
+#endif
+    int iLen = (int)wcslen(shaderName);
+    char target[8];
+    wchar_t fileName[128];
+    swprintf_s(fileName, 128, L"SeparableFilter_%ls.hlsl", shaderName);
+    switch (shaderName[iLen - 2]) {
+    case 'c': sprintf_s(target, 8, "cs_5_1"); break;
+    case 'p': sprintf_s(target, 8, "ps_5_1"); break;
+    case 'v': sprintf_s(target, 8, "vs_5_1"); break;
+    default:
+        PRINTERROR(L"Shader name: %s is Invalid!", shaderName);
+    }
+    return Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+        fileName).c_str(), macro, D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
+        target, compilerFlag, 0, bolb);
+}
 
 float _GetGWeight(float offset, float sigma)
 {
@@ -78,53 +107,57 @@ void _CreatePSOs()
 
     // Create PSO
     ComPtr<ID3DBlob> quadVS;
-    ComPtr<ID3DBlob> hPassPS;
-    ComPtr<ID3DBlob> vPassPS;
+    ComPtr<ID3DBlob> hPassPS[kEdgeOption];
+    ComPtr<ID3DBlob> vPassPS[kEdgeOption];
 
-    uint32_t compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
-#if defined(DEBUG) || defined(_DEBUG)
-    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
     D3D_SHADER_MACRO macro[] = {
         {"__hlsl", "1"}, // 0
         {"HorizontalPass", "0"}, // 1
+        {"EdgeRemoval", "0"}, // 2
         {nullptr, nullptr}
     };
-    V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        L"SeparableFilter_SingleTriangleQuad_vs.hlsl").c_str(), macro,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "vs_5_1",
-        compileFlags, 0, &quadVS));
+    V(_Compile(L"SingleTriangleQuad_vs", macro, &quadVS));
     macro[1].Definition = "0";
-    V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        L"SeparableFilter_BilateralFilter_ps.hlsl").c_str(), macro,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
-        "ps_5_1", compileFlags, 0, &vPassPS));
+    V(_Compile(L"BilateralFilter_ps", macro, &vPassPS[kKeepEdge]));
     macro[1].Definition = "1";
-    V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        L"SeparableFilter_BilateralFilter_ps.hlsl").c_str(), macro,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
-        "ps_5_1", compileFlags, 0, &hPassPS));
+    V(_Compile(L"BilateralFilter_ps", macro, &hPassPS[kKeepEdge]));
+    macro[2].Definition = "1";
+    V(_Compile(L"BilateralFilter_ps", macro, &hPassPS[kRemoveEdge]));
+    macro[1].Definition = "0";
+    V(_Compile(L"BilateralFilter_ps", macro, &vPassPS[kRemoveEdge]));
 
-    _hPassPSO.SetRootSignature(_rootSignature);
-    _hPassPSO.SetRasterizerState(Graphics::g_RasterizerDefault);
-    _hPassPSO.SetBlendState(Graphics::g_BlendDisable);
-    _hPassPSO.SetDepthStencilState(Graphics::g_DepthStateDisabled);
-    _hPassPSO.SetSampleMask(0xFFFFFFFF);
-    _hPassPSO.SetInputLayout(0, nullptr);
-    _hPassPSO.SetVertexShader(
+    _hPassPSO[kKeepEdge].SetRootSignature(_rootSignature);
+    _hPassPSO[kKeepEdge].SetRasterizerState(Graphics::g_RasterizerDefault);
+    _hPassPSO[kKeepEdge].SetBlendState(Graphics::g_BlendDisable);
+    _hPassPSO[kKeepEdge].SetDepthStencilState(Graphics::g_DepthStateDisabled);
+    _hPassPSO[kKeepEdge].SetSampleMask(0xFFFFFFFF);
+    _hPassPSO[kKeepEdge].SetInputLayout(0, nullptr);
+    _hPassPSO[kKeepEdge].SetVertexShader(
         quadVS->GetBufferPointer(), quadVS->GetBufferSize());
     DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
-    _hPassPSO.SetRenderTargetFormats(
+    _hPassPSO[kKeepEdge].SetRenderTargetFormats(
         1, &format, DXGI_FORMAT_UNKNOWN);
-    _hPassPSO.SetPrimitiveTopologyType(
+    _hPassPSO[kKeepEdge].SetPrimitiveTopologyType(
         D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-    _vPassPSO = _hPassPSO;
-    _vPassPSO.SetPixelShader(
-        vPassPS->GetBufferPointer(), vPassPS->GetBufferSize());
-    _vPassPSO.Finalize();
-    _hPassPSO.SetPixelShader(
-        hPassPS->GetBufferPointer(), hPassPS->GetBufferSize());
-    _hPassPSO.Finalize();
+    _vPassPSO[kKeepEdge] = _hPassPSO[kKeepEdge];
+    _vPassPSO[kRemoveEdge] = _vPassPSO[kKeepEdge];
+    _vPassPSO[kRemoveEdge].SetPixelShader(
+        vPassPS[kRemoveEdge]->GetBufferPointer(),
+        vPassPS[kRemoveEdge]->GetBufferSize());
+    _vPassPSO[kKeepEdge].SetPixelShader(
+        vPassPS[kKeepEdge]->GetBufferPointer(),
+        vPassPS[kKeepEdge]->GetBufferSize());
+    _vPassPSO[kKeepEdge].Finalize();
+    _vPassPSO[kRemoveEdge].Finalize();
+    _hPassPSO[kRemoveEdge] = _hPassPSO[kKeepEdge];
+    _hPassPSO[kKeepEdge].SetPixelShader(
+        hPassPS[kKeepEdge]->GetBufferPointer(),
+        hPassPS[kKeepEdge]->GetBufferSize());
+    _hPassPSO[kRemoveEdge].SetPixelShader(
+        hPassPS[kRemoveEdge]->GetBufferPointer(),
+        hPassPS[kRemoveEdge]->GetBufferSize());
+    _hPassPSO[kKeepEdge].Finalize();
+    _hPassPSO[kRemoveEdge].Finalize();
 }
 
 void _CreateStaticResource(LinearAllocator& uploadHeapAlloc)
@@ -150,8 +183,7 @@ SeperableFilter::OnCreateResoure(LinearAllocator& uploadHeapAlloc)
 {
     HRESULT hr = S_OK;
     std::call_once(_psoCompiled_flag, _CreateStaticResource, uploadHeapAlloc);
-    _gpuCB.Create(L"SeparableFilter_CB", 1, sizeof(CBuffer),
-        (void*)&_dataCB);
+    _gpuCB.Create(L"SeparableFilter_CB", 1, sizeof(CBuffer), (void*)&_dataCB);
     _pUploadCB = new DynAlloc(
         std::move(uploadHeapAlloc.Allocate(sizeof(CBuffer))));
     return hr;
@@ -190,7 +222,8 @@ SeperableFilter::OnResize(DirectX::XMUINT2 reso)
         // We set 50mm as edge threshold, so 50 will be 2*deviation
         // ->deviation = 25;
         // ->variance = 625
-        _UpdateCB(reso, _fRangeVar, _iKernelRadius);
+        _UpdateCB(reso, _fRangeSigma, _iKernelRadius,
+            _iEdgeThreshold, _iEdgePixel);
         _cbStaled = true;
     }
 }
@@ -202,7 +235,8 @@ SeperableFilter::OnRender(
     static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
     _weightBuf.GuiShow();
     if (_cbStaled) {
-        _UpdateCB(_dataCB.u2Reso, _fRangeVar, _iKernelRadius);
+        _UpdateCB(_dataCB.u2Reso, _fRangeSigma,
+            _iKernelRadius, _iEdgeThreshold, _iEdgePixel);
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
@@ -235,7 +269,7 @@ SeperableFilter::OnRender(
     Trans(gfxCtx, _weightBuf, UAV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
     gfxCtx.SetRootSignature(_rootSignature);
-    gfxCtx.SetPipelineState(_hPassPSO);
+    gfxCtx.SetPipelineState(_hPassPSO[_edgeRemoval]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     gfxCtx.SetRenderTargets(1, &_intermediateBuf.GetRTV());
     gfxCtx.SetViewport(_viewport);
@@ -248,7 +282,7 @@ SeperableFilter::OnRender(
     Trans(gfxCtx, _filteredBuf, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
     //Trans(gfxCtx, _weightBuf, UAV);
-    gfxCtx.SetPipelineState(_vPassPSO);
+    gfxCtx.SetPipelineState(_vPassPSO[_edgeRemoval]);
     gfxCtx.SetRenderTargets(1, &_filteredBuf.GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
@@ -267,9 +301,20 @@ SeperableFilter::RenderGui()
     if (Button("RecompileShaders##NormalGenerator")) {
         _CreatePSOs();
     }
-    _cbStaled |= Checkbox("Enable Bilateral Filter", &_enabled);
-    _cbStaled |= SliderInt("Kernel Radius", (int*)&_iKernelRadius, 1, 32);
-    _cbStaled |= DragFloat("Range Var", &_fRangeVar, 1.f, 100, 2500);
+#define M(x) _cbStaled |= x
+    M(Checkbox("Enable BilateralFilter", &_enabled)); SameLine();
+    Checkbox("EdgeRemoval", &_edgeRemoval);
+    if (_enabled) {
+        M(SliderInt("Kernel Radius", (int*)&_iKernelRadius, 1, 32));
+        _iEdgePixel = min(_iEdgePixel, _iKernelRadius);
+        M(SliderFloat("Range Sigma", &_fRangeSigma, 5.f, 50.f));
+        if (_edgeRemoval) {
+            M(SliderInt(
+                "Edge Pixel", &_iEdgePixel, 1, min(10, _iKernelRadius)));
+            M(SliderInt("Edge Threshold", &_iEdgeThreshold, 50, 500, "%.0fmm"));
+        }
+    }
+#undef  M
     if (_cbStaled) {
         _UpdateGaussianWeightBuf(_iKernelRadius);
     }
@@ -288,12 +333,12 @@ SeperableFilter::GetWeightTex()
 }
 
 void
-SeperableFilter::_UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius)
+SeperableFilter::_UpdateCB(uint2 u2Reso, float fRangeSigma, int iKernelRadius,
+    int iEdgeThreshold, int iEdgePixel)
 {
     _dataCB.u2Reso = u2Reso;
-    _dataCB.fRangeVar = fRangeVar;
-    if (_dataCB.iKernelRadius == iKernelRadius) {
-        return;
-    }
+    _dataCB.fRangeVar = fRangeSigma * fRangeSigma;
     _dataCB.iKernelRadius = iKernelRadius;
+    _dataCB.iEdgePixel = iEdgePixel;
+    _dataCB.iEdgeThreshold = iEdgeThreshold;
 }

@@ -22,7 +22,7 @@ RootSignature _rootsig;
 ComputePSO _cptGetNormalPSO;
 std::once_flag _psoCompiled_flag;
 
-float _fDistThreshold = 0.1;
+float _fDistThreshold = 0.1f;
 bool _scbStaled = true;
 void _CreatePSO()
 {

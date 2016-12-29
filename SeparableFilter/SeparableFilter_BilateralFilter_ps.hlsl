@@ -26,10 +26,13 @@ uint main(float2 Tex : TEXCOORD0) : SV_Target
 #else
         uint uSampleDepth = tex_srvInput.Load(i3CurrentUVIdx + int3(0, i, 0));
 #endif // HorizontalPass
-        if (abs(i) <= 2 && abs((int)uSampleDepth - (int)uCenterDepth) > 100) {
+#if EdgeRemoval
+        if (abs(i) <= iEdgePixel &&
+            abs((int)uSampleDepth - (int)uCenterDepth) > iEdgeThreshold) {
             tex_uavWeight[Tex.xy] = 0.f;
             return 0;
         }
+#endif // EdgeRemoval
         float weight = buf_srvGaussianWeight.Load(abs(i));
         float delta = uCenterDepth - uSampleDepth;
         // Multiply by range weight

@@ -98,6 +98,10 @@ inline bool _IsResolutionChanged(const uint3& a, const uint3& b)
 inline HRESULT _Compile(LPCWSTR shaderName,
     const D3D_SHADER_MACRO* macro, ID3DBlob** bolb)
 {
+    UINT compilerFlag = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#if defined(DEBUG) || defined(_DEBUG)
+    compilerFlag = D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_DEBUG;
+#endif
     int iLen = (int)wcslen(shaderName);
     char target[8];
     wchar_t fileName[128];
@@ -111,9 +115,8 @@ inline HRESULT _Compile(LPCWSTR shaderName,
         PRINTERROR(L"Shader name: %s is Invalid!", shaderName);
     }
     return Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        fileName).c_str(), macro,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
-        target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, bolb);
+        fileName).c_str(), macro, D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
+        target, compilerFlag, 0, bolb);
 }
 
 void _CreatePSOs()

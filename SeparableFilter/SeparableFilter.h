@@ -16,7 +16,8 @@ public:
     ColorBuffer* GetWeightTex();
 
 private:
-    void _UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius);
+    void _UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius,
+        int iEdgeThreshold, int iEdgePixel);
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
