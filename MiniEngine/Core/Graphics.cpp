@@ -84,6 +84,8 @@ namespace Graphics
     D3D12_VIEWPORT g_DisplayPlaneViewPort;
     D3D12_RECT g_DisplayPlaneScissorRect;
 
+    SamplerDesc g_SamplerPointClampDesc;
+    SamplerDescriptor g_SamplerPointClamp;
     SamplerDesc g_SamplerLinearClampDesc;
     SamplerDescriptor g_SamplerLinearClamp;
     SamplerDesc g_SamplerLinearWrapDesc;
@@ -335,6 +337,11 @@ namespace Graphics
 
         // Create engine level predefined resource
         // Sampler states
+        g_SamplerPointClampDesc.Filter =
+            D3D12_FILTER_COMPARISON_MIN_MAG_MIP_POINT;
+        g_SamplerPointClampDesc.SetTextureAddressMode(
+            D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+        g_SamplerPointClamp.Create(g_SamplerPointClampDesc);
         g_SamplerLinearClampDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
         g_SamplerLinearClampDesc.SetTextureAddressMode(
             D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
