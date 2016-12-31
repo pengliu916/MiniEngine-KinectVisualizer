@@ -248,15 +248,13 @@ SeperableFilter::OnRender(
         Trans(gfxCtx, _gpuCB, CBV);
         Trans(gfxCtx, _gaussianWeightBuf, psSRV);
         _cbStaled = false;
-        if (!_enabled) {
-            Trans(gfxCtx, _weightBuf, UAV);
-            gfxCtx.FlushResourceBarriers();
-            gfxCtx.ClearUAV(_weightBuf, ClearVal);
-            // [TODO]: The following barrier necessary?
-            Trans(gfxCtx, _weightBuf, UAV);
-        }
     }
     if (!_enabled) {
+        Trans(gfxCtx, _weightBuf, UAV);
+        gfxCtx.FlushResourceBarriers();
+        gfxCtx.ClearUAV(_weightBuf, ClearVal);
+        // [TODO]: The following barrier necessary?
+        Trans(gfxCtx, _weightBuf, UAV);
         return;
     }
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
@@ -298,7 +296,7 @@ SeperableFilter::RenderGui()
     if (!CollapsingHeader("BilateralFilter")) {
         return;
     }
-    if (Button("RecompileShaders##NormalGenerator")) {
+    if (Button("RecompileShaders##SeperableFilter")) {
         _CreatePSOs();
     }
 #define M(x) _cbStaled |= x
