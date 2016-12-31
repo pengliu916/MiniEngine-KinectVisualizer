@@ -11,6 +11,12 @@ ctx.TransitionResource(res, state)
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
 namespace {
+enum OutMode {
+    kNoWeight = 0,
+    kWithWeight = 1,
+    kOutMode = 2,
+};
+
 typedef D3D12_RESOURCE_STATES State;
 const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
@@ -19,39 +25,102 @@ const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 const DXGI_FORMAT _normalMapFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
 
 RootSignature _rootsig;
-ComputePSO _cptGetNormalPSO;
+ComputePSO _cptGetNormalPSO[kOutMode];
 std::once_flag _psoCompiled_flag;
+bool _bOutWeight = true;
 
-float _fDistThreshold = 0.1f;
+float _fAngleThreshold = 0.1f;
 bool _scbStaled = true;
+bool _typedLoadSupported = false;
+
+inline HRESULT _Compile(LPCWSTR shaderName,
+    const D3D_SHADER_MACRO* macro, ID3DBlob** bolb)
+{
+    UINT compilerFlag = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+#if defined(DEBUG) || defined(_DEBUG)
+    compilerFlag = D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_DEBUG;
+#endif
+    int iLen = (int)wcslen(shaderName);
+    char target[8];
+    wchar_t fileName[128];
+    swprintf_s(fileName, 128, L"NormalGenerator_%ls.hlsl", shaderName);
+    switch (shaderName[iLen - 2]) {
+    case 'c': sprintf_s(target, 8, "cs_5_1"); break;
+    case 'p': sprintf_s(target, 8, "ps_5_1"); break;
+    case 'v': sprintf_s(target, 8, "vs_5_1"); break;
+    default:
+        PRINTERROR(L"Shader name: %s is Invalid!", shaderName);
+    }
+    return Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
+        fileName).c_str(), macro, D3D_COMPILE_STANDARD_FILE_INCLUDE, "main",
+        target, compilerFlag, 0, bolb);
+}
+
 void _CreatePSO()
 {
     HRESULT hr;
-    ComPtr<ID3DBlob> getNormalCS;
+    ComPtr<ID3DBlob> getNormalCS[kOutMode];
     D3D_SHADER_MACRO macros[] = {
         {"__hlsl", "1"},
+        {"WEIGHT_OUT", "1"},
+        {"NO_TYPED_LOAD", "1"},
         {nullptr, nullptr}
     };
-    V(Graphics::CompileShaderFromFile(Core::GetAssetFullPath(
-        L"NormalGenerator_GetNormal_cs.hlsl").c_str(), macros,
-        D3D_COMPILE_STANDARD_FILE_INCLUDE, "main", "cs_5_1",
-        D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &getNormalCS));
-    _cptGetNormalPSO.SetRootSignature(_rootsig);
-    _cptGetNormalPSO.SetComputeShader(
-        getNormalCS->GetBufferPointer(), getNormalCS->GetBufferSize());
-    _cptGetNormalPSO.Finalize();
+    if (_typedLoadSupported) {
+        macros[2].Definition = "0";
+    }
+    V(_Compile(L"GetNormal_cs", macros, &getNormalCS[kWithWeight]));
+    macros[1].Definition = "0";
+    V(_Compile(L"GetNormal_cs", macros, &getNormalCS[kNoWeight]));
+
+    _cptGetNormalPSO[kWithWeight].SetRootSignature(_rootsig);
+    _cptGetNormalPSO[kWithWeight].SetComputeShader(
+        getNormalCS[kWithWeight]->GetBufferPointer(),
+        getNormalCS[kWithWeight]->GetBufferSize());
+    _cptGetNormalPSO[kWithWeight].Finalize();
+    _cptGetNormalPSO[kNoWeight].SetRootSignature(_rootsig);
+    _cptGetNormalPSO[kNoWeight].SetComputeShader(
+        getNormalCS[kNoWeight]->GetBufferPointer(),
+        getNormalCS[kNoWeight]->GetBufferSize());
+    _cptGetNormalPSO[kNoWeight].Finalize();
 }
 
 void _CreateStaticResource()
 {
+    HRESULT hr;
+    // Feature support checking
+    D3D12_FEATURE_DATA_D3D12_OPTIONS FeatureData = {};
+    V(Graphics::g_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS,
+        &FeatureData, sizeof(FeatureData)));
+    if (SUCCEEDED(hr)) {
+        if (FeatureData.TypedUAVLoadAdditionalFormats) {
+            D3D12_FEATURE_DATA_FORMAT_SUPPORT FormatSupport =
+            {DXGI_FORMAT_R8_SNORM, D3D12_FORMAT_SUPPORT1_NONE,
+                D3D12_FORMAT_SUPPORT2_NONE};
+            V(Graphics::g_device->CheckFeatureSupport(
+                D3D12_FEATURE_FORMAT_SUPPORT, &FormatSupport,
+                sizeof(FormatSupport)));
+            if (FAILED(hr)) {
+                PRINTERROR("Checking Feature Support Failed");
+            }
+            if ((FormatSupport.Support2 &
+                D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) != 0) {
+                _typedLoadSupported = true;
+                PRINTINFO("Typed load is supported");
+            } else {
+                PRINTWARN("Typed load is not supported");
+            }
+        } else {
+            PRINTWARN("TypedLoad AdditionalFormats load is not supported");
+        }
+    }
     // Create RootSignature
-    _rootsig.Reset(3, 1);
-    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
+    _rootsig.Reset(3);
     _rootsig[0].InitAsConstantBuffer(0);
     _rootsig[1].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1);
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 2);
     _rootsig[2].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1);
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 2);
     _rootsig.Finalize(L"NormalGenerator",
         D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -67,7 +136,7 @@ NormalGenerator::NormalGenerator(uint2 reso, const std::wstring& name)
     : _name(name)
 {
     _dataCB.u2Reso = reso;
-    _dataCB.fDistThreshold = _fDistThreshold;
+    _dataCB.fAngleThreshold = _fAngleThreshold;
 }
 
 NormalGenerator::~NormalGenerator()
@@ -104,11 +173,11 @@ NormalGenerator::OnResize(uint2 reso)
 }
 
 void
-NormalGenerator::OnProcessing(
-    ComputeContext& cptCtx, ColorBuffer* pInputTex)
+NormalGenerator::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex,
+    ColorBuffer* pWeightTex)
 {
     if (_cbStaled || _scbStaled) {
-        _dataCB.fDistThreshold = _fDistThreshold;
+        _dataCB.fAngleThreshold = _fAngleThreshold;
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         cptCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
@@ -117,7 +186,20 @@ NormalGenerator::OnProcessing(
     Trans(cptCtx, *pInputTex, csSRV);
     GPU_PROFILE(cptCtx, _name.c_str());
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.SetPipelineState(_cptGetNormalPSO);
+    if (pWeightTex) {
+        if (_bOutWeight) {
+            Trans(cptCtx, *pWeightTex, UAV);
+            Bind(cptCtx, 1, 1, 1, &pWeightTex->GetUAV());
+            if (!_typedLoadSupported) {
+                Bind(cptCtx, 2, 1, 1, &pWeightTex->GetSRV());
+            }
+            cptCtx.SetPipelineState(_cptGetNormalPSO[kWithWeight]);
+        } else {
+            cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
+        }
+    } else {
+        cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
+    }
     cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(cptCtx, 1, 0, 1, &_normalMap.GetUAV());
     Bind(cptCtx, 2, 0, 1, &pInputTex->GetSRV());
@@ -134,7 +216,8 @@ NormalGenerator::RenderGui()
     if (Button("RecompileShaders##NormalGenerator")) {
         _CreatePSO();
     }
-    _scbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
+    Checkbox("Output Weight", &_bOutWeight);
+    _scbStaled = SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.5f);
 }
 
 ColorBuffer*

@@ -10,7 +10,8 @@ public:
     void OnCreateResource(LinearAllocator& uploadHeapAlloc);
     void OnDestory();
     void OnResize(uint2 reso);
-    void OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex);
+    void OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex,
+        ColorBuffer* pWeightTex = nullptr);
 
     ColorBuffer* GetNormalMap();
 

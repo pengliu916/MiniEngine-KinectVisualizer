@@ -19,7 +19,7 @@ typedef uint32_t uint;
 CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
 {
     uint2 u2Reso;
-    float fDistThreshold; // neighbor beyond that threshold is invalid
+    float fAngleThreshold; // neighbor beyond that threshold is invalid
     float fNiu;
 #if __cplusplus
     void * operator new(size_t i) {

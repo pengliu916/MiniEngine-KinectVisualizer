@@ -199,16 +199,16 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     }
     // Request depthmap for ICP
     _tsdfVolume.ExtractSurface(gfxCtx, (TSDFVolume::OutSurf)RT);
-    BeginTrans(gfxCtx, *pTSDFDepth, csSRV);
+    //BeginTrans(gfxCtx, *pTSDFDepth, csSRV);
     if (_visualize) {
         BeginTrans(gfxCtx, *pTSDFDepth_vis, csSRV);
     }
 
-    // Generate normalmap for Kinect depthmap
-    _normalGenForOriginalDepthMap.OnProcessing(
-        cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth);
     // Generate normalmap for TSDF depthmap
     _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
+    // Generate normalmap for Kinect depthmap
+    _normalGenForOriginalDepthMap.OnProcessing(
+        cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth, pWeightTex);
     // Generate normalmap for visualized depthmap
     if (_visualize) {
         _normalGenForVisualizedSurface.OnProcessing(cptCtx, pTSDFDepth_vis);

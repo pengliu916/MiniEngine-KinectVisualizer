@@ -3,7 +3,15 @@
 
 Texture2D<uint> tex_srvDepth : register(t0);
 RWTexture2D<float4> tex_uavNormal : register(u0);
+#if WEIGHT_OUT
+RWTexture2D<float> tex_uavWeight : register(u1);
+#if NO_TYPED_LOAD
+Texture2D<float> tex_srvWeight : register(t1);
+#endif // NO_TYPED_LOAD
+#endif // WEIGHT_OUT
 
+// Compiler falsely emit x4000 if I do early out return
+#pragma warning(disable: 4000)
 float3 GetValidPos(uint2 u2uv)
 {
     float3 f3Pos;
@@ -12,21 +20,47 @@ float3 GetValidPos(uint2 u2uv)
     return f3Pos;
 }
 
+bool ValidSample(uint2 u2uv)
+{
+    if (any(u2uv >= (u2Reso - 1))) {
+        return false;
+    }
+#if WEIGHT_OUT
+#if NO_TYPED_LOAD
+    if (tex_srvWeight[u2uv] < 0.05f || tex_srvWeight[u2uv + 1] < 0.05f) {
+#else
+    if (tex_uavWeight[u2uv] < 0.05f || tex_uavWeight[u2uv + 1] < 0.05f) {
+#endif // NO_TYPED_LOAD
+    return false;
+    }
+#endif // WEIGHT_OUT
+    return true;
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 u3DTid : SV_DispatchThreadID)
 {
-    float4 f4Output = float4(-1.f, -1.f, -1.f, -1.f);
     uint2 u2uv = uint2(u3DTid.xy);
-    if (all(u3DTid.xy < (u2Reso - 1)))
-    {
+    if (ValidSample(u2uv)) {
         float3 f3temp = GetValidPos(u2uv);
-        float3 f3v0 = GetValidPos(u2uv + uint2(1, 0)) - f3temp;
-        float3 f3v1 = GetValidPos(u2uv + uint2(0, 1)) - f3temp;
-        f3temp = normalize(cross(f3v1, f3v0));
-        f4Output = float4(f3temp * 0.5f + 0.5f, 1.f);
+        float3 f3v0 = GetValidPos(u2uv + uint2(1, 1));
+#if WEIGHT_OUT
+        float3 f3View = normalize(f3temp + f3v0);
+#endif // WEIGHT_OUT
+        f3v0 -= f3temp;
+        f3temp = GetValidPos(u2uv + uint2(0, 1));
+        float3 f3v1 = GetValidPos(u2uv + uint2(1, 0)) - f3temp;
+        f3temp = normalize(cross(f3v0, f3v1));
+#if WEIGHT_OUT
+        float fWeight = -dot(f3View, f3temp);
+        tex_uavWeight[u2uv] = fWeight > fAngleThreshold ? fWeight : 0;
+#endif // WEIGHT_OUT
+        tex_uavNormal[u2uv] = float4(f3temp * 0.5f + 0.5f, 1.f);
+        return;
     }
-    tex_uavNormal[u2uv] = f4Output;
+    tex_uavNormal[u2uv] = 0;
 }
+
 //
 //groupshared uint uDepth[9][9];
 //float3 GetPos(uint2 u2uv, uint2 u2)
