@@ -340,11 +340,12 @@ SensorTexGen::OnRender(CommandContext& EngineContext)
             Bind(cptCtx, 2, 3, 1, &_outTex[kColorTex].GetUAV());
             Trans(cptCtx, _outTex[kColorTex], UAV);
         }
-        cptCtx.SetPipelineState(
-            _cptDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
-        cptCtx.Dispatch1D(_outTex[kDepthTex].GetWidth() *
-            _outTex[kDepthTex].GetHeight(), THREAD_PER_GROUP);
-
+        if (_depthMode != kNoDepth) {
+            cptCtx.SetPipelineState(
+                _cptDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
+            cptCtx.Dispatch1D(_outTex[kDepthTex].GetWidth() *
+                _outTex[kDepthTex].GetHeight(), THREAD_PER_GROUP);
+        }
         if (_colorMode != kNoColor) {
             cptCtx.SetPipelineState(_cptColorPSO[_colorMode][_processMode]);
             cptCtx.Dispatch1D(_outTex[kColorTex].GetWidth() *
@@ -373,19 +374,19 @@ SensorTexGen::OnRender(CommandContext& EngineContext)
             Bind(gfxCtx, 1, 2, 1, &_pKinectBuf[kIColor]->GetSRV());
             Trans(gfxCtx, _outTex[kColorTex], RTV);
         }
-
-        gfxCtx.SetRenderTargets(_depthMode + 1, _outTextureRTV);
-        gfxCtx.SetViewports(1, &_depthInfraredViewport);
-        gfxCtx.SetScisors(1, &_depthInfraredScissorRect);
-        gfxCtx.SetPipelineState(
-            _gfxDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
-        gfxCtx.Draw(3);
-
-        gfxCtx.SetRenderTargets(1, &_outTextureRTV[kColorTex]);
-        gfxCtx.SetViewports(1, &_colorViewport);
-        gfxCtx.SetScisors(1, &_colorScissorRect);
+        if (_depthMode != kNoDepth) {
+            gfxCtx.SetRenderTargets(_depthMode + 1, _outTextureRTV);
+            gfxCtx.SetViewports(1, &_depthInfraredViewport);
+            gfxCtx.SetScisors(1, &_depthInfraredScissorRect);
+            gfxCtx.SetPipelineState(
+                _gfxDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
+            gfxCtx.Draw(3);
+        }
         if (_colorMode != kNoColor)
         {
+            gfxCtx.SetRenderTargets(1, &_outTextureRTV[kColorTex]);
+            gfxCtx.SetViewports(1, &_colorViewport);
+            gfxCtx.SetScisors(1, &_colorScissorRect);
             gfxCtx.SetPipelineState(_gfxColorPSO[0][_processMode]);
             gfxCtx.Draw(3);
         }
