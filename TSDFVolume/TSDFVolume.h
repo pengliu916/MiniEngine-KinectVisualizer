@@ -4,11 +4,6 @@
 class TSDFVolume
 {
 public:
-    enum OutSurf {
-        kForProc = 0x1,
-        kForVisu = 0x2
-    };
-
     enum VolumeStruct {
         kVoxel = 0,
         kBlockVol,
@@ -44,12 +39,12 @@ public:
     void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
     void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
         ColorBuffer* pWeightTex);
-    void ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT);
-    void RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor);
+    void ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pTSDFDepthOut,
+        ColorBuffer* pTSDFDepthVisOut = nullptr,
+        DepthBuffer* pTSDFDepthBuf = nullptr);
+    void RenderDebugGrid(GraphicsContext& gfxCtx,
+        ColorBuffer* pColor, DepthBuffer* pDepth);
     void RenderGui();
-
-    ColorBuffer* GetDepthTexForProcessing();
-    ColorBuffer* GetDepthTexForVisualize();
 
 private:
     void _CreateFuseBlockVolAndRelatedBuf(
@@ -83,10 +78,6 @@ private:
     D3D12_RECT _depthSissorRect = {};
     D3D12_VIEWPORT _depthVisViewPort = {};
     D3D12_RECT _depthVisSissorRect = {};
-    // Texture for the output depthmap
-    ColorBuffer _depthMapProc;
-    ColorBuffer _depthMapVisual;
-    DepthBuffer _depthBufVisual;
 
     // Volume settings currently in use
     VolumeStruct _curVolStruct = kVoxel;

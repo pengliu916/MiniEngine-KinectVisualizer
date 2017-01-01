@@ -536,8 +536,6 @@ TSDFVolume::CreateResource(
     _depthSissorRect.right = static_cast<LONG>(depthReso.x);
     _depthSissorRect.bottom = static_cast<LONG>(depthReso.y);
 
-    _depthMapProc.Create(L"ExtracedDepth",
-        depthReso.x, depthReso.y, 1, DXGI_FORMAT_R16_UINT);
     _nearFarForProcess.Create(L"StepInfoTex_Proc", depthReso.x, depthReso.y, 0,
         _stepInfoTexFormat);
 
@@ -555,9 +553,6 @@ TSDFVolume::CreateResource(
 void
 TSDFVolume::Destory()
 {
-    _depthMapVisual.Destroy();
-    _depthBufVisual.Destroy();
-    _depthMapProc.Destroy();
     _debugBuf.Destroy();
     _jobParamBuf.Destroy();
     _indirectParams.Destroy();
@@ -595,12 +590,6 @@ TSDFVolume::ResizeVisualSurface(uint32_t width, uint32_t height)
     _nearFarForVisual.Destroy();
     _nearFarForVisual.Create(L"StepInfoTex_Visual", width, height, 1,
         _stepInfoTexFormat);
-    _depthMapVisual.Destroy();
-    _depthMapVisual.Create(L"ExtractedDepth_Visual", width, height, 1,
-        DXGI_FORMAT_R16_UINT);
-    _depthBufVisual.Destroy();
-    _depthBufVisual.Create(L"ExtractedDepthBuf_Visual", width, height,
-        Graphics::g_SceneDepthBuffer.GetFormat());
 }
 
 void
@@ -675,14 +664,15 @@ TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
 }
 
 void
-TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
+TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
+    ColorBuffer* pVisDepthOut, DepthBuffer* pVisDepthBuf)
 {
-    if (RT & kForProc) Trans(gfxCtx, _depthMapProc, RTV);
-    if (RT & kForVisu) Trans(gfxCtx, _depthMapVisual, RTV);
-    if (RT & kForVisu) Trans(gfxCtx, _depthBufVisual, DSV);
+    if (pDepthOut) Trans(gfxCtx, *pDepthOut, RTV);
+    if (pVisDepthOut) Trans(gfxCtx, *pVisDepthOut, RTV);
+    if (pVisDepthOut && pVisDepthBuf) Trans(gfxCtx, *pVisDepthBuf, DSV);
     if (_useStepInfoTex) {
-        if (RT & kForProc) Trans(gfxCtx, _nearFarForProcess, RTV);
-        if (RT & kForVisu) Trans(gfxCtx, _nearFarForVisual, RTV);
+        if (pDepthOut) Trans(gfxCtx, _nearFarForProcess, RTV);
+        if (pVisDepthOut) Trans(gfxCtx, _nearFarForVisual, RTV);
         gfxCtx.FlushResourceBarriers();
     } else {
         gfxCtx.FlushResourceBarriers();
@@ -693,7 +683,7 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
 
     Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
-    if (RT & kForProc) {
+    if (pDepthOut) {
         gfxCtx.SetViewport(_depthViewPort);
         gfxCtx.SetScisor(_depthSissorRect);
         if (_useStepInfoTex) {
@@ -703,7 +693,7 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
             _RenderNearFar(gfxCtx, true);
         }
     }
-    if (RT & kForVisu) {
+    if (pVisDepthOut) {
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
         if (_useStepInfoTex) {
@@ -714,7 +704,7 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
             _RenderNearFar(gfxCtx);
         }
     }
-    if (RT & kForProc) {
+    if (pDepthOut) {
         if (_useStepInfoTex) {
             BeginTrans(gfxCtx, _nearFarForVisual, psSRV);
             Trans(gfxCtx, _nearFarForProcess, psSRV);
@@ -722,29 +712,33 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
         Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Proc");
-            gfxCtx.ClearColor(_depthMapProc);
+            gfxCtx.ClearColor(*pDepthOut);
             gfxCtx.SetViewport(_depthViewPort);
             gfxCtx.SetScisor(_depthSissorRect);
-            gfxCtx.SetRenderTarget(_depthMapProc.GetRTV());
+            gfxCtx.SetRenderTarget(pDepthOut->GetRTV());
             _RenderVolume(gfxCtx, _curBufInterface, true);
         }
         if (_useStepInfoTex) {
             BeginTrans(gfxCtx, _nearFarForProcess, RTV);
         }
     }
-    if (RT & kForVisu) {
+    if (pVisDepthOut) {
         if (_useStepInfoTex) {
             Trans(gfxCtx, _nearFarForVisual, psSRV);
         }
         Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Visu");
-            gfxCtx.ClearColor(_depthMapVisual);
-            gfxCtx.ClearDepth(_depthBufVisual);
+            gfxCtx.ClearColor(*pVisDepthOut);
+            if (pVisDepthBuf) gfxCtx.ClearDepth(*pVisDepthBuf);
             gfxCtx.SetViewport(_depthVisViewPort);
             gfxCtx.SetScisor(_depthVisSissorRect);
-            gfxCtx.SetRenderTargets(
-                1, &_depthMapVisual.GetRTV(), _depthBufVisual.GetDSV());
+            if (pVisDepthBuf) {
+                gfxCtx.SetRenderTargets(
+                    1, &pVisDepthOut->GetRTV(), pVisDepthBuf->GetDSV());
+            } else {
+                gfxCtx.SetRenderTarget(pVisDepthOut->GetRTV());
+            }
             _RenderVolume(gfxCtx, _curBufInterface);
         }
         if (_useStepInfoTex) {
@@ -755,14 +749,15 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, OutSurf RT)
 }
 
 void
-TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor)
+TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx,
+    ColorBuffer* pColor, DepthBuffer* pDepth)
 {
     if (!_useStepInfoTex || !_stepInfoDebug) {
         return;
     }
 
     Trans(gfxCtx, *pColor, RTV);
-    Trans(gfxCtx, _depthBufVisual, DSV);
+    Trans(gfxCtx, *pDepth, DSV);
     {
         GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
         gfxCtx.SetRootSignature(_rootsig);
@@ -770,7 +765,7 @@ TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx, ColorBuffer* pColor)
         gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
-        gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), _depthBufVisual.GetDSV());
+        gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), pDepth->GetDSV());
 
         _RenderBrickGrid(gfxCtx);
     }
@@ -950,18 +945,6 @@ TSDFVolume::RenderGui()
             _renderBlockVoxelRatio, _TGSize);
         ResetAllResource();
     }
-}
-
-ColorBuffer*
-TSDFVolume::GetDepthTexForProcessing()
-{
-    return &_depthMapProc;
-}
-
-ColorBuffer*
-TSDFVolume::GetDepthTexForVisualize()
-{
-    return &_depthMapVisual;
 }
 
 void
