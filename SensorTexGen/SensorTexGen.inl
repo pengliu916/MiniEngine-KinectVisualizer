@@ -11,7 +11,7 @@
 #define REGISTER(x) :register(x)
 #define STRUCT(x) x
 #else 
-typedef DirectX::XMFLOAT2 float2;
+typedef DirectX::XMUINT2 uint2;
 typedef DirectX::XMFLOAT3 float3;
 typedef DirectX::XMFLOAT4 float4;
 typedef DirectX::XMMATRIX matrix;
@@ -24,8 +24,8 @@ typedef DirectX::XMMATRIX matrix;
 #if __cplusplus || (__hlsl)
 CBUFFER_ALIGN STRUCT(cbuffer) RenderCB REGISTER(b0)
 {
-    float2 f2ColorReso;
-    float2 f2DepthInfraredReso;
+    uint2 u2ColorReso;
+    uint2 u2DepthInfraredReso;
     float4 f4S;
     float fBgDist;
     float3 f3NIU;

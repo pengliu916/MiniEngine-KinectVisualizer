@@ -95,7 +95,8 @@ void _CreatePSOs()
         {"VISUALIZED_DEPTH_TEX", "0"}, // 2
         {"INFRARED_TEX", "0"}, // 3
         {"COLOR_TEX", "0"}, // 4
-        {"FAKEDEPTH", "0"}, // 5
+        {"DEPTH_TEX", "0"}, // 5
+        {"FAKEDDEPTH", "0"}, // 6
         {nullptr, nullptr}
     };
     V(_Compile(L"SingleTriangleQuad_vs", macro, &quadVS));
@@ -104,6 +105,7 @@ void _CreatePSOs()
     for (int i = 0; i < kDataMode; ++i) {
         sprintf_s(tempChar, 8, "%d", i);
         macro[1].Definition = tempChar; // UNDISTORTION
+        macro[5].Definition = "1";
         for (int j = 0; j < kDepthMode; ++j) {
             switch (j) {
             case SensorTexGen::kDepthWithVisualWithInfrared:
@@ -113,13 +115,14 @@ void _CreatePSOs()
             }
             V(_Compile(L"Copy_ps", macro, &copyDepthPS[j][i][0]));
             V(_Compile(L"Copy_cs", macro, &copyDepthCS[j][i][0]));
-            macro[5].Definition = "1";
+            macro[6].Definition = "1";
             V(_Compile(L"Copy_ps", macro, &copyDepthPS[j][i][1]));
             V(_Compile(L"Copy_cs", macro, &copyDepthCS[j][i][1]));
-            macro[5].Definition = "0";
+            macro[6].Definition = "0";
             macro[2].Definition = "0"; // VISUALIZED_DEPTH_TEX
             macro[3].Definition = "0"; // INFRARED_TEX
         }
+        macro[5].Definition = "0";
         macro[4].Definition = "1"; // COLOR_TEX
         V(_Compile(L"Copy_ps", macro, &copyColorPS[0][i]));
         V(_Compile(L"Copy_cs", macro, &copyColorCS[0][i]));
@@ -204,7 +207,7 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
     uint16_t depWidth, depHeight;
     _pKinect2->GetDepthReso(depWidth, depHeight);
 
-    _cbKinect.f2DepthInfraredReso = XMFLOAT2(depWidth, depHeight);
+    _cbKinect.u2DepthInfraredReso = XMUINT2(depWidth, depHeight);
 
     _pFrameAlloc[kIDepth] = new LinearFrameAllocator(
         depWidth * depHeight, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
@@ -229,7 +232,7 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
     uint16_t colWidth, colHeight;
     _pKinect2->GetColorReso(colWidth, colHeight);
 
-    _cbKinect.f2ColorReso = XMFLOAT2(colWidth, colHeight);
+    _cbKinect.u2ColorReso = XMUINT2(colWidth, colHeight);
 
     _pFrameAlloc[kIColor] = new LinearFrameAllocator(
         colWidth * colHeight, sizeof(uint32_t), DXGI_FORMAT_R8G8B8A8_UINT);

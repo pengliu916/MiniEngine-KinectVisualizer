@@ -5,46 +5,47 @@
 struct PSOutput {
 #if COLOR_TEX
     float4 f4ColorOut : SV_Target0;
-#else
+#endif // COLOR_TEX
+#if DEPTH_TEX
     uint uDepthOut : SV_Target0;
+#endif // DEPTH_TEX
 #if VISUALIZED_DEPTH_TEX
     float4 f4DepVisaulOut : SV_Target1;
 #endif // VISUALIZED_DEPTH_TEX
 #if INFRARED_TEX
     float4 f4InfraredOut : SV_Target2;
 #endif // INFRARED_TEX
-#endif // COLOR_TEX
 };
 
 PSOutput main(
     float4 f4Pos : SV_Position, float2 f2UV : TEXCOORD0)
 {
     PSOutput output;
-    uint2 u2Idx = (uint2)(f2UV * F2RESO);
+    uint2 u2Out_xy = (uint2)(f2UV * U2RESO);
+    float4 f4w;
 #if UNDISTORTION
-    float2 f2New_xy = correctDistortion(f2c, f2f, f2p, f4k, u2Idx);
-    uint uId = (uint)f2New_xy.y * F2RESO.x + (uint)f2New_xy.x;
+    float2 f2New_xy = correctDistortion(f2c, f2f, f2p, f4k, u2Out_xy);
+    int2 i2Idx00;
+    f4w = GetBilinearWeights(modf(f2New_xy, i2Idx00));
+    uint uId = (uint)i2Idx00.y * U2RESO.x + (uint)i2Idx00.x;
 #else
-    uint uId = u2Idx.y * F2RESO.x + u2Idx.x;
+    uint uId = u2Out_xy.y * U2RESO.x + u2Out_xy.x;
 #endif // UNDISTORTION
+
 #if COLOR_TEX
-    output.f4ColorOut = ColBuffer[uId] / 255.f;
-#else
-#if VISUALIZED_DEPTH_TEX
-#if FAKEDEPTH
-    output.f4DepVisaulOut = (GetFakedDepth(u2Idx).xxxx % 255) / 255.f;
-#else
-    output.f4DepVisaulOut = (DepBuffer[uId] % 255) / 255.f;
-#endif // FAKEDEPTH
-#endif // VISUALIZED_DEPTH_TEX
-#if INFRARED_TEX
-    output.f4InfraredOut = pow((InfBuffer[uId]) / 65535.f, 0.32f);
-#endif // INFRARED_TEX
-#if FAKEDEPTH
-    output.uDepthOut = GetFakedDepth(u2Idx);
-#else
-    output.uDepthOut = DepBuffer[uId];
-#endif // FAKEDEPTH
+    output.f4ColorOut = GetColor(u2Out_xy, uId, f4w);
 #endif // COLOR_TEX
+
+#if VISUALIZED_DEPTH_TEX
+    output.f4DepVisaulOut = (GetDepth(u2Out_xy, uId, f4w).xxxx % 255) / 255.f;
+#endif // VISUALIZED_DEPTH_TEX
+
+#if INFRARED_TEX
+    output.f4InfraredOut = GetInfrared(u2Out_xy, uId, f4w);
+#endif // INFRARED_TEX
+
+#if DEPTH_TEX
+    output.uDepthOut = GetDepth(u2Out_xy, uId, f4w);
+#endif // DEPTH_TEX
     return output;
 }
