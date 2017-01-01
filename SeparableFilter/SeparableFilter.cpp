@@ -195,7 +195,6 @@ SeperableFilter::OnDestory()
     delete _pUploadCB;
     _gpuCB.Destroy();
     _filteredBuf.Destroy();
-    _weightBuf.Destroy();
     _intermediateBuf.Destroy();
     _gaussianWeightBuf.Destroy();
 }
@@ -210,9 +209,6 @@ SeperableFilter::OnResize(DirectX::XMUINT2 reso)
         _filteredBuf.Destroy();
         _filteredBuf.Create(L"FilteredlOut",
             (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
-        _weightBuf.Destroy();
-        _weightBuf.Create(L"WeightOut",
-            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R8_UNORM);
         _viewport.Width = static_cast<float>(reso.x);
         _viewport.Height = static_cast<float>(reso.y);
         _viewport.MaxDepth = 1.0;
@@ -229,11 +225,9 @@ SeperableFilter::OnResize(DirectX::XMUINT2 reso)
 }
 
 void
-SeperableFilter::OnRender(
-    GraphicsContext& gfxCtx, ColorBuffer* pInputTex)
+SeperableFilter::OnRender(GraphicsContext& gfxCtx, ColorBuffer* pInputTex,
+    ColorBuffer* pWeightTex)
 {
-    static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
-    _weightBuf.GuiShow();
     if (_cbStaled) {
         _UpdateCB(_dataCB.u2Reso, _fRangeSigma,
             _iKernelRadius, _iEdgeThreshold, _iEdgePixel);
@@ -250,21 +244,12 @@ SeperableFilter::OnRender(
         _cbStaled = false;
     }
     if (!_enabled) {
-        Trans(gfxCtx, _weightBuf, UAV);
-        gfxCtx.FlushResourceBarriers();
-        gfxCtx.ClearUAV(_weightBuf, ClearVal);
-        // [TODO]: The following barrier necessary?
-        Trans(gfxCtx, _weightBuf, UAV);
         return;
     }
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
     Trans(gfxCtx, _intermediateBuf, RTV);
-    Trans(gfxCtx, _weightBuf, UAV);
+    Trans(gfxCtx, *pWeightTex, UAV);
     BeginTrans(gfxCtx, _filteredBuf, RTV);
-    gfxCtx.FlushResourceBarriers();
-    gfxCtx.ClearUAV(_weightBuf, ClearVal);
-    // [TODO]: The following barrier necessary?
-    Trans(gfxCtx, _weightBuf, UAV);
     GPU_PROFILE(gfxCtx, L"BilateralFilter");
     gfxCtx.SetRootSignature(_rootSignature);
     gfxCtx.SetPipelineState(_hPassPSO[_edgeRemoval]);
@@ -275,16 +260,16 @@ SeperableFilter::OnRender(
     gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(gfxCtx, 1, 0, 1, &pInputTex->GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
-    Bind(gfxCtx, 2, 0, 1, &_weightBuf.GetUAV());
+    Bind(gfxCtx, 2, 0, 1, &pWeightTex->GetUAV());
     gfxCtx.Draw(3);
     Trans(gfxCtx, _filteredBuf, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
-    //Trans(gfxCtx, _weightBuf, UAV);
+    Trans(gfxCtx, *pWeightTex, UAV);
     gfxCtx.SetPipelineState(_vPassPSO[_edgeRemoval]);
     gfxCtx.SetRenderTargets(1, &_filteredBuf.GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
-    Bind(gfxCtx, 2, 0, 1, &_weightBuf.GetUAV());
+    Bind(gfxCtx, 2, 0, 1, &pWeightTex->GetUAV());
     gfxCtx.Draw(3);
     BeginTrans(gfxCtx, _intermediateBuf, RTV);
 }
@@ -322,12 +307,6 @@ ColorBuffer*
 SeperableFilter::GetFilteredTex()
 {
     return _enabled ? &_filteredBuf : nullptr;
-}
-
-ColorBuffer*
-SeperableFilter::GetWeightTex()
-{
-    return &_weightBuf;
 }
 
 void

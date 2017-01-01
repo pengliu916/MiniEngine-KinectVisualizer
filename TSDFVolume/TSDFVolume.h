@@ -33,8 +33,8 @@ public:
 
     TSDFVolume();
     ~TSDFVolume();
-    void CreateResource(const int2& depthReso, const int2& colorReso,
-        LinearAllocator& uploadHeapAlloc);
+    void CreateResource(
+        const uint2& depthReso, LinearAllocator& uploadHeapAlloc);
     void Destory();
     void ResizeVisualSurface(uint32_t width, uint32_t height);
     void ResetAllResource();

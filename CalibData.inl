@@ -1,8 +1,12 @@
 #if !__hlsl
+typedef DirectX::XMUINT2 uint2;
 typedef DirectX::XMFLOAT2 float2;
 typedef DirectX::XMFLOAT4 float4;
 typedef DirectX::XMMATRIX matrix;
 #endif
+
+#define DEPTH_RESO uint2(512, 424)
+#define COLOR_RESO uint2(1920, 1080)
 
 // Calibration data for Kinect2 (at home) from "Mon May  9 00:06:42 2016"
 #define DEPTH_K float4(8.1123228034613387e-02f, -2.5401647716173742e-01f, \

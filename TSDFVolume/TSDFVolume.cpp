@@ -490,8 +490,8 @@ TSDFVolume::~TSDFVolume()
 }
 
 void
-TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso,
-    LinearAllocator& uploadHeapAlloc)
+TSDFVolume::CreateResource(
+    const uint2& depthReso, LinearAllocator& uploadHeapAlloc)
 {
     ASSERT(Graphics::g_device);
     // Create resource for volume
@@ -522,8 +522,7 @@ TSDFVolume::CreateResource(const int2& depthReso, const int2& colorReso,
 
     std::call_once(_psoCompiled_flag, _CreateResource);
 
-    _cbPerCall.i2ColorReso = colorReso;
-    _cbPerCall.i2DepthReso = depthReso;
+    _cbPerCall.i2DepthReso = int2(depthReso.x, depthReso.y);
 
     _gpuCB.Create(L"TSDFVolume_CB", 1, sizeof(PerCallDataCB),
         (void*)&_cbPerCall);
@@ -665,7 +664,6 @@ TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
     cptCtx.SetRootSignature(_rootsig);
     _UpdateAndBindConstantBuffer(cptCtx);
     BeginTrans(cptCtx, _renderBlockVol, UAV);
-    BeginTrans(cptCtx, *pWeightTex, csSRV);
     Trans(cptCtx, *_curBufInterface.resource[0], UAV);
     Trans(cptCtx, *_curBufInterface.resource[1], UAV);
     _UpdateVolume(cptCtx, _curBufInterface, pDepthTex, pWeightTex);

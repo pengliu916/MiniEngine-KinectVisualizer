@@ -25,6 +25,7 @@ const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 LinearAllocator _uploadHeapAlloc = {kCpuWritable};
+ColorBuffer _weightTex;
 
 DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
 bool _visualize = true;
@@ -46,9 +47,9 @@ struct ImGuiResizeConstrain {
 KinectVisualizer::KinectVisualizer(
     uint32_t width, uint32_t height, std::wstring name)
     : _sensorTexGen(true, true, true),
-    _normalGenForOriginalDepthMap(uint2(512, 424), L"NormalForOriginalDepth"),
-    _normalGenForVisualizedSurface(uint2(512, 424), L"NormalForVisSurface"),
-    _normalGenForTSDFDepthMap(uint2(512, 424), L"NormalForTSDFDepth")
+    _normalGenForOriginalDepthMap(DEPTH_RESO, L"NormalForOriginalDepth"),
+    _normalGenForVisualizedSurface(DEPTH_RESO, L"NormalForVisSurface"),
+    _normalGenForTSDFDepthMap(DEPTH_RESO, L"NormalForTSDFDepth")
 {
     _width = width;
     _height = height;
@@ -80,19 +81,15 @@ KinectVisualizer::OnConfiguration()
 HRESULT
 KinectVisualizer::OnCreateResource()
 {
-    uint16_t colWidth, colHeight, depWidth, depHeight;
+    _weightTex.Create(L"WeightOut", DEPTH_RESO.x, DEPTH_RESO.y, 1,
+        DXGI_FORMAT_R8_UNORM);
     _sensorTexGen.OnCreateResource(_uploadHeapAlloc);
-    _sensorTexGen.GetColorReso(colWidth, colHeight);
-    _sensorTexGen.GetDepthInfrareReso(depWidth, depHeight);
 
     // Create resource for BilateralFilter
     _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
-    _bilateralFilter.OnResize(XMUINT2(depWidth, depHeight));
+    _bilateralFilter.OnResize(DEPTH_RESO);
 
-    int2 depthReso = int2(depWidth, depHeight);
-    int2 colorReso = int2(colWidth, colHeight);
-
-    _tsdfVolume.CreateResource(depthReso, colorReso, _uploadHeapAlloc);
+    _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
 
     _normalGenForOriginalDepthMap.OnCreateResource(_uploadHeapAlloc);
     _normalGenForVisualizedSurface.OnCreateResource(_uploadHeapAlloc);
@@ -164,7 +161,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     ColorBuffer* pTSDFDepth_vis = _tsdfVolume.GetDepthTexForVisualize();
     ColorBuffer* pNormal_vis = _normalGenForVisualizedSurface.GetNormalMap();
     ColorBuffer* pFilteredDepth = _bilateralFilter.GetFilteredTex();
-    ColorBuffer* pWeightTex = _bilateralFilter.GetWeightTex();
 
     XMMATRIX mView_T = _camera.View();
     XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
@@ -175,20 +171,27 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
 
     _tsdfVolume.PreProcessing(mProj_T, mView_T, _depthViewInv_T);
 
-    BeginTrans(cmdCtx, Graphics::g_SceneDepthBuffer, DSV);
 
     GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
     ComputeContext& cptCtx = cmdCtx.GetComputeContext();
+    static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
+    Trans(cptCtx, _weightTex, UAV);
+    cptCtx.FlushResourceBarriers();
+    cptCtx.ClearUAV(_weightTex, ClearVal);
+    BeginTrans(cptCtx, _weightTex, UAV);
+    BeginTrans(cptCtx, Graphics::g_SceneDepthBuffer, DSV);
 
     // Pull new data from Kinect
     bool newData = _sensorTexGen.OnRender(cmdCtx);
 
     // Bilateral filtering
-    _bilateralFilter.OnRender(gfxCtx, pRawDepth);
+    _bilateralFilter.OnRender(gfxCtx, pRawDepth, &_weightTex);
 
+    BeginTrans(cptCtx, _weightTex, csSRV);
     // TSDF volume updating
-    _tsdfVolume.UpdateVolume(cptCtx, pRawDepth, pWeightTex);
+    _tsdfVolume.UpdateVolume(cptCtx, pRawDepth, &_weightTex);
 
+    BeginTrans(cptCtx, _weightTex, UAV);
     // Defragment active block queue in TSDF
     _tsdfVolume.DefragmentActiveBlockQueue(cptCtx);
 
@@ -208,18 +211,20 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
     // Generate normalmap for Kinect depthmap
     _normalGenForOriginalDepthMap.OnProcessing(
-        cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth, pWeightTex);
+        cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth, &_weightTex);
     // Generate normalmap for visualized depthmap
     if (_visualize) {
         _normalGenForVisualizedSurface.OnProcessing(cptCtx, pTSDFDepth_vis);
         _tsdfVolume.RenderDebugGrid(gfxCtx, pNormal_vis);
         Trans(gfxCtx, *pNormal_vis, psSRV);
     }
+    BeginTrans(cptCtx, _weightTex, UAV);
 }
 
 void
 KinectVisualizer::OnDestroy()
 {
+    _weightTex.Destroy();
     _sensorTexGen.OnDestory();
     _normalGenForTSDFDepthMap.OnDestory();
     _normalGenForVisualizedSurface.OnDestory();
