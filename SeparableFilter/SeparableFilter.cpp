@@ -32,7 +32,6 @@ GraphicsPSO _hPassPSO[kEdgeOption];
 GraphicsPSO _vPassPSO[kEdgeOption];
 RootSignature _rootSignature;
 
-
 std::once_flag _psoCompiled_flag;
 
 StructuredBuffer _gaussianWeightBuf;
@@ -44,7 +43,7 @@ int _iEdgeThreshold = 100;
 float _fRangeSigma = 25;
 float _fGaussianWeight[64] = {};
 bool _cbStaled = true;
-bool _enabled = false;
+bool _enabled = true;
 bool _edgeRemoval = true;
 
 inline HRESULT _Compile(LPCWSTR shaderName,
@@ -166,6 +165,7 @@ void _CreateStaticResource(LinearAllocator& uploadHeapAlloc)
     _gaussianWeightUploadBuf = new DynAlloc(
         std::move(uploadHeapAlloc.Allocate(sizeof(_fGaussianWeight))));
     _CreatePSOs();
+    _UpdateGaussianWeightBuf(_iKernelRadius);
 }
 }
 
@@ -194,42 +194,22 @@ SeperableFilter::OnDestory()
 {
     delete _pUploadCB;
     _gpuCB.Destroy();
-    _filteredBuf.Destroy();
     _intermediateBuf.Destroy();
     _gaussianWeightBuf.Destroy();
 }
 
 void
-SeperableFilter::OnResize(DirectX::XMUINT2 reso)
+SeperableFilter::OnRender(GraphicsContext& gfxCtx, const std::wstring procName,
+    ColorBuffer* pInputTex, ColorBuffer* pOutputTex, ColorBuffer* pWeightTex)
 {
-    if (_dataCB.u2Reso.x != reso.x || _dataCB.u2Reso.y != reso.y) {
-        _intermediateBuf.Destroy();
-        _intermediateBuf.Create(L"BilateralTemp",
-            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
-        _filteredBuf.Destroy();
-        _filteredBuf.Create(L"FilteredlOut",
-            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
-        _viewport.Width = static_cast<float>(reso.x);
-        _viewport.Height = static_cast<float>(reso.y);
-        _viewport.MaxDepth = 1.0;
-        _scisorRact.right = static_cast<LONG>(reso.x);
-        _scisorRact.bottom = static_cast<LONG>(reso.y);
-
-        // We set 50mm as edge threshold, so 50 will be 2*deviation
-        // ->deviation = 25;
-        // ->variance = 625
-        _UpdateCB(reso, _fRangeSigma, _iKernelRadius,
-            _iEdgeThreshold, _iEdgePixel);
-        _cbStaled = true;
+    uint2 u2Reso = uint2(pOutputTex->GetWidth(), pOutputTex->GetHeight());
+    ASSERT(pInputTex->GetWidth() == u2Reso.x);
+    ASSERT(pInputTex->GetHeight() == u2Reso.y);
+    if (u2Reso.x != _dataCB.u2Reso.x || u2Reso.y != _dataCB.u2Reso.y) {
+        _Resize(u2Reso);
     }
-}
-
-void
-SeperableFilter::OnRender(GraphicsContext& gfxCtx, ColorBuffer* pInputTex,
-    ColorBuffer* pWeightTex)
-{
     if (_cbStaled) {
-        _UpdateCB(_dataCB.u2Reso, _fRangeSigma,
+        _UpdateCB(u2Reso, _fRangeSigma,
             _iKernelRadius, _iEdgeThreshold, _iEdgePixel);
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
@@ -249,8 +229,7 @@ SeperableFilter::OnRender(GraphicsContext& gfxCtx, ColorBuffer* pInputTex,
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
     Trans(gfxCtx, _intermediateBuf, RTV);
     Trans(gfxCtx, *pWeightTex, UAV);
-    BeginTrans(gfxCtx, _filteredBuf, RTV);
-    GPU_PROFILE(gfxCtx, L"BilateralFilter");
+    GPU_PROFILE(gfxCtx, procName.c_str());
     gfxCtx.SetRootSignature(_rootSignature);
     gfxCtx.SetPipelineState(_hPassPSO[_edgeRemoval]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -262,16 +241,22 @@ SeperableFilter::OnRender(GraphicsContext& gfxCtx, ColorBuffer* pInputTex,
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
     Bind(gfxCtx, 2, 0, 1, &pWeightTex->GetUAV());
     gfxCtx.Draw(3);
-    Trans(gfxCtx, _filteredBuf, RTV);
+    Trans(gfxCtx, *pOutputTex, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
     Trans(gfxCtx, *pWeightTex, UAV);
     gfxCtx.SetPipelineState(_vPassPSO[_edgeRemoval]);
-    gfxCtx.SetRenderTargets(1, &_filteredBuf.GetRTV());
+    gfxCtx.SetRenderTargets(1, &pOutputTex->GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
     Bind(gfxCtx, 2, 0, 1, &pWeightTex->GetUAV());
     gfxCtx.Draw(3);
     BeginTrans(gfxCtx, _intermediateBuf, RTV);
+}
+
+bool
+SeperableFilter::IsEnabled()
+{
+    return _enabled;
 }
 
 void
@@ -303,10 +288,26 @@ SeperableFilter::RenderGui()
     }
 }
 
-ColorBuffer*
-SeperableFilter::GetFilteredTex()
+void
+SeperableFilter::_Resize(DirectX::XMUINT2 reso)
 {
-    return _enabled ? &_filteredBuf : nullptr;
+    if (_dataCB.u2Reso.x != reso.x || _dataCB.u2Reso.y != reso.y) {
+        _intermediateBuf.Destroy();
+        _intermediateBuf.Create(L"BilateralTemp",
+            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
+        _viewport.Width = static_cast<float>(reso.x);
+        _viewport.Height = static_cast<float>(reso.y);
+        _viewport.MaxDepth = 1.0;
+        _scisorRact.right = static_cast<LONG>(reso.x);
+        _scisorRact.bottom = static_cast<LONG>(reso.y);
+
+        // We set 50mm as edge threshold, so 50 will be 2*deviation
+        // ->deviation = 25;
+        // ->variance = 625
+        _UpdateCB(reso, _fRangeSigma, _iKernelRadius,
+            _iEdgeThreshold, _iEdgePixel);
+        _cbStaled = true;
+    }
 }
 
 void
