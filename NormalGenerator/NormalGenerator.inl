@@ -8,9 +8,7 @@
 #if __hlsl
 #define REGISTER(x) :register(x)
 #define STRUCT(x) x
-#else 
-typedef DirectX::XMUINT2 uint2;
-typedef uint32_t uint;
+#else
 #define REGISTER(x)
 #define STRUCT(x) struct
 #endif
@@ -18,7 +16,6 @@ typedef uint32_t uint;
 #if __cplusplus || (__hlsl)
 CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
 {
-    uint2 u2Reso;
     float fAngleThreshold; // neighbor beyond that threshold is invalid
     float fNiu;
 #if __cplusplus

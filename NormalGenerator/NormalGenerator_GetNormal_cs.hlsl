@@ -22,9 +22,6 @@ float3 GetValidPos(uint2 u2uv)
 
 bool ValidSample(uint2 u2uv)
 {
-    if (any(u2uv >= (u2Reso - 1))) {
-        return false;
-    }
 #if WEIGHT_OUT
 #if NO_TYPED_LOAD
     if (tex_srvWeight[u2uv] < 0.05f || tex_srvWeight[u2uv + 1] < 0.05f) {

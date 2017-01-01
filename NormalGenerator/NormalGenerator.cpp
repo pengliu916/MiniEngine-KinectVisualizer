@@ -22,8 +22,6 @@ const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
-const DXGI_FORMAT _normalMapFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
-
 RootSignature _rootsig;
 ComputePSO _cptGetNormalPSO[kOutMode];
 std::once_flag _psoCompiled_flag;
@@ -132,10 +130,8 @@ void _CreateStaticResource()
 }
 }
 
-NormalGenerator::NormalGenerator(uint2 reso, const std::wstring& name)
-    : _name(name)
+NormalGenerator::NormalGenerator()
 {
-    _dataCB.u2Reso = reso;
     _dataCB.fAngleThreshold = _fAngleThreshold;
 }
 
@@ -147,8 +143,6 @@ void
 NormalGenerator::OnCreateResource(LinearAllocator& uploadHeapAlloc)
 {
     std::call_once(_psoCompiled_flag, _CreateStaticResource);
-    _normalMap.Create(_name.c_str(),
-        _dataCB.u2Reso.x, _dataCB.u2Reso.y, 1, _normalMapFormat);
     _gpuCB.Create(L"NormalGenerator_CB", 1, sizeof(CBuffer),
         (void*)&_dataCB);
     _pUploadCB = new DynAlloc(
@@ -160,22 +154,16 @@ NormalGenerator::OnDestory()
 {
     delete _pUploadCB;
     _gpuCB.Destroy();
-    _normalMap.Destroy();
 }
 
 void
-NormalGenerator::OnResize(uint2 reso)
+NormalGenerator::OnProcessing(
+    ComputeContext& cptCtx, const std::wstring& procName,
+    ColorBuffer* pInputTex, ColorBuffer* pOutputTex, ColorBuffer* pWeightTex)
 {
-    _cbStaled = true;
-    _dataCB.u2Reso = reso;
-    _normalMap.Destroy();
-    _normalMap.Create(_name.c_str(), reso.x, reso.y, 1, _normalMapFormat);
-}
+    ASSERT(pOutputTex->GetWidth() == pInputTex->GetWidth());
+    ASSERT(pOutputTex->GetHeight() == pInputTex->GetHeight());
 
-void
-NormalGenerator::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex,
-    ColorBuffer* pWeightTex)
-{
     if (_cbStaled || _scbStaled) {
         _dataCB.fAngleThreshold = _fAngleThreshold;
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
@@ -184,7 +172,8 @@ NormalGenerator::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex,
         _cbStaled = false;
     }
     Trans(cptCtx, *pInputTex, csSRV);
-    GPU_PROFILE(cptCtx, _name.c_str());
+    Trans(cptCtx, *pOutputTex, UAV);
+    GPU_PROFILE(cptCtx, procName.c_str());
     cptCtx.SetRootSignature(_rootsig);
     if (pWeightTex) {
         if (_bOutWeight) {
@@ -201,9 +190,9 @@ NormalGenerator::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pInputTex,
         cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
     }
     cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
-    Bind(cptCtx, 1, 0, 1, &_normalMap.GetUAV());
+    Bind(cptCtx, 1, 0, 1, &pOutputTex->GetUAV());
     Bind(cptCtx, 2, 0, 1, &pInputTex->GetSRV());
-    cptCtx.Dispatch2D(_dataCB.u2Reso.x, _dataCB.u2Reso.y);
+    cptCtx.Dispatch2D(pOutputTex->GetWidth(), pOutputTex->GetHeight());
 }
 
 void
@@ -218,10 +207,4 @@ NormalGenerator::RenderGui()
     }
     Checkbox("Output Weight", &_bOutWeight);
     _scbStaled = SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.5f);
-}
-
-ColorBuffer*
-NormalGenerator::GetNormalMap()
-{
-    return &_normalMap;
 }

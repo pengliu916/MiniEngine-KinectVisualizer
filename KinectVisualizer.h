@@ -9,7 +9,7 @@
 class KinectVisualizer :public Core::IDX12Framework
 {
 public:
-    KinectVisualizer(uint32_t width, uint32_t height, std::wstring name);
+    KinectVisualizer(uint32_t width, uint32_t height);
     ~KinectVisualizer();
 
     virtual void OnConfiguration();
@@ -25,9 +25,7 @@ private:
     TSDFVolume _tsdfVolume;
     SeperableFilter _bilateralFilter;
     SensorTexGen _sensorTexGen;
-    NormalGenerator _normalGenForOriginalDepthMap;
-    NormalGenerator _normalGenForVisualizedSurface;
-    NormalGenerator _normalGenForTSDFDepthMap;
+    NormalGenerator _normalGen;
 
     uint16_t _width;
     uint16_t _height;

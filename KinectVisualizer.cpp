@@ -26,6 +26,9 @@ const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 LinearAllocator _uploadHeapAlloc = {kCpuWritable};
 ColorBuffer _weightTex;
+ColorBuffer _normalTex_rawDepth;
+ColorBuffer _normalTex_TSDFDepth;
+ColorBuffer _normalTex_visualize;
 
 DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
 bool _visualize = true;
@@ -44,12 +47,8 @@ struct ImGuiResizeConstrain {
 };
 }
 
-KinectVisualizer::KinectVisualizer(
-    uint32_t width, uint32_t height, std::wstring name)
-    : _sensorTexGen(true, true, true),
-    _normalGenForOriginalDepthMap(DEPTH_RESO, L"NormalForOriginalDepth"),
-    _normalGenForVisualizedSurface(DEPTH_RESO, L"NormalForVisSurface"),
-    _normalGenForTSDFDepthMap(DEPTH_RESO, L"NormalForTSDFDepth")
+KinectVisualizer::KinectVisualizer(uint32_t width, uint32_t height)
+    : _sensorTexGen(true, true, true)
 {
     _width = width;
     _height = height;
@@ -81,8 +80,13 @@ KinectVisualizer::OnConfiguration()
 HRESULT
 KinectVisualizer::OnCreateResource()
 {
-    _weightTex.Create(L"WeightOut", DEPTH_RESO.x, DEPTH_RESO.y, 1,
-        DXGI_FORMAT_R8_UNORM);
+    _weightTex.Create(L"WeightOut",
+        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R8_UNORM);
+    _normalTex_rawDepth.Create(L"RawNorm",
+        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R10G10B10A2_UNORM);
+    _normalTex_TSDFDepth.Create(L"TSDFNor",
+        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R10G10B10A2_UNORM);
+
     _sensorTexGen.OnCreateResource(_uploadHeapAlloc);
 
     // Create resource for BilateralFilter
@@ -91,9 +95,7 @@ KinectVisualizer::OnCreateResource()
 
     _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
 
-    _normalGenForOriginalDepthMap.OnCreateResource(_uploadHeapAlloc);
-    _normalGenForVisualizedSurface.OnCreateResource(_uploadHeapAlloc);
-    _normalGenForTSDFDepthMap.OnCreateResource(_uploadHeapAlloc);
+    _normalGen.OnCreateResource(_uploadHeapAlloc);
 
     OnSizeChanged();
 
@@ -133,7 +135,7 @@ KinectVisualizer::OnUpdate()
             _ResizeVisWin();
         }
         ImTextureID tex_id =
-            (void*)&_normalGenForVisualizedSurface.GetNormalMap()->GetSRV();
+            (void*)&_normalTex_visualize.GetSRV();
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         ImGui::InvisibleButton("canvas", _visWinSize);
         ImVec2 bbmin = _visWinPos;
@@ -148,8 +150,8 @@ KinectVisualizer::OnUpdate()
     }
     ImGui::End();
 
-    _normalGenForOriginalDepthMap.GetNormalMap()->GuiShow();
-    _normalGenForTSDFDepthMap.GetNormalMap()->GuiShow();
+    _normalTex_rawDepth.GuiShow();
+    _normalTex_TSDFDepth.GuiShow();
 }
 
 void
@@ -159,7 +161,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     ColorBuffer* pRawColor = _sensorTexGen.GetOutTex(SensorTexGen::kColorTex);
     ColorBuffer* pTSDFDepth = _tsdfVolume.GetDepthTexForProcessing();
     ColorBuffer* pTSDFDepth_vis = _tsdfVolume.GetDepthTexForVisualize();
-    ColorBuffer* pNormal_vis = _normalGenForVisualizedSurface.GetNormalMap();
     ColorBuffer* pFilteredDepth = _bilateralFilter.GetFilteredTex();
 
     XMMATRIX mView_T = _camera.View();
@@ -208,15 +209,18 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     }
 
     // Generate normalmap for TSDF depthmap
-    _normalGenForTSDFDepthMap.OnProcessing(cptCtx, pTSDFDepth);
+    _normalGen.OnProcessing(cptCtx, L"Norm_TSDF",
+        pTSDFDepth, &_normalTex_TSDFDepth);
     // Generate normalmap for Kinect depthmap
-    _normalGenForOriginalDepthMap.OnProcessing(
-        cptCtx, pFilteredDepth ? pFilteredDepth : pRawDepth, &_weightTex);
+    _normalGen.OnProcessing(cptCtx, L"Norm_Raw",
+        pFilteredDepth ? pFilteredDepth : pRawDepth,
+        &_normalTex_rawDepth, &_weightTex);
     // Generate normalmap for visualized depthmap
     if (_visualize) {
-        _normalGenForVisualizedSurface.OnProcessing(cptCtx, pTSDFDepth_vis);
-        _tsdfVolume.RenderDebugGrid(gfxCtx, pNormal_vis);
-        Trans(gfxCtx, *pNormal_vis, psSRV);
+        _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
+            pTSDFDepth_vis, &_normalTex_visualize);
+        _tsdfVolume.RenderDebugGrid(gfxCtx, &_normalTex_visualize);
+        Trans(gfxCtx, _normalTex_visualize, psSRV);
     }
     BeginTrans(cptCtx, _weightTex, UAV);
 }
@@ -225,10 +229,11 @@ void
 KinectVisualizer::OnDestroy()
 {
     _weightTex.Destroy();
+    _normalTex_rawDepth.Destroy();
+    _normalTex_TSDFDepth.Destroy();
+    _normalTex_visualize.Destroy();
     _sensorTexGen.OnDestory();
-    _normalGenForTSDFDepthMap.OnDestory();
-    _normalGenForVisualizedSurface.OnDestory();
-    _normalGenForOriginalDepthMap.OnDestory();
+    _normalGen.OnDestory();
     _tsdfVolume.Destory();
     _bilateralFilter.OnDestory();
 }
@@ -275,5 +280,8 @@ KinectVisualizer::_ResizeVisWin()
     uint32_t width = static_cast<uint32_t>(_visWinSize.x);
     uint32_t height = static_cast<uint32_t>(_visWinSize.y);
     _tsdfVolume.ResizeVisualSurface(width, height);
-    _normalGenForVisualizedSurface.OnResize(uint2(width, height));
+
+    _normalTex_visualize.Destroy();
+    _normalTex_visualize.Create(L"VisNorm",
+        width, height, 1, DXGI_FORMAT_R10G10B10A2_UNORM);
 }
