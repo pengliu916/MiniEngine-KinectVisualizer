@@ -143,6 +143,12 @@ Trace(const wchar_t* strFile, DWORD dwLine, HRESULT hr, const wchar_t* strMsg)
 #undef ASSERT
 #endif
 
+#ifdef CASSERT
+#undef CASSERT
+#endif
+
+#define CASSERT(expr) static_assert(expr, #expr)
+
 #if defined(RELEASE)
 #define ASSERT(isTrue) (void)(isTrue)
 #else
