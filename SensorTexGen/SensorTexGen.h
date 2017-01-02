@@ -36,19 +36,15 @@ public:
     void OnCreateResource(LinearAllocator& uploadHeapAlloc);
     void OnDestory();
     // return true if get new data, false otherwise
-    bool OnRender(CommandContext& EngineContext);
+    bool OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
+        ColorBuffer* pColorOut = nullptr, ColorBuffer* pInfraredOut = nullptr,
+        ColorBuffer* pDepthVisOut = nullptr);
     void RenderGui();
-    void GetDepthInfrareReso(uint16_t& width, uint16_t& height) const;
-    void GetColorReso(uint16_t& width, uint16_t& height) const;
-    ColorBuffer* GetOutTex(TargetTexture target);
 
 private:
     ColorMode _colorMode = kColor, _preColorMode;
     DepthMode _depthMode = kDepthWithVisualWithInfrared, _preDepthMode;
     ProcessMode _processMode = kUndistorted;
-
-    ColorBuffer _outTex[kNumTargetTex];
-    D3D12_CPU_DESCRIPTOR_HANDLE _outTextureRTV[kNumTargetTex];
 
     IRGBDStreamer* _pKinect2 = nullptr;
     LinearFrameAllocator* _pFrameAlloc[IRGBDStreamer::kNumBufferTypes] = {};

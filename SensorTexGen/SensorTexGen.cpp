@@ -38,9 +38,6 @@ bool _fakeDepthMap = false;
 bool _animateFakedDepth = false;
 bool _cbStaled = true;
 
-std::string _texNames[SensorTexGen::kNumTargetTex] =
-{"Depth Raw","Depth Visualized","Infrared Gamma","Color Raw"};
-
 RootSignature _rootSignature;
 // last index indicate whether use faked depthmap
 GraphicsPSO _gfxDepthPSO[kDepthMode][kDataMode][2];
@@ -204,52 +201,34 @@ void
 SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
 {
     HRESULT hr = S_OK;
-    uint16_t depWidth, depHeight;
-    _pKinect2->GetDepthReso(depWidth, depHeight);
-
-    _cbKinect.u2DepthInfraredReso = XMUINT2(depWidth, depHeight);
+    _cbKinect.u2DepthInfraredReso = DEPTH_RESO;
 
     _pFrameAlloc[kIDepth] = new LinearFrameAllocator(
-        depWidth * depHeight, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
-    _outTex[kDepthVisualTex].Create(L"Depth Visual Tex",
-        depWidth, depHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT);
-    _outTex[kDepthTex].Create(L"Depth Raw Tex",
-        depWidth, depHeight, 1, DXGI_FORMAT_R16_UINT);
-
+        DEPTH_RESO.x * DEPTH_RESO.y, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
     _pFrameAlloc[kIInfrared] = new LinearFrameAllocator(
-        depWidth * depHeight, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
-    _outTex[kInfraredTex].Create(L"Infrared Tex",
-        depWidth, depHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT);
+        DEPTH_RESO.x * DEPTH_RESO.y, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
 
     _depthInfraredViewport = {};
-    _depthInfraredViewport.Width = depWidth;
-    _depthInfraredViewport.Height = depHeight;
+    _depthInfraredViewport.Width = DEPTH_RESO.x;
+    _depthInfraredViewport.Height = DEPTH_RESO.y;
     _depthInfraredViewport.MaxDepth = 1.0f;
     _depthInfraredScissorRect = {};
-    _depthInfraredScissorRect.right = depWidth;
-    _depthInfraredScissorRect.bottom = depHeight;
+    _depthInfraredScissorRect.right = DEPTH_RESO.x;
+    _depthInfraredScissorRect.bottom = DEPTH_RESO.y;
 
-    uint16_t colWidth, colHeight;
-    _pKinect2->GetColorReso(colWidth, colHeight);
-
-    _cbKinect.u2ColorReso = XMUINT2(colWidth, colHeight);
+    _cbKinect.u2ColorReso = COLOR_RESO;
 
     _pFrameAlloc[kIColor] = new LinearFrameAllocator(
-        colWidth * colHeight, sizeof(uint32_t), DXGI_FORMAT_R8G8B8A8_UINT);
-    _outTex[kColorTex].Create(L"Color Tex",
-        colWidth, colHeight, 1, DXGI_FORMAT_R11G11B10_FLOAT);
-
-    for (uint16_t i = 0; i < kNumTargetTex; ++i) {
-        _outTextureRTV[i] = _outTex[i].GetRTV();
-    }
+        COLOR_RESO.x * COLOR_RESO.y, sizeof(uint32_t),
+        DXGI_FORMAT_R8G8B8A8_UINT);
 
     _colorViewport = {};
-    _colorViewport.Width = colWidth;
-    _colorViewport.Height = colHeight;
+    _colorViewport.Width = COLOR_RESO.x;
+    _colorViewport.Height = COLOR_RESO.y;
     _colorViewport.MaxDepth = 1.0f;
     _colorScissorRect = {};
-    _colorScissorRect.right = colWidth;
-    _colorScissorRect.bottom = colHeight;
+    _colorScissorRect.right = COLOR_RESO.x;
+    _colorScissorRect.bottom = COLOR_RESO.y;
 
     // Create rootsignature
     _rootSignature.Reset(3);
@@ -280,9 +259,6 @@ SensorTexGen::OnDestory()
             _pFrameAlloc[i] = nullptr;
         }
     }
-    for (int i = 0; i < kNumTargetTex; ++i) {
-        _outTex[i].Destroy();
-    }
     if (_pKinect2) {
         delete _pKinect2;
         _pKinect2 = nullptr;
@@ -292,7 +268,9 @@ SensorTexGen::OnDestory()
 }
 
 bool
-SensorTexGen::OnRender(CommandContext& EngineContext)
+SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
+    ColorBuffer* pColorOut, ColorBuffer* pInfraredOut,
+    ColorBuffer* pDepthVisOut)
 {
     static float fAnimTime = 0;
     if (_animateFakedDepth) {
@@ -308,7 +286,7 @@ SensorTexGen::OnRender(CommandContext& EngineContext)
     }
     if (_cbStaled) {
         memcpy(_pUploadCB->DataPtr, &_cbKinect, sizeof(RenderCB));
-        EngineContext.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
+        cmdCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(RenderCB));
         _cbStaled = false;
     }
@@ -318,76 +296,82 @@ SensorTexGen::OnRender(CommandContext& EngineContext)
     bool needUpdate = _PrepareAndFillinKinectBuffers() || _perFrameUpdate;
     // Render to screen
     if (_useCS && needUpdate) {
-        ComputeContext& cptCtx = EngineContext.GetComputeContext();
+        ComputeContext& cptCtx = cmdCtx.GetComputeContext();
         GPU_PROFILE(cptCtx, L"Read&Present RGBD");
 
         cptCtx.SetRootSignature(_rootSignature);
         cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
 
-        if (_depthMode != kNoDepth) {
+        if (_depthMode != kNoDepth && pDepthOut) {
             Bind(cptCtx, 1, 0, 1, &_pKinectBuf[kIDepth]->GetSRV());
-            Bind(cptCtx, 2, 0, 1, &_outTex[kDepthTex].GetUAV());
-            Trans(cptCtx, _outTex[kDepthTex], UAV);
-            if (_depthMode != kDepth) {
-                Bind(cptCtx, 2, 1, 1, &_outTex[kDepthVisualTex].GetUAV());
-                Trans(cptCtx, _outTex[kDepthVisualTex], UAV);
+            Bind(cptCtx, 2, 0, 1, &pDepthOut->GetUAV());
+            Trans(cptCtx, *pDepthOut, UAV);
+            if (_depthMode != kDepth && pDepthVisOut) {
+                Bind(cptCtx, 2, 1, 1, &pDepthVisOut->GetUAV());
+                Trans(cptCtx, *pDepthVisOut, UAV);
             }
         }
-        if (_depthMode == kDepthWithVisualWithInfrared) {
+        if (_depthMode == kDepthWithVisualWithInfrared && pInfraredOut) {
             Bind(cptCtx, 1, 1, 1, &_pKinectBuf[kIInfrared]->GetSRV());
-            Bind(cptCtx, 2, 2, 1, &_outTex[kInfraredTex].GetUAV());
-            Trans(cptCtx, _outTex[kInfraredTex], UAV);
+            Bind(cptCtx, 2, 2, 1, &pInfraredOut->GetUAV());
+            Trans(cptCtx, *pInfraredOut, UAV);
         }
-        if (_colorMode == kColor) {
+        if (_colorMode == kColor && pColorOut) {
             Bind(cptCtx, 1, 2, 1, &_pKinectBuf[kIColor]->GetSRV());
-            Bind(cptCtx, 2, 3, 1, &_outTex[kColorTex].GetUAV());
-            Trans(cptCtx, _outTex[kColorTex], UAV);
+            Bind(cptCtx, 2, 3, 1, &pColorOut->GetUAV());
+            Trans(cptCtx, *pColorOut, UAV);
         }
-        if (_depthMode != kNoDepth) {
+        if (_depthMode != kNoDepth &&
+            (pDepthOut || pDepthVisOut || pInfraredOut)) {
             cptCtx.SetPipelineState(
                 _cptDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
-            cptCtx.Dispatch1D(_outTex[kDepthTex].GetWidth() *
-                _outTex[kDepthTex].GetHeight(), THREAD_PER_GROUP);
+            cptCtx.Dispatch1D(pDepthOut->GetWidth() *
+                pDepthOut->GetHeight(), THREAD_PER_GROUP);
         }
-        if (_colorMode != kNoColor) {
+        if (_colorMode != kNoColor && pColorOut) {
             cptCtx.SetPipelineState(_cptColorPSO[_colorMode][_processMode]);
-            cptCtx.Dispatch1D(_outTex[kColorTex].GetWidth() *
-                _outTex[kColorTex].GetHeight(), THREAD_PER_GROUP);
+            cptCtx.Dispatch1D(pColorOut->GetWidth() *
+                pColorOut->GetHeight(), THREAD_PER_GROUP);
         }
     } else if (needUpdate) {
-        GraphicsContext& gfxCtx = EngineContext.GetGraphicsContext();
+        GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
         GPU_PROFILE(gfxCtx, L"Read&Present RGBD");
 
         gfxCtx.SetRootSignature(_rootSignature);
         gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
 
-        if (_depthMode != kNoDepth) {
+        if (_depthMode != kNoDepth && pDepthOut) {
             Bind(gfxCtx, 1, 0, 1, &_pKinectBuf[kIDepth]->GetSRV());
-            Trans(gfxCtx, _outTex[kDepthTex], RTV);
-            if (_depthMode != kDepth) {
-                Trans(gfxCtx, _outTex[kDepthVisualTex], RTV);
+            Trans(gfxCtx, *pDepthOut, RTV);
+            if (_depthMode != kDepth && pDepthVisOut) {
+                Trans(gfxCtx, *pDepthVisOut, RTV);
             }
         }
-        if (_depthMode == kDepthWithVisualWithInfrared) {
+        if (_depthMode == kDepthWithVisualWithInfrared && pInfraredOut) {
             Bind(gfxCtx, 1, 1, 1, &_pKinectBuf[kIInfrared]->GetSRV());
-            Trans(gfxCtx, _outTex[kInfraredTex], RTV);
+            Trans(gfxCtx, *pInfraredOut, RTV);
         }
-        if (_colorMode == kColor) {
+        if (_colorMode == kColor && pColorOut) {
             Bind(gfxCtx, 1, 2, 1, &_pKinectBuf[kIColor]->GetSRV());
-            Trans(gfxCtx, _outTex[kColorTex], RTV);
+            Trans(gfxCtx, *pColorOut, RTV);
         }
-        if (_depthMode != kNoDepth) {
-            gfxCtx.SetRenderTargets(_depthMode + 1, _outTextureRTV);
+        if (_depthMode != kNoDepth &&
+            (pDepthOut || pDepthVisOut || pInfraredOut)) {
+            static D3D12_CPU_DESCRIPTOR_HANDLE RTVs[3];
+            RTVs[0] = pDepthOut->GetRTV();
+            RTVs[1] = pDepthVisOut->GetRTV();
+            RTVs[2] = pInfraredOut->GetRTV();
+            gfxCtx.SetRenderTargets(_depthMode + 1, RTVs);
             gfxCtx.SetViewports(1, &_depthInfraredViewport);
             gfxCtx.SetScisors(1, &_depthInfraredScissorRect);
             gfxCtx.SetPipelineState(
                 _gfxDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
             gfxCtx.Draw(3);
         }
-        if (_colorMode != kNoColor)
+        if (_colorMode != kNoColor && pColorOut)
         {
-            gfxCtx.SetRenderTargets(1, &_outTextureRTV[kColorTex]);
+            gfxCtx.SetRenderTarget(pColorOut->GetRTV());
             gfxCtx.SetViewports(1, &_colorViewport);
             gfxCtx.SetScisors(1, &_colorScissorRect);
             gfxCtx.SetPipelineState(_gfxColorPSO[0][_processMode]);
@@ -427,52 +411,11 @@ SensorTexGen::RenderGui()
         Separator();
         RadioButton("No Color", (int*)&_colorMode, -1);
         RadioButton("Color", (int*)&_colorMode, 0);
-
-        Indent();
-        float width = GetContentRegionAvail().x;
-        for (int i = 1; i < kNumTargetTex; ++i) {
-            if (!CollapsingHeader(_texNames[i].c_str())) {
-                continue;
-            }
-            ImTextureID tex_id = (void*)&_outTex[i].GetSRV();
-            uint32_t OrigTexWidth = _outTex[i].GetWidth();
-            uint32_t OrigTexHeight = _outTex[i].GetHeight();
-
-            AlignFirstTextHeightToWidgets();
-            Text("Native Reso:%dx%d", OrigTexWidth, OrigTexHeight);
-            SameLine();
-            Checkbox(("Show " + _texNames[i]).c_str(), &showImage[i]);
-            Image(tex_id, ImVec2(width, width*OrigTexHeight / OrigTexWidth));
-        }
-        Unindent();
-    }
-    for (int i = 1; i < kNumTargetTex; ++i) {
-        if (showImage[i]) _outTex[i].GuiShow();
     }
     if (_depthMode == kNoDepth && _colorMode == kNoColor) {
         _depthMode = kDepth;
     }
 #undef M
-}
-
-void
-SensorTexGen::GetColorReso(uint16_t& width, uint16_t& height) const
-{
-    width = _outTex[kColorTex].GetWidth();
-    height = _outTex[kColorTex].GetHeight();
-}
-
-void
-SensorTexGen::GetDepthInfrareReso(uint16_t& width, uint16_t& height) const
-{
-    width = _outTex[kDepthTex].GetWidth();
-    height = _outTex[kDepthTex].GetHeight();
-}
-
-ColorBuffer*
-SensorTexGen::GetOutTex(TargetTexture target)
-{
-    return &_outTex[target];
 }
 
 void

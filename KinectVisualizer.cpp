@@ -25,6 +25,12 @@ const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 LinearAllocator _uploadHeapAlloc = {kCpuWritable};
+
+ColorBuffer _depthTex_Kinect;
+ColorBuffer _colorTex_Kinect;
+ColorBuffer _infraredTex_Kinect;
+ColorBuffer _visDepTex_Kinect;
+
 ColorBuffer _weightTex;
 ColorBuffer _normalTex_rawDepth;
 ColorBuffer _normalTex_TSDFDepth;
@@ -84,6 +90,15 @@ KinectVisualizer::OnConfiguration()
 HRESULT
 KinectVisualizer::OnCreateResource()
 {
+    _depthTex_Kinect.Create(L"KinectDepth",
+        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R16_UINT);
+    _colorTex_Kinect.Create(L"KinectColor",
+        COLOR_RESO.x, COLOR_RESO.y, 1, DXGI_FORMAT_R11G11B10_FLOAT);
+    _infraredTex_Kinect.Create(L"KinectInfrared",
+        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R11G11B10_FLOAT);
+    _visDepTex_Kinect.Create(L"KinectDepthVis",
+        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R11G11B10_FLOAT);
+
     _weightTex.Create(L"WeightOut",
         DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R8_UNORM);
     _normalTex_rawDepth.Create(L"RawNorm",
@@ -165,9 +180,6 @@ KinectVisualizer::OnUpdate()
 void
 KinectVisualizer::OnRender(CommandContext & cmdCtx)
 {
-    ColorBuffer* pRawDepth = _sensorTexGen.GetOutTex(SensorTexGen::kDepthTex);
-    ColorBuffer* pRawColor = _sensorTexGen.GetOutTex(SensorTexGen::kColorTex);
-
     XMMATRIX mView_T = _camera.View();
     XMMATRIX mViewInv_T = XMMatrixInverse(nullptr, mView_T);
     XMMATRIX mProj_T = _camera.Projection();
@@ -176,7 +188,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     XMStoreFloat4(&viewPos, _camera.Eye());
 
     _tsdfVolume.PreProcessing(mProj_T, mView_T, _depthViewInv_T);
-
 
     GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
     ComputeContext& cptCtx = cmdCtx.GetComputeContext();
@@ -189,18 +200,19 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     BeginTrans(cptCtx, Graphics::g_SceneDepthBuffer, DSV);
 
     // Pull new data from Kinect
-    bool newData = _sensorTexGen.OnRender(cmdCtx);
+    bool newData = _sensorTexGen.OnRender(cmdCtx, &_depthTex_Kinect,
+        &_colorTex_Kinect, &_infraredTex_Kinect, &_visDepTex_Kinect);
 
     // Bilateral filtering
     _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw",
-        pRawDepth, &_depthTex_rawFiltered, &_weightTex);
+        &_depthTex_Kinect, &_depthTex_rawFiltered, &_weightTex);
 
     BeginTrans(cptCtx, _weightTex, csSRV);
     if (_bilateralFilter.IsEnabled()) {
         BeginTrans(cptCtx, _depthTex_rawFiltered, csSRV);
     }
     // TSDF volume updating
-    _tsdfVolume.UpdateVolume(cptCtx, pRawDepth, &_weightTex);
+    _tsdfVolume.UpdateVolume(cptCtx, &_depthTex_Kinect, &_weightTex);
 
     BeginTrans(cptCtx, _weightTex, UAV);
     // Defragment active block queue in TSDF
@@ -218,7 +230,8 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         &_depthTex_TSDF, &_normalTex_TSDFDepth);
     // Generate normalmap for Kinect depthmap
     _normalGen.OnProcessing(cptCtx, L"Norm_Raw",
-        _bilateralFilter.IsEnabled() ? &_depthTex_rawFiltered : pRawDepth,
+        _bilateralFilter.IsEnabled() ? &_depthTex_rawFiltered
+                                     : &_depthTex_Kinect,
         &_normalTex_rawDepth, &_weightTex);
     // Generate normalmap for visualized depthmap
     if (_visualize) {
@@ -234,6 +247,10 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
 void
 KinectVisualizer::OnDestroy()
 {
+    _depthTex_Kinect.Destroy();
+    _colorTex_Kinect.Destroy();
+    _infraredTex_Kinect.Destroy();
+    _visDepTex_Kinect.Destroy();
     _depthBuf_TSDFVis.Destroy();
     _depthTex_TSDFVis.Destroy();
     _depthTex_TSDF.Destroy();
