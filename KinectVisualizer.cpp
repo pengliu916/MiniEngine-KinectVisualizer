@@ -198,6 +198,9 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     BeginTrans(cptCtx, _weightTex, UAV);
     BeginTrans(cptCtx, _depthTex_rawFiltered, RTV);
     BeginTrans(cptCtx, Graphics::g_SceneDepthBuffer, DSV);
+    BeginTrans(cptCtx, _normalTex_TSDFDepth, UAV);
+    BeginTrans(cptCtx, _normalTex_rawDepth, UAV);
+    BeginTrans(cptCtx, _normalTex_visualize, UAV);
 
     // Pull new data from Kinect
     bool newData = _sensorTexGen.OnRender(cmdCtx, &_depthTex_Kinect,
@@ -228,6 +231,7 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     // Generate normalmap for TSDF depthmap
     _normalGen.OnProcessing(cptCtx, L"Norm_TSDF",
         &_depthTex_TSDF, &_normalTex_TSDFDepth);
+    BeginTrans(cptCtx, _depthTex_TSDF, RTV);
     // Generate normalmap for Kinect depthmap
     _normalGen.OnProcessing(cptCtx, L"Norm_Raw",
         _bilateralFilter.IsEnabled() ? &_depthTex_rawFiltered
@@ -240,6 +244,7 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         _tsdfVolume.RenderDebugGrid(
             gfxCtx, &_normalTex_visualize, &_depthBuf_TSDFVis);
         Trans(gfxCtx, _normalTex_visualize, psSRV);
+        BeginTrans(gfxCtx, _depthTex_TSDFVis, RTV);
     }
     BeginTrans(cptCtx, _weightTex, UAV);
 }
