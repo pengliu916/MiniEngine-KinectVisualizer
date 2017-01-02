@@ -114,7 +114,7 @@ public:
         uint32_t Width, uint32_t Height, uint32_t NumMips, DXGI_FORMAT Format,
         D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr =
         D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN);
-    void GuiShow();
+    void GuiShow(bool* opened);
     const D3D12_CPU_DESCRIPTOR_HANDLE& GetSRV() const { return m_SRVHandle; }
     const D3D12_CPU_DESCRIPTOR_HANDLE& GetRTV() const { return m_RTVHandle; }
     const D3D12_CPU_DESCRIPTOR_HANDLE& GetUAV() const { return m_UAVHandle[0]; }
@@ -134,7 +134,6 @@ protected:
     D3D12_CPU_DESCRIPTOR_HANDLE m_RTVHandle;
     D3D12_CPU_DESCRIPTOR_HANDLE m_UAVHandle[12];
     uint32_t m_NumMipMaps;
-    bool m_GuiOpen = true;
     bool m_GuiNativeReso = false;
 };
 

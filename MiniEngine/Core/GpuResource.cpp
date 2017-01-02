@@ -320,34 +320,33 @@ ColorBuffer::Create(const std::wstring& Name, uint32_t Width, uint32_t Height,
 }
 
 void
-ColorBuffer::GuiShow()
+ColorBuffer::GuiShow(bool* opened)
 {
+    using namespace ImGui;
     USES_CONVERSION;
-    if (ImGui::Begin(W2A(m_Name.c_str()), &m_GuiOpen)) {
+    if (Begin(W2A(m_Name.c_str()), opened)) {
         ImTextureID tex_id = (void*)&this->GetSRV();
         uint32_t OrigTexWidth = this->GetWidth();
         uint32_t OrigTexHeight = this->GetHeight();
 
-        ImGuiStyle& style = ImGui::GetStyle();
+        ImGuiStyle& style = GetStyle();
         char temp[64];
         sprintf(temp, "Native Reso:%dx%d", OrigTexWidth, OrigTexHeight);
-        ImGui::Checkbox(temp, &m_GuiNativeReso);
-        float height = ImGui::GetWindowHeight();
-        float AdaptedTexHeight = ImGui::GetContentRegionAvail().y;
+        Checkbox(temp, &m_GuiNativeReso);
+        float height = GetWindowHeight();
+        float AdaptedTexHeight = GetContentRegionAvail().y;
         float AdaptedTexWidth = AdaptedTexHeight *OrigTexWidth / OrigTexHeight;
 
         if (m_GuiNativeReso) {
-            ImGui::Image(
-                tex_id, ImVec2((float)OrigTexWidth, (float)OrigTexHeight));
-            ImGui::SetWindowSize(ImVec2(0, 0));
+            Image(tex_id, ImVec2((float)OrigTexWidth, (float)OrigTexHeight));
+            SetWindowSize(ImVec2(0, 0));
         } else {
-            ImGui::Image(tex_id, ImVec2(AdaptedTexWidth, AdaptedTexHeight));
-            ImGui::SetWindowSize(
-                ImVec2(AdaptedTexWidth + 2.f * style.WindowPadding.x,
+            Image(tex_id, ImVec2(AdaptedTexWidth, AdaptedTexHeight));
+            SetWindowSize(ImVec2(AdaptedTexWidth + 2.f * style.WindowPadding.x,
                     height > 240.f ? height : 240.f));
         }
     }
-    ImGui::End();
+    End();
 }
 
 void

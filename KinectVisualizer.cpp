@@ -171,10 +171,10 @@ KinectVisualizer::OnUpdate()
         _visualize = false;
     }
     ImGui::End();
-
-    _normalTex_rawDepth.GuiShow();
-    _normalTex_TSDFDepth.GuiShow();
-    _weightTex.GuiShow();
+    bool openWindow = true;
+    _normalTex_rawDepth.GuiShow(&openWindow);
+    _normalTex_TSDFDepth.GuiShow(&openWindow);
+    _weightTex.GuiShow(&openWindow);
 }
 
 void
