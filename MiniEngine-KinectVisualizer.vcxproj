@@ -121,6 +121,7 @@
     <ClCompile Include="SensorTexGen\SensorTexGen.cpp" />
     <ClInclude Include="SeparableFilter\SeparableFilter.h" />
     <ClCompile Include="SeparableFilter\SeparableFilter.cpp" />
+    <ClInclude Include="surfbuf_defs.h" />
     <ClInclude Include="TSDFVolume\ManagedBuf.h" />
     <ClCompile Include="TSDFVolume\ManagedBuf.cpp" />
     <ClInclude Include="TSDFVolume\TSDFVolume.h" />

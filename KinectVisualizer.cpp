@@ -26,26 +26,121 @@ const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 LinearAllocator _uploadHeapAlloc = {kCpuWritable};
 
-ColorBuffer _depthTex_Kinect;
-ColorBuffer _colorTex_Kinect;
-ColorBuffer _infraredTex_Kinect;
-ColorBuffer _visDepTex_Kinect;
-
-ColorBuffer _weightTex;
-ColorBuffer _normalTex_rawDepth;
-ColorBuffer _normalTex_TSDFDepth;
-ColorBuffer _normalTex_visualize;
-ColorBuffer _depthTex_rawFiltered;
-ColorBuffer _depthTex_TSDF;
-ColorBuffer _depthTex_TSDFVis;
-DepthBuffer _depthBuf_TSDFVis;
-
 DirectX::XMMATRIX _depthViewInv_T = DirectX::XMMatrixTranslation(0, 0, 3);
 bool _visualize = true;
 bool _windowActive = false;
 
 ImVec2 _visWinPos = ImVec2(0, 0);
 ImVec2 _visWinSize = ImVec2(1024, 768);
+
+enum ViewSize {
+    FIXED_SIZE = 0,
+    VARI_SIZE = 1,
+    COLOR_SIZE = (1 << 1) | FIXED_SIZE,
+    DEPTH_SIZE = (1 << 2) | FIXED_SIZE,
+    VARI_SIZE1 = (1 << 3) | VARI_SIZE,
+};
+
+struct SurfBuffer {
+    ViewSize sizeCode;
+    DXGI_FORMAT colorFormat;
+    DXGI_FORMAT depthFormat;
+    ColorBuffer* colBuf;
+    DepthBuffer* depBuf;
+};
+
+enum SurfBufId : uint8_t {
+#define DEF_SURFBUF(_name, _size, _colformat, _depthformat) _name,
+#include "surfbuf_defs.h"
+#undef DEF_SURFBUF
+    SURFBUF_COUNT
+};
+
+const wchar_t* _bufNames[] = {
+#define DEF_SURFBUF(_name, _size, _colformat, _depthformat) L"SURFBUF_" #_name,
+#include "surfbuf_defs.h"
+#undef DEF_SURFBUF
+};
+CASSERT(ARRAY_COUNT(_bufNames) == SURFBUF_COUNT);
+
+SurfBuffer _surfBufs[] = {
+#define DEF_SURFBUF(_name, _size, _colformat, _depthformat) \
+{_size, _colformat, _depthformat, nullptr, nullptr},
+#include "surfbuf_defs.h"
+#undef DEF_SURFBUF
+};
+CASSERT(ARRAY_COUNT(_surfBufs) == SURFBUF_COUNT);
+
+bool _sufDebugShow[ARRAY_COUNT(_surfBufs)] = {};
+std::vector<std::pair<uint8_t, bool>> _surfDebugShow;
+
+uint2 GetSize(const ViewSize& sizeCode) {
+    switch (sizeCode)
+    {
+    case COLOR_SIZE:
+        return COLOR_RESO;
+    case DEPTH_SIZE:
+        return DEPTH_RESO;
+    case VARI_SIZE1:
+        return uint2((uint32_t)_visWinSize.x, (uint32_t)_visWinSize.y);
+    }
+    return uint2(0, 0);
+}
+
+void CreatBufResource(SurfBufId id) {
+    SurfBuffer& item = _surfBufs[id];
+    uint2 reso = GetSize(_surfBufs[id].sizeCode);
+    item.colBuf->Destroy();
+    item.colBuf->Create(_bufNames[id], reso.x, reso.y, 1, item.colorFormat);
+    if (item.depthFormat != DXGI_FORMAT_UNKNOWN) {
+        item.depBuf->Destroy();
+        wchar_t temp[32];
+        swprintf_s(temp, 32, L"%ls_DEP", _bufNames[id]);
+        item.depBuf->Create(temp, reso.x, reso.y, item.depthFormat);
+    }
+}
+
+void InitialSurfBuffer(SurfBufId id) {
+    _surfBufs[id].colBuf = new ColorBuffer();
+    _surfBufs[id].depBuf = new DepthBuffer();
+    if (_surfBufs[id].colorFormat == DXGI_FORMAT_R11G11B10_FLOAT ||
+        _surfBufs[id].colorFormat == DXGI_FORMAT_R8_UNORM ||
+        _surfBufs[id].colorFormat == DXGI_FORMAT_R10G10B10A2_UNORM) {
+        _surfDebugShow.push_back({id, false});
+    }
+    CreatBufResource(id);
+}
+
+void ResizeSurfBuffer(SurfBufId id) {
+    SurfBuffer& item = _surfBufs[id];
+    if (item.sizeCode & VARI_SIZE) {
+        CreatBufResource(id);
+    }
+}
+
+void DestorySufBuffer(SurfBufId id) {
+    SurfBuffer& item = _surfBufs[id];
+    if (item.colBuf) item.colBuf->Destroy(); item.colBuf = nullptr;
+    if (item.depBuf) item.depBuf->Destroy(); item.depBuf = nullptr;
+}
+
+ColorBuffer* GetColBuf(SurfBufId id) {
+    return _surfBufs[id].colBuf;
+}
+
+DepthBuffer* GetDepBuf(SurfBufId id) {
+    return _surfBufs[id].depBuf;
+}
+
+void ShowDebugWindowMenu() {
+    using namespace ImGui;
+    MenuItem("Viewable Surfaces", NULL, false, false);
+    for (auto& item : _surfDebugShow) {
+        char temp[32];
+        sprintf_s(temp, 32, "%ls", _bufNames[item.first]);
+        if(MenuItem(temp, NULL, item.second)) {item.second = !item.second;}
+    }
+}
 
 struct ImGuiResizeConstrain {
     static void Step(ImGuiSizeConstraintCallbackData* data) {
@@ -90,37 +185,15 @@ KinectVisualizer::OnConfiguration()
 HRESULT
 KinectVisualizer::OnCreateResource()
 {
-    _depthTex_Kinect.Create(L"KinectDepth",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R16_UINT);
-    _colorTex_Kinect.Create(L"KinectColor",
-        COLOR_RESO.x, COLOR_RESO.y, 1, DXGI_FORMAT_R11G11B10_FLOAT);
-    _infraredTex_Kinect.Create(L"KinectInfrared",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R11G11B10_FLOAT);
-    _visDepTex_Kinect.Create(L"KinectDepthVis",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R11G11B10_FLOAT);
-
-    _weightTex.Create(L"WeightOut",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R8_UNORM);
-    _normalTex_rawDepth.Create(L"RawNorm",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R10G10B10A2_UNORM);
-    _normalTex_TSDFDepth.Create(L"TSDFNor",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R10G10B10A2_UNORM);
-    _depthTex_rawFiltered.Create(L"RawFiltered",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R16_UINT);
-    _depthTex_TSDF.Create(L"TSDFDepth",
-        DEPTH_RESO.x, DEPTH_RESO.y, 1, DXGI_FORMAT_R16_UINT);
-
+    for (uint8_t i = 0; i < SURFBUF_COUNT; ++i) {
+        InitialSurfBuffer((SurfBufId)i);
+    }
     _sensorTexGen.OnCreateResource(_uploadHeapAlloc);
-
-    // Create resource for BilateralFilter
     _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
-
     _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
-
     _normalGen.OnCreateResource(_uploadHeapAlloc);
 
     OnSizeChanged();
-
     _ResizeVisWin();
     return S_OK;
 }
@@ -134,22 +207,27 @@ KinectVisualizer::OnSizeChanged()
 void
 KinectVisualizer::OnUpdate()
 {
+    using namespace ImGui;
     _windowActive = false;
     _camera.ProcessInertia();
 
     static bool showPanel = true;
-    if (ImGui::Begin("KinectVisualizer", &showPanel)) {
+    if (Begin("KinectVisualizer", &showPanel)) {
+        if (BeginMenu("Debug textures")) {
+            ShowDebugWindowMenu();
+            ImGui::EndMenu();
+        }
         _sensorTexGen.RenderGui();
         SeperableFilter::RenderGui();
         NormalGenerator::RenderGui();
         _tsdfVolume.RenderGui();
     }
-    ImGui::End();
-    ImGui::SetNextWindowSizeConstraints(ImVec2(640, 480),
+    End();
+    SetNextWindowSizeConstraints(ImVec2(640, 480),
         ImVec2(FLT_MAX, FLT_MAX), ImGuiResizeConstrain::Step, (void*)32);
-    if (ImGui::Begin("Visualize Image")) {
-        _visWinPos = ImGui::GetCursorScreenPos();
-        _visWinSize = ImGui::GetContentRegionAvail();
+    if (Begin("Visualize Image")) {
+        _visWinPos = GetCursorScreenPos();
+        _visWinSize = GetContentRegionAvail();
         _visualize = true;
         if (_visWinSize.x != _width || _visWinSize.y != _height) {
             _width = static_cast<uint16_t>(_visWinSize.x);
@@ -157,24 +235,26 @@ KinectVisualizer::OnUpdate()
             _ResizeVisWin();
         }
         ImTextureID tex_id =
-            (void*)&_normalTex_visualize.GetSRV();
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        ImGui::InvisibleButton("canvas", _visWinSize);
+            (void*)&GetColBuf(VISUAL_NORMAL)->GetSRV();
+        ImDrawList* draw_list = GetWindowDrawList();
+        InvisibleButton("canvas", _visWinSize);
         ImVec2 bbmin = _visWinPos;
         ImVec2 bbmax =
             ImVec2(_visWinPos.x + _visWinSize.x, _visWinPos.y + _visWinSize.y);
         draw_list->AddImage(tex_id, bbmin, bbmax);
-        if (ImGui::IsItemHovered()) {
+        if (IsItemHovered()) {
             _windowActive = true;
         }
     } else {
         _visualize = false;
     }
-    ImGui::End();
-    bool openWindow = true;
-    _normalTex_rawDepth.GuiShow(&openWindow);
-    _normalTex_TSDFDepth.GuiShow(&openWindow);
-    _weightTex.GuiShow(&openWindow);
+    End();
+
+    for (auto& item : _surfDebugShow) {
+        if (item.second) {
+            GetColBuf((SurfBufId)item.first)->GuiShow(&item.second);
+        }
+    }
 }
 
 void
@@ -192,78 +272,72 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
     ComputeContext& cptCtx = cmdCtx.GetComputeContext();
     static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
-    Trans(cptCtx, _weightTex, UAV);
+    Trans(cptCtx, *GetColBuf(WEIGHT), UAV);
     cptCtx.FlushResourceBarriers();
-    cptCtx.ClearUAV(_weightTex, ClearVal);
-    BeginTrans(cptCtx, _weightTex, UAV);
-    BeginTrans(cptCtx, _depthTex_rawFiltered, RTV);
+    cptCtx.ClearUAV(*GetColBuf(WEIGHT), ClearVal);
+    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
+    BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), RTV);
     BeginTrans(cptCtx, Graphics::g_SceneDepthBuffer, DSV);
-    BeginTrans(cptCtx, _normalTex_TSDFDepth, UAV);
-    BeginTrans(cptCtx, _normalTex_rawDepth, UAV);
-    BeginTrans(cptCtx, _normalTex_visualize, UAV);
+    BeginTrans(cptCtx, *GetColBuf(TSDF_NORMAL), UAV);
+    BeginTrans(cptCtx, *GetColBuf(KINECT_NORMAL), UAV);
+    BeginTrans(cptCtx, *GetColBuf(VISUAL_NORMAL), UAV);
 
     // Pull new data from Kinect
-    bool newData = _sensorTexGen.OnRender(cmdCtx, &_depthTex_Kinect,
-        &_colorTex_Kinect, &_infraredTex_Kinect, &_visDepTex_Kinect);
+    bool newData = _sensorTexGen.OnRender(cmdCtx, GetColBuf(KINECT_DEPTH),
+        GetColBuf(KINECT_COLOR), GetColBuf(KINECT_INFRA),
+        GetColBuf(KINECT_DEPTH_VIS));
 
     // Bilateral filtering
     _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw",
-        &_depthTex_Kinect, &_depthTex_rawFiltered, &_weightTex);
+        GetColBuf(KINECT_DEPTH), GetColBuf(FILTERED_DEPTH), GetColBuf(WEIGHT));
 
-    BeginTrans(cptCtx, _weightTex, csSRV);
+    BeginTrans(cptCtx, *GetColBuf(WEIGHT), csSRV);
     if (_bilateralFilter.IsEnabled()) {
-        BeginTrans(cptCtx, _depthTex_rawFiltered, csSRV);
+        BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), csSRV);
     }
     // TSDF volume updating
-    _tsdfVolume.UpdateVolume(cptCtx, &_depthTex_Kinect, &_weightTex);
+    _tsdfVolume.UpdateVolume(
+        cptCtx, GetColBuf(KINECT_DEPTH), GetColBuf(WEIGHT));
 
-    BeginTrans(cptCtx, _weightTex, UAV);
+    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
     // Defragment active block queue in TSDF
     _tsdfVolume.DefragmentActiveBlockQueue(cptCtx);
 
     // Request depthmap for ICP
-    _tsdfVolume.ExtractSurface(gfxCtx, &_depthTex_TSDF,
-        _visualize ? &_depthTex_TSDFVis : nullptr, &_depthBuf_TSDFVis);
+    _tsdfVolume.ExtractSurface(gfxCtx, GetColBuf(TSDF_DEPTH),
+        _visualize ? GetColBuf(VISUAL_DEPTH)
+                    : nullptr, GetDepBuf(VISUAL_DEPTH));
     if (_visualize) {
-        BeginTrans(gfxCtx, _depthTex_TSDFVis, csSRV);
+        BeginTrans(gfxCtx, *GetColBuf(VISUAL_DEPTH), csSRV);
     }
 
     // Generate normalmap for TSDF depthmap
     _normalGen.OnProcessing(cptCtx, L"Norm_TSDF",
-        &_depthTex_TSDF, &_normalTex_TSDFDepth);
-    BeginTrans(cptCtx, _depthTex_TSDF, RTV);
+        &*GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL));
+    BeginTrans(cptCtx, *GetColBuf(TSDF_DEPTH), RTV);
     // Generate normalmap for Kinect depthmap
     _normalGen.OnProcessing(cptCtx, L"Norm_Raw",
-        _bilateralFilter.IsEnabled() ? &_depthTex_rawFiltered
-                                     : &_depthTex_Kinect,
-        &_normalTex_rawDepth, &_weightTex);
+        _bilateralFilter.IsEnabled() ? GetColBuf(FILTERED_DEPTH)
+                                     : GetColBuf(KINECT_DEPTH),
+        GetColBuf(KINECT_NORMAL), GetColBuf(WEIGHT));
     // Generate normalmap for visualized depthmap
     if (_visualize) {
         _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
-            &_depthTex_TSDFVis, &_normalTex_visualize);
+            GetColBuf(VISUAL_DEPTH), GetColBuf(VISUAL_NORMAL));
         _tsdfVolume.RenderDebugGrid(
-            gfxCtx, &_normalTex_visualize, &_depthBuf_TSDFVis);
-        Trans(gfxCtx, _normalTex_visualize, psSRV);
-        BeginTrans(gfxCtx, _depthTex_TSDFVis, RTV);
+            gfxCtx, GetColBuf(VISUAL_NORMAL), GetDepBuf(VISUAL_DEPTH));
+        Trans(gfxCtx, *GetColBuf(VISUAL_NORMAL), psSRV);
+        BeginTrans(gfxCtx, *GetColBuf(VISUAL_DEPTH), RTV);
     }
-    BeginTrans(cptCtx, _weightTex, UAV);
+    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
 }
 
 void
 KinectVisualizer::OnDestroy()
 {
-    _depthTex_Kinect.Destroy();
-    _colorTex_Kinect.Destroy();
-    _infraredTex_Kinect.Destroy();
-    _visDepTex_Kinect.Destroy();
-    _depthBuf_TSDFVis.Destroy();
-    _depthTex_TSDFVis.Destroy();
-    _depthTex_TSDF.Destroy();
-    _weightTex.Destroy();
-    _depthTex_rawFiltered.Destroy();
-    _normalTex_rawDepth.Destroy();
-    _normalTex_TSDFDepth.Destroy();
-    _normalTex_visualize.Destroy();
+    for (uint8_t i = 0; i < SURFBUF_COUNT; ++i) {
+        DestorySufBuffer((SurfBufId)i);
+    }
     _sensorTexGen.OnDestory();
     _normalGen.OnDestory();
     _tsdfVolume.Destory();
@@ -313,13 +387,7 @@ KinectVisualizer::_ResizeVisWin()
     uint32_t height = static_cast<uint32_t>(_visWinSize.y);
     _tsdfVolume.ResizeVisualSurface(width, height);
 
-    _depthTex_TSDFVis.Destroy();
-    _depthTex_TSDFVis.Create(L"TSDFDepthVis",
-        width, height, 1, DXGI_FORMAT_R16_UINT);
-    _depthBuf_TSDFVis.Destroy();
-    _depthBuf_TSDFVis.Create(L"TSDFDepthVisDepth",
-        width, height, 1, Graphics::g_SceneDepthBuffer.GetFormat());
-    _normalTex_visualize.Destroy();
-    _normalTex_visualize.Create(L"VisNorm",
-        width, height, 1, DXGI_FORMAT_R10G10B10A2_UNORM);
+    for (uint8_t i = 0; i < SURFBUF_COUNT; ++i) {
+        ResizeSurfBuffer((SurfBufId)i);
+    }
 }

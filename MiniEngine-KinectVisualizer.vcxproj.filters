@@ -6,6 +6,7 @@
     <ClCompile Include="Main.cpp" />
     <ClInclude Include="pch.h" />
     <ClCompile Include="pch.cpp" />
+    <ClInclude Include="surfbuf_defs.h" />
     <CustomBuild Include="CalibData.inl" />
     <ClInclude Include="SeparableFilter\SeparableFilter.h">
       <Filter>SeparableFilter</Filter>
