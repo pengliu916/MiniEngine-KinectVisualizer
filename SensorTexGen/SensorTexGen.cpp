@@ -209,8 +209,8 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
         DEPTH_RESO.x * DEPTH_RESO.y, sizeof(uint16_t), DXGI_FORMAT_R16_UINT);
 
     _depthInfraredViewport = {};
-    _depthInfraredViewport.Width = DEPTH_RESO.x;
-    _depthInfraredViewport.Height = DEPTH_RESO.y;
+    _depthInfraredViewport.Width = (FLOAT)DEPTH_RESO.x;
+    _depthInfraredViewport.Height = (FLOAT)DEPTH_RESO.y;
     _depthInfraredViewport.MaxDepth = 1.0f;
     _depthInfraredScissorRect = {};
     _depthInfraredScissorRect.right = DEPTH_RESO.x;
@@ -223,8 +223,8 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
         DXGI_FORMAT_R8G8B8A8_UINT);
 
     _colorViewport = {};
-    _colorViewport.Width = COLOR_RESO.x;
-    _colorViewport.Height = COLOR_RESO.y;
+    _colorViewport.Width = (FLOAT)COLOR_RESO.x;
+    _colorViewport.Height = (FLOAT)COLOR_RESO.y;
     _colorViewport.MaxDepth = 1.0f;
     _colorScissorRect = {};
     _colorScissorRect.right = COLOR_RESO.x;
