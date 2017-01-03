@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "TSDFVolume.h"
+#include "CalibData.inl"
 
 using namespace DirectX;
 using namespace Microsoft::WRL;
@@ -81,6 +82,7 @@ GraphicsPSO _gfxSensorRenderPSO[kBuf][kStruct][kFilter];
 GraphicsPSO _gfxStepInfoVCamPSO[2]; // index is noInstance on/off
 GraphicsPSO _gfxStepInfoSensorPSO[2]; // index is noInstance on/off
 GraphicsPSO _gfxStepInfoDebugPSO;
+GraphicsPSO _gfxHelperWireframePSO;
 // PSOs for reseting
 ComputePSO _cptFuseBlockVolResetPSO;
 ComputePSO _cptRenderBlockVolResetPSO;
@@ -342,8 +344,8 @@ ObjName.Finalize();
 #undef  CreatePSO
 
     // Create PSO for render near far plane
-    ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS;
-    ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2];
+    ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS, wireframePS;
+    ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2], wireframeVS;
     D3D_SHADER_MACRO macro1[] = {
         {"__hlsl", "1"},
         {"DEBUG_VIEW", "0"},
@@ -351,6 +353,8 @@ ObjName.Finalize();
         {"FOR_SENSOR", "0"},
         {nullptr, nullptr}
     };
+    V(_Compile(L"HelperWireframe_vs", macro1, &wireframeVS));
+    V(_Compile(L"HelperWireframe_ps", macro1, &wireframePS));
     V(_Compile(L"StepInfo_ps", macro1, &stepInfoPS));
     V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS[0]));
     V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoVCamVS[1]));
@@ -399,6 +403,12 @@ ObjName.Finalize();
         D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
     _gfxStepInfoDebugPSO.SetRenderTargetFormats(
         1, &ColorBufFormat, DepthBufFormat);
+    _gfxHelperWireframePSO = _gfxStepInfoDebugPSO;
+    _gfxHelperWireframePSO.SetVertexShader(
+        wireframeVS->GetBufferPointer(), wireframeVS->GetBufferSize());
+    _gfxHelperWireframePSO.SetPixelShader(
+        wireframePS->GetBufferPointer(), wireframePS->GetBufferSize());
+    _gfxHelperWireframePSO.Finalize();
     _gfxStepInfoVCamPSO[0].SetRenderTargetFormats(
         1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
     _gfxStepInfoVCamPSO[0].SetPixelShader(
@@ -483,6 +493,16 @@ TSDFVolume::TSDFVolume()
     _volParam->fVoxelSize = 1.f / 100.f;
     _cbPerCall.f2DepthRange = float2(-0.2f, -12.f);
     _cbPerCall.iDefragmentThreshold = 200000;
+    // Create helper wireframe for frustum
+    float tanX = (DEPTH_RESO.x * 0.5f) / DEPTH_F.x;
+    float tanY = (DEPTH_RESO.y * 0.5f) / DEPTH_F.y;
+    _cbPerCall.mXForm[1].r[0] = {2.f * tanX, 0.f, 0.f, 0.f};
+    _cbPerCall.mXForm[1].r[1] = {0.f, 2.f * tanY, 0.f, 0.f};
+    _cbPerCall.mXForm[1].r[2] = {0.f, 0.f, 1.f, 0.4f};
+    _cbPerCall.mXForm[1].r[3] = {0.f, 0.f, -0.5f, -0.2f};
+    _cbPerCall.mXForm[2] = _cbPerCall.mXForm[1];
+    _cbPerCall.mXForm[2].r[2] = {0.f, 0.f, 1.f, 5.f};
+    _cbPerCall.mXForm[2].r[3] = {0.f, 0.f, -0.5f, -2.5f};
 }
 
 TSDFVolume::~TSDFVolume()
@@ -752,21 +772,20 @@ void
 TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx,
     ColorBuffer* pColor, DepthBuffer* pDepth)
 {
-    if (!_useStepInfoTex || !_stepInfoDebug) {
-        return;
-    }
-
     Trans(gfxCtx, *pColor, RTV);
     Trans(gfxCtx, *pDepth, DSV);
-    {
-        GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
-        gfxCtx.SetRootSignature(_rootsig);
-        _UpdateAndBindConstantBuffer(gfxCtx);
-        gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
-        gfxCtx.SetViewport(_depthVisViewPort);
-        gfxCtx.SetScisor(_depthVisSissorRect);
-        gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), pDepth->GetDSV());
 
+    GPU_PROFILE(gfxCtx, L"DebugGrid_Render");
+    gfxCtx.SetRootSignature(_rootsig);
+    _UpdateAndBindConstantBuffer(gfxCtx);
+    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
+    gfxCtx.SetViewport(_depthVisViewPort);
+    gfxCtx.SetScisor(_depthVisSissorRect);
+    gfxCtx.SetRenderTargets(1, &pColor->GetRTV(), pDepth->GetDSV());
+    gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
+    gfxCtx.SetIndexBuffer(_cubeLineStripIB.IndexBufferView());
+    _RenderHelperWireframe(gfxCtx);
+    if (_useStepInfoTex && _stepInfoDebug) {
         _RenderBrickGrid(gfxCtx);
     }
 }
@@ -936,7 +955,7 @@ TSDFVolume::RenderGui()
     } else {
         uiReso = _submittedReso;
     }
-    SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
+    _cbStaled |= SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
     static float fVoxelSize = _volParam->fVoxelSize;
     if (SliderFloat("VoxelSize",
         &fVoxelSize, 1.f / 256.f, 10.f / 256.f)) {
@@ -1030,6 +1049,9 @@ TSDFVolume::_UpdateVolumeSettings(const uint3 reso, const float voxelSize)
         0.5f * u3BReso.y * voxelSize, 0.5f * u3BReso.z * voxelSize);
     _volParam->f3BoxMin = float3(-0.5f * u3BReso.x * voxelSize,
         -0.5f * u3BReso.y * voxelSize, -0.5f * u3BReso.z * voxelSize);
+    // Update mXForm[0] for volume helper wireframe bounding box
+    _cbPerCall.mXForm[0] = XMMatrixScaling(
+        reso.x * voxelSize, reso.y * voxelSize, reso.z * voxelSize);
 }
 
 void
@@ -1301,12 +1323,17 @@ TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
 }
 
 void
+TSDFVolume::_RenderHelperWireframe(GraphicsContext& gfxCtx)
+{
+    gfxCtx.SetPipelineState(_gfxHelperWireframePSO);
+    gfxCtx.DrawIndexedInstanced(CUBE_LINESTRIP_LENGTH, 3, 0, 0, 0);
+}
+
+void
 TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
 {
     gfxCtx.SetPipelineState(_gfxStepInfoDebugPSO);
-    gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
     Bind(gfxCtx, 3, 1, 1, &_renderBlockVol.GetSRV());
-    gfxCtx.SetIndexBuffer(_cubeLineStripIB.IndexBufferView());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
     uint BrickCount = xyz.x * xyz.y * xyz.z / ratio / ratio / ratio;

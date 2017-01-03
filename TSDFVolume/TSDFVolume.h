@@ -68,6 +68,7 @@ private:
     void _RenderVolume(GraphicsContext& gfxCtx,
         const ManagedBuf::BufInterface& buf, bool toOutTex = false);
     void _RenderNearFar(GraphicsContext& gfxCtx, bool toSurface = false);
+    void _RenderHelperWireframe(GraphicsContext& gfxCtx);
     void _RenderBrickGrid(GraphicsContext& gfxCtx);
     void _UpdatePerCallCB(CommandContext& cmdCtx);
     template<class T>

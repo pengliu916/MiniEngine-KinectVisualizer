@@ -104,6 +104,7 @@ CBUFFER_ALIGN STRUCT(cbuffer) PerCallDataCB REGISTER(b1)
     float fTanHFov;
     float fClipDist;
     int iDefragmentThreshold;
+    matrix mXForm[3];
 #if !__hlsl
     void* operator new(size_t i) {
         return _aligned_malloc(i,
