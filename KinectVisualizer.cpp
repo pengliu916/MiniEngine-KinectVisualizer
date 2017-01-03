@@ -162,7 +162,7 @@ KinectVisualizer::KinectVisualizer(uint32_t width, uint32_t height)
     auto radius = _camOrbitRadius;
     auto minRadius = _camMinOribtRadius;
     auto maxRadius = _camMaxOribtRadius;
-    auto longAngle = -DirectX::XM_PIDIV2;
+    auto longAngle = DirectX::XM_PIDIV2;
     auto latAngle = DirectX::XM_PIDIV2;
     _camera.View(center, radius, minRadius, maxRadius, longAngle, latAngle);
 }
