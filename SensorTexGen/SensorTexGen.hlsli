@@ -99,7 +99,11 @@ float GetInfrared(uint2 u2Out_xy, uint uId, float4 f4w)
     u4.y = InfBuffer[uId + 1];
     u4.z = InfBuffer[uId + U2RESO.x];
     u4.w = InfBuffer[uId + U2RESO.x + 1];
+#pragma warning(push)
+    // dot(u4, f4w) guarantee to return positive so suppress the warning
+#pragma warning(disable: 3571)
     return pow(dot(u4, f4w) / 65535.f, 0.32f);
+#pragma warning(pop)
 #       else
     return pow(InfBuffer[uId] / 65535.f, 0.32f);
 #       endif // UNDISTORTION
