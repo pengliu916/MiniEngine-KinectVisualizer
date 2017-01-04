@@ -28,6 +28,7 @@ std::once_flag _psoCompiled_flag;
 bool _bOutWeight = true;
 
 float _fAngleThreshold = 0.1f;
+float _fDistThreshold = 0.1f;
 bool _scbStaled = true;
 bool _typedLoadSupported = false;
 
@@ -133,6 +134,7 @@ void _CreateStaticResource()
 NormalGenerator::NormalGenerator()
 {
     _dataCB.fAngleThreshold = _fAngleThreshold;
+    _dataCB.fDistThreshold = _fDistThreshold;
 }
 
 NormalGenerator::~NormalGenerator()
@@ -166,6 +168,7 @@ NormalGenerator::OnProcessing(
 
     if (_cbStaled || _scbStaled) {
         _dataCB.fAngleThreshold = _fAngleThreshold;
+        _dataCB.fDistThreshold = _fDistThreshold;
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         cptCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
@@ -207,4 +210,5 @@ NormalGenerator::RenderGui()
     }
     Checkbox("Output Weight", &_bOutWeight);
     _scbStaled = SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.5f);
+    _scbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
 }

@@ -1,6 +1,9 @@
 #include "NormalGenerator.inl"
 #include "CalibData.inl"
-
+//==============================================================================
+// Note: the normal is calculated in a way that truly represent normal for the 
+//       position in the 'center' of for neighboring points.
+//==============================================================================
 Texture2D<uint> tex_srvDepth : register(t0);
 RWTexture2D<float4> tex_uavNormal : register(u0);
 #if WEIGHT_OUT
@@ -45,12 +48,22 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
         float3 f3View = normalize(f3temp + f3v0);
 #endif // WEIGHT_OUT
         f3v0 -= f3temp;
+        if (length(f3v0) > fDistThreshold) {
+            tex_uavNormal[u2uv] = 0;
+            return;
+        }
         f3temp = GetValidPos(u2uv + uint2(0, 1));
         float3 f3v1 = GetValidPos(u2uv + uint2(1, 0)) - f3temp;
+        if (length(f3v1) > fDistThreshold) {
+            tex_uavNormal[u2uv] = 0;
+            return;
+        }
         f3temp = normalize(cross(f3v0, f3v1));
 #if WEIGHT_OUT
         float fWeight = -dot(f3View, f3temp);
-        tex_uavWeight[u2uv] = fWeight > fAngleThreshold ? fWeight : 0;
+        if (fWeight > fAngleThreshold) {
+            tex_uavWeight[u2uv] = fWeight;
+        }
 #endif // WEIGHT_OUT
         tex_uavNormal[u2uv] = float4(f3temp * 0.5f + 0.5f, 1.f);
         return;

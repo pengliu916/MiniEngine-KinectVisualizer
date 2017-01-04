@@ -17,7 +17,7 @@
 CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
 {
     float fAngleThreshold; // neighbor beyond that threshold is invalid
-    float fNiu;
+    float fDistThreshold; // neighbor beyond that threshold is invalid
 #if __cplusplus
     void * operator new(size_t i) {
         return _aligned_malloc(i, 16);
