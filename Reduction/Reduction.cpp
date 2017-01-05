@@ -31,7 +31,7 @@ const State UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State SRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 RootSignature _rootsig;
-ComputePSO _cptReductionPSO[Reduction::kTypes][kTNum][kFNum];
+ComputePSO _cptPSO[Reduction::kTypes][kTNum][kFNum];
 std::once_flag _psoCompiled_flag;
 
 THREAD _threadPerTG = kT128;
@@ -65,11 +65,11 @@ inline HRESULT _Compile(LPCWSTR shaderName,
         target, compilerFlag, 0, bolb);
 }
 
-void _CreatePSO()
+void _CreatePSO(Reduction::TYPE type, THREAD t, FETCH f)
 {
     using namespace Microsoft::WRL;
     HRESULT hr;
-    ComPtr<ID3DBlob> reductionCS[Reduction::kTypes][kTNum][kFNum];
+    ComPtr<ID3DBlob> reductionCS;
     D3D_SHADER_MACRO macros[] = {
         {"__hlsl", "1"},
         {"TYPE", ""},
@@ -77,27 +77,34 @@ void _CreatePSO()
         {"FETCH_COUNT", ""},
         {nullptr, nullptr}
     };
-    char temp[32];
+    switch (type)
+    {
+    case Reduction::kFLOAT4: macros[1].Definition = "float4"; break;
+    case Reduction::kFLOAT: macros[1].Definition = "float"; break;
+    default: PRINTERROR("Reduction Type is invalid"); break;
+    }
+    char cthread[32];
+    sprintf_s(cthread, 32, "%d", 32 * (1 << t));
+    macros[2].Definition = cthread;
+    char cfetch[32];
+    sprintf_s(cfetch, 32, "%d", 1 << f);
+    macros[3].Definition = cfetch;
+    V(_Compile(L"Reduction_cs", macros, &reductionCS));
+    _cptPSO[type][t][f].SetRootSignature(_rootsig);
+    _cptPSO[type][t][f].SetComputeShader(
+        reductionCS->GetBufferPointer(),reductionCS->GetBufferSize());
+    _cptPSO[type][t][f].Finalize();
+    PRINTWARN("CreatePSO Called");
+}
+
+void _UpdatePSOs()
+{
     for (UINT i = 0; i < Reduction::kTypes; ++i) {
-        switch ((Reduction::TYPE) i)
-        {
-        case Reduction::kFLOAT4: macros[1].Definition = "float4"; break;
-        case Reduction::kFLOAT: macros[1].Definition = "float"; break;
-        default: PRINTERROR("Reduction Type is invalid"); break;
-        }
         for (UINT j = 0; j < kTNum; ++j) {
-            sprintf_s(temp, 32, "%d", 32 * (1 << j));
-            macros[2].Definition = temp;
-            char temp1[32];
             for (UINT k = 0; k < kFNum; ++k) {
-                sprintf_s(temp1, 32, "%d", 1 << k);
-                macros[3].Definition = temp1;
-                V(_Compile(L"Reduction_cs", macros, &reductionCS[i][j][k]));
-                _cptReductionPSO[i][j][k].SetRootSignature(_rootsig);
-                _cptReductionPSO[i][j][k].SetComputeShader(
-                    reductionCS[i][j][k]->GetBufferPointer(),
-                    reductionCS[i][j][k]->GetBufferSize());
-                _cptReductionPSO[i][j][k].Finalize();
+                if (_cptPSO[i][j][k].GetPipelineStateObject()) {
+                    _CreatePSO((Reduction::TYPE)i, (THREAD)j, (FETCH)k);
+                }
             }
         }
     }
@@ -115,7 +122,6 @@ void _CreateStaticResoure()
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
-    _CreatePSO();
 }
 }
 
@@ -181,8 +187,11 @@ Reduction::ProcessingOneBuffer(ComputeContext& cptCtx,
     Trans(cptCtx, *pInputBuf, SRV);
     uint8_t curBuf = 0;
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.SetPipelineState(
-        _cptReductionPSO[_type][_threadPerTG][_fetchPerThread]);
+    ComputePSO& PSO = _cptPSO[_type][_threadPerTG][_fetchPerThread];
+    if (!PSO.GetPipelineStateObject()) {
+        _CreatePSO(_type, _threadPerTG, _fetchPerThread);
+    }
+    cptCtx.SetPipelineState(PSO);
     Bind(cptCtx, 2, 0, 1, &pInputBuf->GetSRV());
     UINT bufSize = _size;
     UINT groupCount =
@@ -246,7 +255,7 @@ Reduction::RenderGui()
         return;
     }
     if (Button("ReconpileShaders##Reduction")) {
-        _CreatePSO();
+        _UpdatePSOs();
     }
     Separator();
     Columns(2);
