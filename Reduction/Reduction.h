@@ -19,10 +19,12 @@ public:
     void* ReadLastResult();
 
 private:
+    void _CreateIntermmediateBuf(uint32_t elementSize);
     const TYPE _type;
     const uint32_t _size;
     const uint32_t _bufCount;
-    StructuredBuffer _intermmediateResultBuf;
+    uint32_t _currentReductionRate;
+    StructuredBuffer _intermmediateResultBuf[2];
     StructuredBuffer _finalResultBuf;
     ReadBackBuffer _readBackBuf;
     void* _readBackPtr;

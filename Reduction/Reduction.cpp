@@ -8,13 +8,39 @@ ctx.TransitionResource(res, state)
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
 namespace {
+enum THREAD : int {
+    kT32 = 0,
+    kT64,
+    kT128,
+    kT256,
+    kT512,
+    kT1024,
+    kTNum
+};
+enum FETCH : int{
+    kF1 = 0,
+    kF2,
+    kF4,
+    kF8,
+    kF16,
+    kFNum
+};
+
 typedef D3D12_RESOURCE_STATES State;
 const State UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State SRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 RootSignature _rootsig;
-ComputePSO _cptReductionPSO[Reduction::kTypes];
+ComputePSO _cptReductionPSO[Reduction::kTypes][kTNum][kFNum];
 std::once_flag _psoCompiled_flag;
+
+THREAD _threadPerTG = kT128;
+FETCH _fetchPerThread = kF4;
+
+inline uint32_t _GetReductionRate()
+{
+    return 32 * (1 << _threadPerTG) * (1 << _fetchPerThread);
+}
 
 inline HRESULT _Compile(LPCWSTR shaderName,
     const D3D_SHADER_MACRO* macro, ID3DBlob** bolb)
@@ -43,13 +69,15 @@ void _CreatePSO()
 {
     using namespace Microsoft::WRL;
     HRESULT hr;
-    ComPtr<ID3DBlob> reductionCS[Reduction::kTypes];
+    ComPtr<ID3DBlob> reductionCS[Reduction::kTypes][kTNum][kFNum];
     D3D_SHADER_MACRO macros[] = {
         {"__hlsl", "1"},
         {"TYPE", ""},
+        {"THREAD", ""},
+        {"FETCH_COUNT", ""},
         {nullptr, nullptr}
     };
-    wchar_t temp[32];
+    char temp[32];
     for (UINT i = 0; i < Reduction::kTypes; ++i) {
         switch ((Reduction::TYPE) i)
         {
@@ -57,13 +85,21 @@ void _CreatePSO()
         case Reduction::kFLOAT: macros[1].Definition = "float"; break;
         default: PRINTERROR("Reduction Type is invalid"); break;
         }
-        //swprintf_s(temp, 32, L"Reduction<%S>_cs", macros[1].Definition);
-        V(_Compile(L"Reduction_cs", macros, &reductionCS[i]));
-        _cptReductionPSO[i].SetRootSignature(_rootsig);
-        _cptReductionPSO[i].SetComputeShader(
-            reductionCS[i]->GetBufferPointer(),
-            reductionCS[i]->GetBufferSize());
-        _cptReductionPSO[i].Finalize();
+        for (UINT j = 0; j < kTNum; ++j) {
+            sprintf_s(temp, 32, "%d", 32 * (1 << j));
+            macros[2].Definition = temp;
+            char temp1[32];
+            for (UINT k = 0; k < kFNum; ++k) {
+                sprintf_s(temp1, 32, "%d", 1 << k);
+                macros[3].Definition = temp1;
+                V(_Compile(L"Reduction_cs", macros, &reductionCS[i][j][k]));
+                _cptReductionPSO[i][j][k].SetRootSignature(_rootsig);
+                _cptReductionPSO[i][j][k].SetComputeShader(
+                    reductionCS[i][j][k]->GetBufferPointer(),
+                    reductionCS[i][j][k]->GetBufferSize());
+                _cptReductionPSO[i][j][k].Finalize();
+            }
+        }
     }
 }
 
@@ -86,9 +122,6 @@ void _CreateStaticResoure()
 Reduction::Reduction(TYPE type, uint32_t size, uint32_t bufCount)
     : _type(type), _size(size), _bufCount(bufCount)
 {
-    // To finish reduction in 2 passes, according to current config, total
-    // element count should be smaller than 1024 * 1024
-    ASSERT(size <= 0xfffff);
 }
 
 Reduction::~Reduction()
@@ -113,8 +146,8 @@ Reduction::OnCreateResource()
     default:
         PRINTERROR("Reduction Type is invalid");break;
     }
-    _intermmediateResultBuf.Create(
-        L"Reduction", (_size + 1023) >> 10, elementSize);
+    _currentReductionRate = _GetReductionRate();
+    _CreateIntermmediateBuf(elementSize);
     _finalResultBuf.Create(L"Reduction_result", _bufCount, elementSize);
     _readBackBuf.Create(L"Reduction_Readback", _bufCount, elementSize);
 }
@@ -122,18 +155,9 @@ Reduction::OnCreateResource()
 void
 Reduction::OnDestory()
 {
-    switch (_type)
-    {
-    case kFLOAT4:
-        delete[] (float*)_finalResult;
-        break;
-    case kFLOAT:
-        delete[] (float*)_finalResult;
-        break;
-    default:
-        PRINTERROR("Reduction Type is invalid"); break;
-    }
-    _intermmediateResultBuf.Destroy();
+    delete[] (float*)_finalResult;
+    _intermmediateResultBuf[0].Destroy();
+    _intermmediateResultBuf[1].Destroy();
     _finalResultBuf.Destroy();
     _readBackBuf.Destroy();
 }
@@ -142,21 +166,37 @@ void
 Reduction::ProcessingOneBuffer(ComputeContext& cptCtx,
     StructuredBuffer* pInputBuf, uint32_t bufId)
 {
+    uint32_t newReductionRate = _GetReductionRate();
+    if (_currentReductionRate != newReductionRate) {
+        uint32_t elementSize;
+        switch (_type)
+        {
+        case kFLOAT4: elementSize = 4 * sizeof(float); break;
+        case kFLOAT: elementSize = sizeof(float); break;
+        default: PRINTERROR("Reduction Type is invalid"); break;
+        }
+        _currentReductionRate = newReductionRate;
+        _CreateIntermmediateBuf(elementSize);
+    }
     Trans(cptCtx, *pInputBuf, SRV);
-    Trans(cptCtx, _intermmediateResultBuf, UAV);
+    uint8_t curBuf = 0;
     cptCtx.SetRootSignature(_rootsig);
-    cptCtx.SetPipelineState(_cptReductionPSO[_type]);
+    cptCtx.SetPipelineState(
+        _cptReductionPSO[_type][_threadPerTG][_fetchPerThread]);
     Bind(cptCtx, 2, 0, 1, &pInputBuf->GetSRV());
-    UINT groupCount = (_size + 1023) >> 10;
-    if (groupCount > 1) {
-        Bind(cptCtx, 1, 0, 1, &_intermmediateResultBuf.GetUAV());
+    UINT groupCount =
+        (_size + _currentReductionRate - 1) / _currentReductionRate;
+    while (groupCount > 1) {
+        Trans(cptCtx, _intermmediateResultBuf[curBuf], UAV);
+        Bind(cptCtx, 1, 0, 1, &_intermmediateResultBuf[curBuf].GetUAV());
         cptCtx.SetConstants(0, DWParam(bufId), DWParam(0));
         cptCtx.Dispatch(groupCount);
-        Trans(cptCtx, _intermmediateResultBuf, SRV);
-        Bind(cptCtx, 2, 0, 1, &_intermmediateResultBuf.GetSRV());
+        Trans(cptCtx, _intermmediateResultBuf[curBuf], SRV);
+        Bind(cptCtx, 2, 0, 1, &_intermmediateResultBuf[curBuf].GetSRV());
+        curBuf = 1 - curBuf;
+        groupCount =
+            (groupCount + _currentReductionRate - 1) / _currentReductionRate;
     }
-    // Even if I can do a 'recursive' loop to handle all size, but for larger
-    // size it's better change the param in _cs.hlsl file
     Bind(cptCtx, 1, 0, 1, &_finalResultBuf.GetUAV());
     cptCtx.SetConstants(0, UINT(bufId), UINT(1));
     cptCtx.Dispatch(1);
@@ -206,4 +246,33 @@ Reduction::RenderGui()
     if (Button("ReconpileShaders##Reduction")) {
         _CreatePSO();
     }
+    Separator();
+    Columns(2);
+    Text("GThread Num"); NextColumn();
+    Text("Fetch Num"); NextColumn();
+    RadioButton("32##Reduction", (int*)&_threadPerTG, kT32); NextColumn();
+    RadioButton("1##Reduction", (int*)&_fetchPerThread, kF1); NextColumn();
+    RadioButton("64##Reduction", (int*)&_threadPerTG, kT64); NextColumn();
+    RadioButton("2##Reduction", (int*)&_fetchPerThread, kF2); NextColumn();
+    RadioButton("128##Reduction", (int*)&_threadPerTG, kT128); NextColumn();
+    RadioButton("4##Reduction", (int*)&_fetchPerThread, kF4); NextColumn();
+    RadioButton("256##Reduction", (int*)&_threadPerTG, kT256); NextColumn();
+    RadioButton("8##Reduction", (int*)&_fetchPerThread, kF8); NextColumn();
+    RadioButton("512##Reduction", (int*)&_threadPerTG, kT512); NextColumn();
+    RadioButton("16##Reduction", (int*)&_fetchPerThread, kF16); NextColumn();
+    RadioButton("1024##Reduction", (int*)&_threadPerTG, kT1024); NextColumn();
+    Columns(1);
+}
+
+void
+Reduction::_CreateIntermmediateBuf(uint32_t elementSize)
+{
+    _intermmediateResultBuf[0].Destroy();
+    _intermmediateResultBuf[1].Destroy();
+    _intermmediateResultBuf[0].Create(L"Reduction",
+        (_size + _currentReductionRate - 1) / _currentReductionRate,
+        elementSize);
+    _intermmediateResultBuf[1].Create(L"Reduction",
+        (_size + _currentReductionRate - 1) / _currentReductionRate,
+        elementSize);
 }
