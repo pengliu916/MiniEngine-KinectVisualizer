@@ -22,7 +22,7 @@ struct CD3D12_SHADER_BYTECODE : public D3D12_SHADER_BYTECODE
 class PSO
 {
 public:
-    PSO() : m_RootSignature(nullptr) {}
+    PSO() : m_RootSignature(nullptr), m_PSO(nullptr) {}
 
     static void Initialize();
     static void DestroyAll();
