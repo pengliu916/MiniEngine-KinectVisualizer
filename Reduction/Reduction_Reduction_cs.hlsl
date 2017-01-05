@@ -3,6 +3,7 @@ RWStructuredBuffer<TYPE> buf_uavOutput : register(u0);
 
 cbuffer CBdata : register(b0)
 {
+    uint uSize;
     uint uResultOffset;
     uint uFinalResult;
 }
@@ -14,10 +15,16 @@ void main(uint3 Gid : SV_GroupID, uint3 DTid : SV_DispatchThreadID,
     uint GI : SV_GroupIndex)
 {
     uint uIdx = DTid.x * FETCH_COUNT;
-    sharedMem[GI] = buf_srvInput[uIdx];
+    if (uIdx < uSize) {
+        sharedMem[GI] = buf_srvInput[uIdx];
+    } else {
+        sharedMem[GI] = 0;
+    }
     [unroll(FETCH_COUNT - 1)]
     for (int i = 1; i < FETCH_COUNT; ++i) {
-        sharedMem[GI] += buf_srvInput[uIdx + i];
+        if (uIdx + i < uSize) {
+            sharedMem[GI] += buf_srvInput[uIdx + i];
+        }
     }
     GroupMemoryBarrierWithGroupSync();
 #if THREAD >=1024

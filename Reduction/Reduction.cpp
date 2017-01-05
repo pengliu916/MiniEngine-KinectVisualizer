@@ -106,7 +106,7 @@ void _CreatePSO()
 void _CreateStaticResoure()
 {
     _rootsig.Reset(3);
-    _rootsig[0].InitAsConstants(0, 2);
+    _rootsig[0].InitAsConstants(0, 3);
     _rootsig[1].InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 1);
     _rootsig[2].InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 1);
     _rootsig.Finalize(L"Reduction",
@@ -184,21 +184,23 @@ Reduction::ProcessingOneBuffer(ComputeContext& cptCtx,
     cptCtx.SetPipelineState(
         _cptReductionPSO[_type][_threadPerTG][_fetchPerThread]);
     Bind(cptCtx, 2, 0, 1, &pInputBuf->GetSRV());
+    UINT bufSize = _size;
     UINT groupCount =
         (_size + _currentReductionRate - 1) / _currentReductionRate;
     while (groupCount > 1) {
         Trans(cptCtx, _intermmediateResultBuf[curBuf], UAV);
         Bind(cptCtx, 1, 0, 1, &_intermmediateResultBuf[curBuf].GetUAV());
-        cptCtx.SetConstants(0, DWParam(bufId), DWParam(0));
+        cptCtx.SetConstants(0, DWParam(bufSize), DWParam(bufId), DWParam(0));
         cptCtx.Dispatch(groupCount);
         Trans(cptCtx, _intermmediateResultBuf[curBuf], SRV);
         Bind(cptCtx, 2, 0, 1, &_intermmediateResultBuf[curBuf].GetSRV());
         curBuf = 1 - curBuf;
+        bufSize = groupCount;
         groupCount =
             (groupCount + _currentReductionRate - 1) / _currentReductionRate;
     }
     Bind(cptCtx, 1, 0, 1, &_finalResultBuf.GetUAV());
-    cptCtx.SetConstants(0, UINT(bufId), UINT(1));
+    cptCtx.SetConstants(0, DWParam(bufSize), DWParam(bufId), DWParam(1));
     cptCtx.Dispatch(1);
 }
 
