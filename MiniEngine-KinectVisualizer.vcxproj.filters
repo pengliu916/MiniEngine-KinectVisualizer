@@ -149,6 +149,15 @@
     <CustomBuild Include="NormalGenerator\NormalGenerator_GetNormal_cs.hlsl">
       <Filter>NormalGenerator</Filter>
     </CustomBuild>
+    <ClInclude Include="Reduction\Reduction.h">
+      <Filter>Reduction</Filter>
+    </ClInclude>
+    <ClCompile Include="Reduction\Reduction.cpp">
+      <Filter>Reduction</Filter>
+    </ClCompile>
+    <CustomBuild Include="Reduction\Reduction_Reduction_cs.hlsl">
+      <Filter>Reduction</Filter>
+    </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SeparableFilter">
@@ -165,6 +174,9 @@
     </Filter>
     <Filter Include="NormalGenerator">
       <UniqueIdentifier>{fc1a348d-2bd6-4044-888e-ef37882060e4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Reduction">
+      <UniqueIdentifier>{32dc80ca-c158-4076-be70-5a0e48c662b3}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

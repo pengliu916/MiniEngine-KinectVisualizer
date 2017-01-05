@@ -115,6 +115,8 @@
     <ClCompile Include="NormalGenerator\NormalGenerator.cpp" />
     <ClInclude Include="PointCloudRenderer\PointCloudRenderer.h" />
     <ClCompile Include="PointCloudRenderer\PointCloudRenderer.cpp" />
+    <ClInclude Include="Reduction\Reduction.h" />
+    <ClCompile Include="Reduction\Reduction.cpp" />
     <ClInclude Include="SensorTexGen\LinearFrameAllocator.h" />
     <ClCompile Include="SensorTexGen\LinearFrameAllocator.cpp" />
     <ClInclude Include="SensorTexGen\SensorTexGen.h" />
@@ -176,6 +178,7 @@
     <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeUpdate_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_VolumeReset_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_VoxelUpdate.hlsli" />
+    <CustomBuild Include="Reduction\Reduction_Reduction_cs.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
