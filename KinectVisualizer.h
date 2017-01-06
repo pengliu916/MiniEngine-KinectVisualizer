@@ -5,6 +5,7 @@
 #include "SeparableFilter\SeparableFilter.h"
 #include "TSDFVolume\TSDFVolume.h"
 #include "NormalGenerator\NormalGenerator.h"
+#include "FastICP\FastICP.h"
 
 class KinectVisualizer :public Core::IDX12Framework
 {
@@ -26,6 +27,7 @@ private:
     SeperableFilter _bilateralFilter;
     SensorTexGen _sensorTexGen;
     NormalGenerator _normalGen;
+    FastICP _fastICP;
 
     uint16_t _width;
     uint16_t _height;

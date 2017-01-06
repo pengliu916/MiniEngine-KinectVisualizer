@@ -108,6 +108,8 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FastICP\FastICP.h" />
+    <ClCompile Include="FastICP\FastICP.cpp" />
     <ClInclude Include="KinectVisualizer.h" />
     <ClCompile Include="KinectVisualizer.cpp" />
     <ClCompile Include="Main.cpp" />
@@ -145,6 +147,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CustomBuild Include="CalibData.inl" />
+    <CustomBuild Include="FastICP\FastICP_Prepare_cs.hlsl" />
+    <CustomBuild Include="FastICP\FastICP.inl" />
     <CustomBuild Include="NormalGenerator\NormalGenerator_GetNormal_cs.hlsl" />
     <CustomBuild Include="NormalGenerator\NormalGenerator.inl" />
     <CustomBuild Include="SensorTexGen\SensorTexGen.hlsli" />

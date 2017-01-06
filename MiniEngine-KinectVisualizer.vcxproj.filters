@@ -8,6 +8,18 @@
     <ClCompile Include="pch.cpp" />
     <ClInclude Include="surfbuf_defs.h" />
     <CustomBuild Include="CalibData.inl" />
+    <ClInclude Include="FastICP\FastICP.h">
+      <Filter>FastICP</Filter>
+    </ClInclude>
+    <ClCompile Include="FastICP\FastICP.cpp">
+      <Filter>FastICP</Filter>
+    </ClCompile>
+    <CustomBuild Include="FastICP\FastICP_Prepare_cs.hlsl">
+      <Filter>FastICP</Filter>
+    </CustomBuild>
+    <CustomBuild Include="FastICP\FastICP.inl">
+      <Filter>FastICP</Filter>
+    </CustomBuild>
     <ClInclude Include="SeparableFilter\SeparableFilter.h">
       <Filter>SeparableFilter</Filter>
     </ClInclude>
@@ -177,6 +189,9 @@
     </Filter>
     <Filter Include="Reduction">
       <UniqueIdentifier>{32dc80ca-c158-4076-be70-5a0e48c662b3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="FastICP">
+      <UniqueIdentifier>{c665381a-93be-4f1a-921c-5e6427ec0a0b}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

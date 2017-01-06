@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "KinectVisualizer.h"
 #include "CalibData.inl"
+#include "Reduction/Reduction.h"
 #include <ppl.h>
 
 using namespace DirectX;
@@ -192,6 +193,7 @@ KinectVisualizer::OnCreateResource()
     _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
     _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
     _normalGen.OnCreateResource(_uploadHeapAlloc);
+    _fastICP.OnCreateResource();
 
     OnSizeChanged();
     _ResizeVisWin();
@@ -217,6 +219,8 @@ KinectVisualizer::OnUpdate()
             ShowDebugWindowMenu();
             ImGui::EndMenu();
         }
+        _fastICP.RenderGui();
+        Reduction::RenderGui();
         _sensorTexGen.RenderGui();
         SeperableFilter::RenderGui();
         NormalGenerator::RenderGui();
@@ -321,6 +325,11 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
                                      : GetColBuf(KINECT_DEPTH),
         GetColBuf(KINECT_NORMAL), GetColBuf(WEIGHT));
     // Generate normalmap for visualized depthmap
+    _fastICP.OnProcessing(cptCtx,GetColBuf(WEIGHT),
+        GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
+        GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
+    _fastICP.OnSolving();
+
     if (_visualize) {
         _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
             GetColBuf(VISUAL_DEPTH), GetColBuf(VISUAL_NORMAL));
@@ -342,6 +351,7 @@ KinectVisualizer::OnDestroy()
     _normalGen.OnDestory();
     _tsdfVolume.Destory();
     _bilateralFilter.OnDestory();
+    _fastICP.OnDestory();
 }
 
 bool
