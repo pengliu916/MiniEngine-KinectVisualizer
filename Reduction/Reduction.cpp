@@ -143,11 +143,9 @@ Reduction::OnCreateResource()
     {
     case kFLOAT4:
         elementSize = 4 * sizeof(float);
-        _finalResult = new float[4 * _bufCount];
         break;
     case kFLOAT:
         elementSize = sizeof(float);
-        _finalResult = new float[_bufCount];
         break;
     default:
         PRINTERROR("Reduction Type is invalid");break;
@@ -161,7 +159,6 @@ Reduction::OnCreateResource()
 void
 Reduction::OnDestory()
 {
-    delete[] (float*)_finalResult;
     _intermmediateResultBuf[0].Destroy();
     _intermmediateResultBuf[1].Destroy();
     _finalResultBuf.Destroy();
@@ -228,8 +225,8 @@ Reduction::PrepareResult(ComputeContext& cptCtx)
     _readBackFence = cptCtx.Flush(false);
 }
 
-void*
-Reduction::ReadLastResult()
+void
+Reduction::ReadLastResult(float* result)
 {
     Graphics::g_cmdListMngr.WaitForFence(_readBackFence);
     UINT elementSize;
@@ -242,9 +239,9 @@ Reduction::ReadLastResult()
     D3D12_RANGE range = {0, elementSize};
     D3D12_RANGE umapRange = {};
     _readBackBuf.Map(&range, &_readBackPtr);
-    memcpy(_finalResult, _readBackPtr, _bufCount * elementSize);
+    memcpy(result, _readBackPtr, _bufCount * elementSize);
     _readBackBuf.Unmap(&umapRange);
-    return _finalResult;
+    return;
 }
 
 void

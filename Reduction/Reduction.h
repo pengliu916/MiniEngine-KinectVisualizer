@@ -16,7 +16,7 @@ public:
     void ProcessingOneBuffer(ComputeContext& cptCtx,
         StructuredBuffer* pInputBuf, uint32_t bufId = 0);
     void PrepareResult(ComputeContext& cptCtx);
-    void* ReadLastResult();
+    void ReadLastResult(float* result);
 
 private:
     void _CreateIntermmediateBuf(uint32_t elementSize);
@@ -28,6 +28,5 @@ private:
     StructuredBuffer _finalResultBuf;
     ReadBackBuffer _readBackBuf;
     void* _readBackPtr;
-    void* _finalResult;
     uint64_t _readBackFence = 0;
 };
