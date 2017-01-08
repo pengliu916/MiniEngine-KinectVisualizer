@@ -346,6 +346,7 @@ public:
 inline void
 GraphicsContext::SetRootSignature(const RootSignature& RootSig)
 {
+    m_CurComputeRootSignature = nullptr;
     if (RootSig.GetSignature() == m_CurGraphicsRootSignature) {
         return;
     }
@@ -363,6 +364,7 @@ GraphicsContext::SetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY Topology)
 inline void
 GraphicsContext::SetPipelineState(const GraphicsPSO& PSO)
 {
+    m_CurComputePipelineState = nullptr;
     if (PSO.GetPipelineStateObject() == m_CurGraphicsPipelineState) {
         return;
     }
@@ -640,6 +642,7 @@ public:
 inline void
 ComputeContext::SetRootSignature(const RootSignature& RootSig)
 {
+    m_CurGraphicsRootSignature = nullptr;
     if (RootSig.GetSignature() == m_CurComputeRootSignature) {
         return;
     }
@@ -651,6 +654,7 @@ ComputeContext::SetRootSignature(const RootSignature& RootSig)
 inline void
 ComputeContext::SetPipelineState(const ComputePSO& PSO)
 {
+    m_CurGraphicsPipelineState = nullptr;
     if (PSO.GetPipelineStateObject() == m_CurComputePipelineState) {
         return;
     }
