@@ -7,9 +7,10 @@ public:
 
     FastICP();
     ~FastICP();
-    void OnCreateResource();
+    void OnCreateResource(uint2 inputReso);
     void OnDestory();
-    void OnProcessing(ComputeContext& cptCtx, ColorBuffer* pWeight,
+    void OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
+        ColorBuffer* pWeight,
         ColorBuffer* pTSDFDepth, ColorBuffer* pTSDFNormal,
         ColorBuffer* pKinectDepth, ColorBuffer* pKinectNormal);
     void OnSolving();
@@ -18,7 +19,7 @@ public:
 private:
     void _CreatePrepareBuffers(uint2 u2Reso);
 
-    Reduction* _pReductionExec;
+    Reduction* _pReductionExec = nullptr;
     StructuredBuffer _dataPackBuf[DATABUF_COUNT];
     float _reductionResult[DATABUF_COUNT * 4];
     CBuffer _dataCB;

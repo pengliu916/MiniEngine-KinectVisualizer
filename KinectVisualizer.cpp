@@ -193,7 +193,7 @@ KinectVisualizer::OnCreateResource()
     _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
     _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
     _normalGen.OnCreateResource(_uploadHeapAlloc);
-    _fastICP.OnCreateResource();
+    _fastICP.OnCreateResource(DEPTH_RESO);
 
     OnSizeChanged();
     _ResizeVisWin();
@@ -290,7 +290,7 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     bool newData = _sensorTexGen.OnRender(cmdCtx, GetColBuf(KINECT_DEPTH),
         GetColBuf(KINECT_COLOR), GetColBuf(KINECT_INFRA),
         GetColBuf(KINECT_DEPTH_VIS));
-
+    cmdCtx.Flush();
     // Bilateral filtering
     _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw",
         GetColBuf(KINECT_DEPTH), GetColBuf(FILTERED_DEPTH), GetColBuf(WEIGHT));
@@ -324,12 +324,15 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         _bilateralFilter.IsEnabled() ? GetColBuf(FILTERED_DEPTH)
                                      : GetColBuf(KINECT_DEPTH),
         GetColBuf(KINECT_NORMAL), GetColBuf(WEIGHT));
-    // Generate normalmap for visualized depthmap
-    _fastICP.OnProcessing(cptCtx,GetColBuf(WEIGHT),
-        GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
-        GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
-    _fastICP.OnSolving();
 
+    for (uint8_t i = 0; i < 10; ++i) {
+        _fastICP.OnProcessing(cptCtx, i, GetColBuf(WEIGHT),
+            GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
+            GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
+        _fastICP.OnSolving();
+    }
+
+    // Generate normalmap for visualized depthmap
     if (_visualize) {
         _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
             GetColBuf(VISUAL_DEPTH), GetColBuf(VISUAL_NORMAL));

@@ -94,9 +94,17 @@ FastICP::~FastICP()
 }
 
 void
-FastICP::OnCreateResource()
+FastICP::OnCreateResource(uint2 inputReso)
 {
     std::call_once(_psoCompiled_flag, _CreateStaticResource);
+    uint16_t w = inputReso.x;
+    uint16_t h = inputReso.y;
+    w = (w + CPU_THREAD_X - 1) & ~(CPU_THREAD_X - 1);
+    h = (h + CPU_THREAD_Y - 1) & ~(CPU_THREAD_Y - 1);
+    if (_dataCB.u2AlignedReso.x != w || _dataCB.u2AlignedReso.y != h) {
+        _dataCB.u2AlignedReso = uint2(w, h);
+        _CreatePrepareBuffers(uint2(w, h));
+    }
 }
 
 void
@@ -109,10 +117,12 @@ FastICP::OnDestory()
 }
 
 void
-FastICP::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pWeight,
+FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
+    ColorBuffer* pWeight,
     ColorBuffer* pTSDFDepth, ColorBuffer* pTSDFNormal,
     ColorBuffer* pKinectDepth, ColorBuffer* pKinectNormal)
 {
+    wchar_t profilerName[32];
     uint16_t w = pWeight->GetWidth();
     uint16_t h = pWeight->GetHeight();
     ASSERT(w == pTSDFDepth->GetWidth() && h == pTSDFDepth->GetHeight());
@@ -134,7 +144,8 @@ FastICP::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pWeight,
     cptCtx.SetRootSignature(_rootsig);
     cptCtx.SetDynamicConstantBufferView(0, sizeof(CBuffer), (void*)&_dataCB);
     {
-        GPU_PROFILE(cptCtx, L"ICP_Prepare");
+        swprintf_s(profilerName, 32, L"ICP_Prepare[%d]", iteration);
+        GPU_PROFILE(cptCtx, profilerName);
         cptCtx.SetPipelineState(_cptPreparePSO);
         Bind(cptCtx, 2, 0, 1, &pKinectDepth->GetSRV());
         Bind(cptCtx, 2, 1, 1, &pTSDFDepth->GetSRV());
@@ -147,7 +158,8 @@ FastICP::OnProcessing(ComputeContext& cptCtx, ColorBuffer* pWeight,
         cptCtx.Dispatch2D(w, h);
     }
     {
-        GPU_PROFILE(cptCtx, L"Reduction");
+        swprintf_s(profilerName, 32, L"ICP_Reduction[%d]", iteration);
+        GPU_PROFILE(cptCtx, profilerName);
         for (int i = 0; i < DATABUF_COUNT; ++i) {
             _pReductionExec->ProcessingOneBuffer(cptCtx, &_dataPackBuf[i], i);
         }
