@@ -713,6 +713,10 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
             _RenderNearFar(gfxCtx, true);
         }
     }
+    gfxCtx.Flush();
+    gfxCtx.SetRootSignature(_rootsig);
+    _UpdateAndBindConstantBuffer(gfxCtx);
+    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
     if (pVisDepthOut) {
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
