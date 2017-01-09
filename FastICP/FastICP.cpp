@@ -99,8 +99,8 @@ FastICP::OnCreateResource(uint2 inputReso)
     std::call_once(_psoCompiled_flag, _CreateStaticResource);
     uint16_t w = inputReso.x;
     uint16_t h = inputReso.y;
-    w = (w + CPU_THREAD_X - 1) & ~(CPU_THREAD_X - 1);
-    h = (h + CPU_THREAD_Y - 1) & ~(CPU_THREAD_Y - 1);
+    w = (w + THREAD_X - 1) & ~(THREAD_X - 1);
+    h = (h + THREAD_Y - 1) & ~(THREAD_Y - 1);
     if (_dataCB.u2AlignedReso.x != w || _dataCB.u2AlignedReso.y != h) {
         _dataCB.u2AlignedReso = uint2(w, h);
         _CreatePrepareBuffers(uint2(w, h));
@@ -130,8 +130,8 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
     ASSERT(w == pKinectDepth->GetWidth() && h == pKinectDepth->GetHeight());
     ASSERT(w == pKinectNormal->GetWidth() && h == pKinectNormal->GetHeight());
 
-    w = (w + CPU_THREAD_X - 1) & ~(CPU_THREAD_X - 1);
-    h = (h + CPU_THREAD_Y - 1) & ~(CPU_THREAD_Y - 1);
+    w = (w + THREAD_X - 1) & ~(THREAD_X - 1);
+    h = (h + THREAD_Y - 1) & ~(THREAD_Y - 1);
     if (_dataCB.u2AlignedReso.x != w || _dataCB.u2AlignedReso.y != h) {
         _dataCB.u2AlignedReso = uint2(w, h);
         _CreatePrepareBuffers(uint2(w, h));
@@ -160,6 +160,7 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
     {
         swprintf_s(profilerName, 32, L"ICP_Reduction[%d]", iteration);
         GPU_PROFILE(cptCtx, profilerName);
+        _pReductionExec->ClearResultBuf(cptCtx);
         for (int i = 0; i < DATABUF_COUNT; ++i) {
             _pReductionExec->ProcessingOneBuffer(cptCtx, &_dataPackBuf[i], i);
         }

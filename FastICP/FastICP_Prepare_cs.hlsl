@@ -39,7 +39,7 @@ float GetNormalMatchedDepth(Texture2D<uint> tex_srvDepth, uint3 DTid)
     return uAccDepth * -0.001f / 4.f;
 }
 
-[numthreads(8, 8, 1)]
+[numthreads(THREAD_X, THREAD_Y, 1)]
 void main(uint3 DTid : SV_DispatchThreadID)
 {
     uint uIdx = DTid.x + DTid.y * u2AlignedReso.x;

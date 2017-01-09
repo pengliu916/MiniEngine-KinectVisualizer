@@ -7,6 +7,9 @@ ctx.TransitionResource(res, state)
 #define Bind(ctx, rootIdx, offset, count, resource) \
 ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
+#define BeginTrans(ctx, res, state) \
+ctx.BeginResourceTransition(res, state)
+
 namespace {
 enum THREAD : int {
     kT32 = 0,
@@ -25,17 +28,25 @@ enum FETCH : int{
     kF16,
     kFNum
 };
+enum PASSES : int {
+    kAtomicAdd = 0,
+    kDone1Goup,
+    kAdaptive,
+    kPNum
+};
 
 typedef D3D12_RESOURCE_STATES State;
 const State UAV = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State SRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+const State SRC = D3D12_RESOURCE_STATE_COPY_SOURCE;
 
 RootSignature _rootsig;
-ComputePSO _cptPSO[Reduction::kTypes][kTNum][kFNum];
+ComputePSO _cptPSO[Reduction::kTypes][kTNum][kFNum][kPNum];
 std::once_flag _psoCompiled_flag;
 
 THREAD _threadPerTG = kT128;
 FETCH _fetchPerThread = kF4;
+PASSES _reductionPassMode = kDone1Goup;
 
 inline uint32_t _GetReductionRate()
 {
@@ -65,7 +76,8 @@ inline HRESULT _Compile(LPCWSTR shaderName,
         target, compilerFlag, 0, bolb);
 }
 
-void _CreatePSO(Reduction::TYPE type, THREAD t, FETCH f)
+
+void _CreatePSO(Reduction::TYPE type, THREAD t, FETCH f, PASSES p)
 {
     using namespace Microsoft::WRL;
     HRESULT hr;
@@ -75,12 +87,19 @@ void _CreatePSO(Reduction::TYPE type, THREAD t, FETCH f)
         {"TYPE", ""},
         {"THREAD", ""},
         {"FETCH_COUNT", ""},
+        {"ATOMIC_ACCU", ""},
+        {"DATAWIDTH", ""},
         {nullptr, nullptr}
     };
+    macros[4].Definition = p == kAtomicAdd ? "1" : "0";
     switch (type)
     {
-    case Reduction::kFLOAT4: macros[1].Definition = "float4"; break;
-    case Reduction::kFLOAT: macros[1].Definition = "float"; break;
+    case Reduction::kFLOAT4:
+        macros[1].Definition = "float4";
+        macros[5].Definition = "4"; break;
+    case Reduction::kFLOAT:
+        macros[1].Definition = "float";
+        macros[5].Definition = "1"; break;
     default: PRINTERROR("Reduction Type is invalid"); break;
     }
     char cthread[32];
@@ -90,24 +109,22 @@ void _CreatePSO(Reduction::TYPE type, THREAD t, FETCH f)
     sprintf_s(cfetch, 32, "%d", 1 << f);
     macros[3].Definition = cfetch;
     V(_Compile(L"Reduction_cs", macros, &reductionCS));
-    _cptPSO[type][t][f].SetRootSignature(_rootsig);
-    _cptPSO[type][t][f].SetComputeShader(
+    _cptPSO[type][t][f][p].SetRootSignature(_rootsig);
+    _cptPSO[type][t][f][p].SetComputeShader(
         reductionCS->GetBufferPointer(),reductionCS->GetBufferSize());
-    _cptPSO[type][t][f].Finalize();
+    _cptPSO[type][t][f][p].Finalize();
     PRINTWARN("CreatePSO Called");
 }
 
 void _UpdatePSOs()
 {
-    for (UINT i = 0; i < Reduction::kTypes; ++i) {
-        for (UINT j = 0; j < kTNum; ++j) {
-            for (UINT k = 0; k < kFNum; ++k) {
-                if (_cptPSO[i][j][k].GetPipelineStateObject()) {
-                    _CreatePSO((Reduction::TYPE)i, (THREAD)j, (FETCH)k);
-                }
-            }
-        }
-    }
+    for (UINT i = 0; i < Reduction::kTypes; ++i)
+        for (UINT j = 0; j < kTNum; ++j)
+            for (UINT k = 0; k < kFNum; ++k)
+                for (UINT w = 0; w < kPNum; ++w)
+                    if (_cptPSO[i][j][k][w].GetPipelineStateObject())
+                        _CreatePSO((Reduction::TYPE)i,
+                            (THREAD)j, (FETCH)k, (PASSES)w);
 }
 
 void _CreateStaticResoure()
@@ -128,6 +145,12 @@ void _CreateStaticResoure()
 Reduction::Reduction(TYPE type, uint32_t size, uint32_t bufCount)
     : _type(type), _size(size), _bufCount(bufCount)
 {
+    switch (_type)
+    {
+    case kFLOAT4: _elementSize = 4 * sizeof(float); break;
+    case kFLOAT: _elementSize = sizeof(float); break;
+    default: PRINTERROR("Reduction Type is invalid"); break;
+    }
 }
 
 Reduction::~Reduction()
@@ -138,30 +161,20 @@ void
 Reduction::OnCreateResource()
 {
     std::call_once(_psoCompiled_flag, _CreateStaticResoure);
-    uint32_t elementSize;
-    switch (_type)
-    {
-    case kFLOAT4:
-        elementSize = 4 * sizeof(float);
-        break;
-    case kFLOAT:
-        elementSize = sizeof(float);
-        break;
-    default:
-        PRINTERROR("Reduction Type is invalid");break;
-    }
-    _currentReductionRate = _GetReductionRate();
-    _CreateIntermmediateBuf(elementSize);
-    _finalResultBuf.Create(L"Reduction_result", _bufCount, elementSize);
-    _readBackBuf.Create(L"Reduction_Readback", _bufCount, elementSize);
+    _reduceRatio = _GetReductionRate();
+    _CreateIntermmediateBuf();
+    _resultBuf.Create(L"Reduction_Result", _bufCount, _elementSize);
+    _resultAtomicBuf.Create(L"Reduction_ResultAtomic", _bufCount, _elementSize);
+    _readBackBuf.Create(L"Reduction_Readback", _bufCount, _elementSize);
 }
 
 void
 Reduction::OnDestory()
 {
-    _intermmediateResultBuf[0].Destroy();
-    _intermmediateResultBuf[1].Destroy();
-    _finalResultBuf.Destroy();
+    _tempResultBuf[0].Destroy();
+    _tempResultBuf[1].Destroy();
+    _resultBuf.Destroy();
+    _resultAtomicBuf.Destroy();
     _readBackBuf.Destroy();
 }
 
@@ -170,76 +183,92 @@ Reduction::ProcessingOneBuffer(ComputeContext& cptCtx,
     StructuredBuffer* pInputBuf, uint32_t bufId)
 {
     uint32_t newReductionRate = _GetReductionRate();
-    if (_currentReductionRate != newReductionRate) {
-        uint32_t elementSize;
-        switch (_type)
-        {
-        case kFLOAT4: elementSize = 4 * sizeof(float); break;
-        case kFLOAT: elementSize = sizeof(float); break;
-        default: PRINTERROR("Reduction Type is invalid"); break;
-        }
-        _currentReductionRate = newReductionRate;
-        _CreateIntermmediateBuf(elementSize);
+    if (_reduceRatio != newReductionRate) {
+        _reduceRatio = newReductionRate;
+        _CreateIntermmediateBuf();
     }
     Trans(cptCtx, *pInputBuf, SRV);
     uint8_t curBuf = 0;
     cptCtx.SetRootSignature(_rootsig);
-    ComputePSO& PSO = _cptPSO[_type][_threadPerTG][_fetchPerThread];
-    if (!PSO.GetPipelineStateObject()) {
-        _CreatePSO(_type, _threadPerTG, _fetchPerThread);
-    }
-    cptCtx.SetPipelineState(PSO);
+    PASSES p = _reductionPassMode == kAtomicAdd ? kAtomicAdd : kDone1Goup;
     Bind(cptCtx, 2, 0, 1, &pInputBuf->GetSRV());
     UINT bufSize = _size;
-    UINT groupCount =
-        (_size + _currentReductionRate - 1) / _currentReductionRate;
-    while (groupCount > 1) {
-        Trans(cptCtx, _intermmediateResultBuf[curBuf], UAV);
-        Bind(cptCtx, 1, 0, 1, &_intermmediateResultBuf[curBuf].GetUAV());
-        cptCtx.SetConstants(0, DWParam(bufSize), DWParam(bufId), DWParam(0));
-        cptCtx.Dispatch(groupCount);
-        Trans(cptCtx, _intermmediateResultBuf[curBuf], SRV);
-        Bind(cptCtx, 2, 0, 1, &_intermmediateResultBuf[curBuf].GetSRV());
-        curBuf = 1 - curBuf;
-        bufSize = groupCount;
-        groupCount =
-            (groupCount + _currentReductionRate - 1) / _currentReductionRate;
+    UINT groupCount = (_size + _reduceRatio - 1) / _reduceRatio;
+    if (_reductionPassMode != kAtomicAdd) {
+        UINT threshold = _reductionPassMode == kDone1Goup ? 1 : _reduceRatio;
+        ComputePSO& PSO = _cptPSO[_type][_threadPerTG][_fetchPerThread][p];
+        if (!PSO.GetPipelineStateObject()) {
+            _CreatePSO(_type, _threadPerTG, _fetchPerThread, p);
+        }
+        cptCtx.SetPipelineState(PSO);
+        while (groupCount > threshold) {
+            Trans(cptCtx, _tempResultBuf[curBuf], UAV);
+            Bind(cptCtx, 1, 0, 1, &_tempResultBuf[curBuf].GetUAV());
+            cptCtx.SetConstants(
+                0, DWParam(bufSize), DWParam(bufId), DWParam(0));
+            cptCtx.Dispatch(groupCount);
+            Trans(cptCtx, _tempResultBuf[curBuf], SRV);
+            Bind(cptCtx, 2, 0, 1, &_tempResultBuf[curBuf].GetSRV());
+            curBuf = 1 - curBuf;
+            bufSize = groupCount;
+            groupCount = (groupCount + _reduceRatio -  1) / _reduceRatio;
+        }
     }
-    Bind(cptCtx, 1, 0, 1, &_finalResultBuf.GetUAV());
-    cptCtx.SetConstants(0, DWParam(bufSize), DWParam(bufId), DWParam(1));
-    cptCtx.Dispatch(1);
+    if (_reductionPassMode == kDone1Goup) {
+        Trans(cptCtx, _resultBuf, UAV);
+        Bind(cptCtx, 1, 0, 1, &_resultBuf.GetUAV());
+        cptCtx.SetConstants(
+            0, DWParam(bufSize), DWParam(bufId), DWParam(groupCount));
+    } else {
+        ComputePSO& PSO =
+            _cptPSO[_type][_threadPerTG][_fetchPerThread][kAtomicAdd];
+        if (!PSO.GetPipelineStateObject()) {
+            _CreatePSO(_type, _threadPerTG, _fetchPerThread, kAtomicAdd);
+        }
+        cptCtx.SetPipelineState(PSO);
+        Trans(cptCtx, _resultAtomicBuf, UAV);
+        Bind(cptCtx, 1, 0, 1, &_resultAtomicBuf.GetUAV());
+        cptCtx.SetConstants(0, DWParam(bufSize),
+            DWParam(bufId * _elementSize), DWParam(groupCount));
+    }
+    cptCtx.Dispatch(groupCount);
+}
+
+void
+Reduction::ClearResultBuf(ComputeContext& cptCtx)
+{
+    static UINT ClearValue[4] = {};
+    if (_reductionPassMode != kDone1Goup) {
+        cptCtx.ClearUAV(_resultAtomicBuf, ClearValue);
+        BeginTrans(cptCtx, _resultAtomicBuf, UAV);
+    }
 }
 
 void
 Reduction::PrepareResult(ComputeContext& cptCtx)
 {
-    UINT elementSize;
-    switch (_type)
-    {
-    case kFLOAT4: elementSize = 4 * sizeof(float); break;
-    case kFLOAT: elementSize = sizeof(float); break;
-    default: PRINTERROR("Reduction Type is invalid"); break;
+    if (_reductionPassMode == kDone1Goup) {
+        Trans(cptCtx, _resultBuf, SRC);
+        cptCtx.CopyBufferRegion(
+            _readBackBuf, 0, _resultBuf, 0, _bufCount * _elementSize);
+        BeginTrans(cptCtx, _resultBuf, UAV);
+    } else {
+        Trans(cptCtx, _resultAtomicBuf, SRC);
+        cptCtx.CopyBufferRegion(
+            _readBackBuf, 0, _resultAtomicBuf, 0, _bufCount * _elementSize);
+        BeginTrans(cptCtx, _resultAtomicBuf, UAV);
     }
-    cptCtx.CopyBufferRegion(
-        _readBackBuf, 0, _finalResultBuf, 0, _bufCount * elementSize);
-    _readBackFence = cptCtx.Flush(false);
+    _readBackFence = cptCtx.Flush();
 }
 
 void
 Reduction::ReadLastResult(float* result)
 {
     Graphics::g_cmdListMngr.WaitForFence(_readBackFence);
-    UINT elementSize;
-    switch (_type)
-    {
-    case kFLOAT4: elementSize = 4 * sizeof(float); break;
-    case kFLOAT: elementSize = sizeof(float); break;
-    default: PRINTERROR("Reduction Type is invalid"); break;
-    }
-    D3D12_RANGE range = {0, elementSize};
+    D3D12_RANGE range = {0, _elementSize};
     D3D12_RANGE umapRange = {};
     _readBackBuf.Map(&range, &_readBackPtr);
-    memcpy(result, _readBackPtr, _bufCount * elementSize);
+    memcpy(result, _readBackPtr, _bufCount * _elementSize);
     _readBackBuf.Unmap(&umapRange);
     return;
 }
@@ -270,17 +299,19 @@ Reduction::RenderGui()
     RadioButton("16##Reduction", (int*)&_fetchPerThread, kF16); NextColumn();
     RadioButton("1024##Reduction", (int*)&_threadPerTG, kT1024); NextColumn();
     Columns(1);
+    Separator();
+    RadioButton("AtomicAdd##Reduction", (int*)&_reductionPassMode, kAtomicAdd);
+    RadioButton("Recursive##Reduction", (int*)&_reductionPassMode, kDone1Goup);
+    RadioButton("Adaptive##Reduction", (int*)&_reductionPassMode, kAdaptive);
 }
 
 void
-Reduction::_CreateIntermmediateBuf(uint32_t elementSize)
+Reduction::_CreateIntermmediateBuf()
 {
-    _intermmediateResultBuf[0].Destroy();
-    _intermmediateResultBuf[1].Destroy();
-    _intermmediateResultBuf[0].Create(L"Reduction",
-        (_size + _currentReductionRate - 1) / _currentReductionRate,
-        elementSize);
-    _intermmediateResultBuf[1].Create(L"Reduction",
-        (_size + _currentReductionRate - 1) / _currentReductionRate,
-        elementSize);
+    _tempResultBuf[0].Destroy();
+    _tempResultBuf[1].Destroy();
+    _tempResultBuf[0].Create(L"Reduction",
+        (_size + _reduceRatio - 1) / _reduceRatio, _elementSize);
+    _tempResultBuf[1].Create(L"Reduction",
+        (_size + _reduceRatio - 1) / _reduceRatio, _elementSize);
 }

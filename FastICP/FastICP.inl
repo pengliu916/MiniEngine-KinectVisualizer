@@ -1,7 +1,5 @@
-#define CPU_THREAD_X 128
-#define CPU_THREAD_Y 128
-#define GPU_THREAD_X 16
-#define GPU_THREAD_Y 64
+#define THREAD_X 8
+#define THREAD_Y 8
 // Do not modify below this line
 #define DATABUF_COUNT 7
 #if __cplusplus

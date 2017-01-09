@@ -1,5 +1,9 @@
 StructuredBuffer<TYPE> buf_srvInput : register(t0);
+#if ATOMIC_ACCU
+RWByteAddressBuffer buf_uavOutput : register(u0);
+#else
 RWStructuredBuffer<TYPE> buf_uavOutput : register(u0);
+#endif
 
 cbuffer CBdata : register(b0)
 {
@@ -7,6 +11,18 @@ cbuffer CBdata : register(b0)
     uint uResultOffset;
     uint uFinalResult;
 }
+
+#if ATOMIC_ACCU
+void interlockedAddFloat(uint addr, float value)
+{
+    uint comp, orig = buf_uavOutput.Load(addr);
+    [allow_uav_condition]
+    do {
+        buf_uavOutput.InterlockedCompareExchange(
+            addr, comp = orig, asuint(asfloat(orig) + value), orig);
+    } while (orig != comp);
+}
+#endif
 
 groupshared TYPE sharedMem[THREAD];
 
@@ -53,8 +69,19 @@ void main(uint3 Gid : SV_GroupID, uint3 DTid : SV_DispatchThreadID,
     if (GI < 4) sharedMem[GI] += sharedMem[GI + 4];
     if (GI < 2) sharedMem[GI] += sharedMem[GI + 2];
     if (GI < 1) sharedMem[GI] += sharedMem[GI + 1];
-    
+
     if (GI == 0) {
+#if ATOMIC_ACCU
+#   if DATAWIDTH == 4
+        interlockedAddFloat(uResultOffset + 0, sharedMem[0].x);
+        interlockedAddFloat(uResultOffset + 4, sharedMem[0].y);
+        interlockedAddFloat(uResultOffset + 8, sharedMem[0].z);
+        interlockedAddFloat(uResultOffset + 12, sharedMem[0].w);
+#   else
+        interlockedAddFloat(uResultOffset, sharedMem[0]);
+#   endif
+#else
         buf_uavOutput[uFinalResult ? uResultOffset : Gid.x] = sharedMem[0];
+#endif
     }
 }
