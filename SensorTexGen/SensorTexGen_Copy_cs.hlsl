@@ -6,7 +6,7 @@
 RWTexture2D<float4> ColorTex : register(u3);
 #endif // COLOR_TEX
 #if DEPTH_TEX
-RWTexture2D<uint> DepthTex : register(u0);
+RWTexture2D<float> NormDepthTex : register(u0);
 #endif // DEPTH_TEX
 #if INFRARED_TEX
 RWTexture2D<float4> InfraredTex : register(u2);
@@ -35,8 +35,9 @@ void main(uint3 Gid : SV_GroupID,
 #endif // COLOR_TEX
 
 #if VISUALIZED_DEPTH_TEX
+    // denorm the normDepth need *10 and convert to mm need another * 1000
     DepthVisualTex[u2Out_xy] =
-        (GetDepth(u2Out_xy, uId, f4w).xxxx % 255) / 255.f;
+        ((uint)(GetNormDepth(u2Out_xy, uId, f4w) * 10000) % 255) / 255.f;
 #endif // VISUALIZED_DEPTH_TEX
 
 #if INFRARED_TEX
@@ -44,6 +45,6 @@ void main(uint3 Gid : SV_GroupID,
 #endif // INFRARED_TEX
 
 #if DEPTH_TEX
-    DepthTex[u2Out_xy] = GetDepth(u2Out_xy, uId, f4w);
+    NormDepthTex[u2Out_xy] = GetNormDepth(u2Out_xy, uId, f4w);
 #endif // COLOR_TEX
 } 

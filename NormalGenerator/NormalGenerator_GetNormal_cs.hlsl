@@ -4,7 +4,7 @@
 // Note: the normal is calculated in a way that truly represent normal for the 
 //       position in the 'center' of for neighboring points.
 //==============================================================================
-Texture2D<uint> tex_srvDepth : register(t0);
+Texture2D<float> tex_srvNormDepth : register(t0);
 RWTexture2D<float4> tex_uavNormal : register(u0);
 #if WEIGHT_OUT
 RWTexture2D<float> tex_uavWeight : register(u1);
@@ -18,7 +18,8 @@ Texture2D<float> tex_srvWeight : register(t1);
 float3 GetValidPos(uint2 u2uv)
 {
     float3 f3Pos;
-    f3Pos.z = tex_srvDepth.Load(int3(u2uv, 0)) * -0.001f;
+    // * -10.f to denorm normDepth map [0,1] -> [-10, 0]
+    f3Pos.z = tex_srvNormDepth.Load(int3(u2uv, 0)) * -10.f;
     f3Pos.xy = float2(u2uv - DEPTH_C) * f3Pos.z / DEPTH_F;
     return f3Pos;
 }

@@ -47,7 +47,7 @@ ComputePSO _cptDepthPSO[kDepthMode][kDataMode][2];
 ComputePSO _cptColorPSO[kColorMode][kDataMode];
 
 DXGI_FORMAT RTformat[] = {
-    DXGI_FORMAT_R16_UINT, // For kDepth
+    DXGI_FORMAT_R16_UNORM, // For kDepth
     DXGI_FORMAT_R11G11B10_FLOAT, // For kDepthVisualTex
     DXGI_FORMAT_R11G11B10_FLOAT, // For kInfraredTex
     DXGI_FORMAT_R11G11B10_FLOAT, // For kColorTex

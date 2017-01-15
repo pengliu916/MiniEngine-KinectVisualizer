@@ -53,7 +53,7 @@ static const float4 f4k = DEPTH_K;
 #define U2RESO u2DepthInfraredReso
 Buffer<uint> DepBuffer : register(t0);
 
-uint GetFakedDepth(uint2 u2uv)
+float GetFakedNormDepth(uint2 u2uv)
 {
     float fResult = fBgDist;
     float2 f2ab = (u2uv - f2c) / f2f;
@@ -68,13 +68,13 @@ uint GetFakedDepth(uint2 u2uv)
         any(u2uv == uint2(256, 212))) {
         fResult += .2f;
     }
-    return fResult * 1000.f;
+    return fResult * 0.1f;
 }
 
-uint GetDepth(uint2 u2Out_xy, uint uId, float4 f4w)
+float GetNormDepth(uint2 u2Out_xy, uint uId, float4 f4w)
 {
 #   if FAKEDDEPTH
-    return GetFakedDepth(u2Out_xy);
+    return GetFakedNormDepth(u2Out_xy);
 #   else
 #       if UNDISTORTION
     uint4 u4;
@@ -83,9 +83,11 @@ uint GetDepth(uint2 u2Out_xy, uint uId, float4 f4w)
     u4.z = DepBuffer[uId + U2RESO.x];
     u4.w = DepBuffer[uId + U2RESO.x + 1];
     float4 f4 = (u4 > 200 && u4 < 10000);
-    return (uint)(dot(u4 * f4, f4w) / dot(f4, f4w) + 0.5f);
+    // * 0.001 to get meter, and since range [0,10] meters need to map to [0, 1]
+    // * 0.1 again
+    return (dot(u4 * f4, f4w) / dot(f4, f4w) + 0.5f) * 0.0001f;
 #       else
-    return DepBuffer[uId];
+    return DepBuffer[uId] * 0.0001f;
 #       endif // UNDISTORTION
 #   endif // FAKEDDEPTH
 }

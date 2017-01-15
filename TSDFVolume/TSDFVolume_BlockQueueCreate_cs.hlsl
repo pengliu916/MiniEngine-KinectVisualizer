@@ -93,7 +93,7 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
 // Pass_2 Update UpdateQueue from DepthMap
 //------------------------------------------------------------------------------
 #if PASS_2
-Texture2D<uint> tex_srvDepth : register(t0);
+Texture2D<float> tex_srvNormDepth : register(t0);
 Texture2D<float> tex_srvWeight : register(t1);
 
 uint3 GetBlockIdx(float3 f3Pos)
@@ -119,7 +119,7 @@ bool GetValidReprojectedPoint(uint2 u2Idx, out float3 f3Pos)
         tex_srvWeight.Load(uint3(u2Idx, 0)) <= 0.05f) {
         return false;
     }
-    float z = tex_srvDepth.Load(uint3(u2Idx.xy, 0)) * -0.001f;
+    float z = tex_srvNormDepth.Load(uint3(u2Idx.xy, 0)) * -10.f;
     if (z < f2DepthRange.x && z > f2DepthRange.y) {
         float2 f2xy = (u2Idx - DEPTH_C) / DEPTH_F * z;
         float4 f4Pos = float4(f2xy, z, 1.f);

@@ -7,7 +7,7 @@ struct PSOutput {
     float4 f4ColorOut : SV_Target0;
 #endif // COLOR_TEX
 #if DEPTH_TEX
-    uint uDepthOut : SV_Target0;
+    float fDepthOut : SV_Target0;
 #endif // DEPTH_TEX
 #if VISUALIZED_DEPTH_TEX
     float4 f4DepVisaulOut : SV_Target1;
@@ -37,7 +37,8 @@ PSOutput main(
 #endif // COLOR_TEX
 
 #if VISUALIZED_DEPTH_TEX
-    output.f4DepVisaulOut = (GetDepth(u2Out_xy, uId, f4w).xxxx % 255) / 255.f;
+    output.f4DepVisaulOut =
+        ((uint)(GetNormDepth(u2Out_xy, uId, f4w) * 10000) % 255) / 255.f;
 #endif // VISUALIZED_DEPTH_TEX
 
 #if INFRARED_TEX
@@ -45,7 +46,7 @@ PSOutput main(
 #endif // INFRARED_TEX
 
 #if DEPTH_TEX
-    output.uDepthOut = GetDepth(u2Out_xy, uId, f4w);
+    output.fDepthOut = GetNormDepth(u2Out_xy, uId, f4w);
 #endif // DEPTH_TEX
     return output;
 }

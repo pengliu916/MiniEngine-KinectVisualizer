@@ -39,7 +39,7 @@ DynAlloc* _gaussianWeightUploadBuf;
 
 int _iKernelRadius = 3;
 int _iEdgePixel = 2;
-int _iEdgeThreshold = 100;
+float _fEdgeThreshold = 0.1f;
 float _fRangeSigma = 25;
 float _fGaussianWeight[64] = {};
 bool _cbStaled = true;
@@ -133,7 +133,7 @@ void _CreatePSOs()
     _hPassPSO[kKeepEdge].SetInputLayout(0, nullptr);
     _hPassPSO[kKeepEdge].SetVertexShader(
         quadVS->GetBufferPointer(), quadVS->GetBufferSize());
-    DXGI_FORMAT format = DXGI_FORMAT_R16_UINT;
+    DXGI_FORMAT format = DXGI_FORMAT_R16_UNORM;
     _hPassPSO[kKeepEdge].SetRenderTargetFormats(
         1, &format, DXGI_FORMAT_UNKNOWN);
     _hPassPSO[kKeepEdge].SetPrimitiveTopologyType(
@@ -210,7 +210,7 @@ SeperableFilter::OnRender(GraphicsContext& gfxCtx, const std::wstring procName,
     }
     if (_cbStaled) {
         _UpdateCB(u2Reso, _fRangeSigma,
-            _iKernelRadius, _iEdgeThreshold, _iEdgePixel);
+            _iKernelRadius, _fEdgeThreshold, _iEdgePixel);
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
@@ -279,7 +279,8 @@ SeperableFilter::RenderGui()
         if (_edgeRemoval) {
             M(SliderInt(
                 "Edge Pixel", &_iEdgePixel, 1, min(10, _iKernelRadius)));
-            M(SliderInt("Edge Threshold", &_iEdgeThreshold, 50, 500, "%.0fmm"));
+            M(SliderFloat(
+                "Edge Threshold", &_fEdgeThreshold, 0.05f, 0.5f, "%.2fm"));
         }
     }
 #undef  M
@@ -294,7 +295,7 @@ SeperableFilter::_Resize(DirectX::XMUINT2 reso)
     if (_dataCB.u2Reso.x != reso.x || _dataCB.u2Reso.y != reso.y) {
         _intermediateBuf.Destroy();
         _intermediateBuf.Create(L"BilateralTemp",
-            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UINT);
+            (uint32_t)reso.x, (uint32_t)reso.y, 1, DXGI_FORMAT_R16_UNORM);
         _viewport.Width = static_cast<float>(reso.x);
         _viewport.Height = static_cast<float>(reso.y);
         _viewport.MaxDepth = 1.0;
@@ -305,18 +306,18 @@ SeperableFilter::_Resize(DirectX::XMUINT2 reso)
         // ->deviation = 25;
         // ->variance = 625
         _UpdateCB(reso, _fRangeSigma, _iKernelRadius,
-            _iEdgeThreshold, _iEdgePixel);
+            _fEdgeThreshold, _iEdgePixel);
         _cbStaled = true;
     }
 }
 
 void
 SeperableFilter::_UpdateCB(uint2 u2Reso, float fRangeSigma, int iKernelRadius,
-    int iEdgeThreshold, int iEdgePixel)
+    float fEdgeThreshold, int iEdgePixel)
 {
     _dataCB.u2Reso = u2Reso;
     _dataCB.fRangeVar = fRangeSigma * fRangeSigma;
     _dataCB.iKernelRadius = iKernelRadius;
     _dataCB.iEdgePixel = iEdgePixel;
-    _dataCB.iEdgeThreshold = iEdgeThreshold;
+    _dataCB.fEdgeThreshold = fEdgeThreshold;
 }

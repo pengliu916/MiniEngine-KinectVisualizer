@@ -20,7 +20,7 @@ CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
 {
     uint2 u2Reso;
     float fRangeVar; // Let edge distance threshold as 2*deviation
-    int iEdgeThreshold; // Trigger edge removal
+    float fEdgeThreshold; // Trigger edge removal
     int iEdgePixel; // Dist of edge finding
     int iKernelRadius;
 #if __cplusplus

@@ -180,14 +180,14 @@ void IsoSurfaceShading(Ray eyeray, float2 f2NearFar,
     return;
 }
 
-void GetDepth(Ray eyeray, float2 f2NearFar, inout uint uDepth)
+void GetDepth(Ray eyeray, float2 f2NearFar, inout float fDepth)
 {
     float3 f3SurfPos;
     if (!FindIntersectPos(eyeray, f2NearFar, f3SurfPos)) {
         return;
     }
     float4 f4Pos = mul(CAMVIEW, float4(f3SurfPos, 1.f));
-    uDepth = -1000.f * f4Pos.z + 0.5f;
+    fDepth = f4Pos.z;
 }
 
 //------------------------------------------------------------------------------
@@ -197,20 +197,20 @@ void main(
     float3 f3Pos : POSITION1,
     float4 f4ProjPos : SV_POSITION,
 #if FOR_SENSOR
-    out uint uDepth : SV_Target
+    out float fDepth : SV_Target
 #endif // FOR_SENSOR
 #if FOR_VCAMERA
-    out uint uDepth : SV_Target,
-    out float fDepth : SV_Depth
+    out float fDepth : SV_Target,
+    out float fDepthBuf : SV_Depth
 #endif // FOR_VCAMERA
 )
 {
     // calculate ray intersection with bounding box
     float fTnear, fTfar;
-    uDepth = 0;
+    fDepth = 0;
     //f4Col = float4(1.f, 1.f, 1.f, 0.f) * 0.2f;
 #if FOR_VCAMERA
-    fDepth = 0.f;
+    fDepthBuf = 0.f;
 #endif // FOR_VCAMERA
 #if ENABLE_BRICKS
     int2 uv = f4ProjPos.xy;
@@ -248,16 +248,16 @@ void main(
     if (fTnear <= 0) {
         fTnear = 0;
     }
-    //IsoSurfaceShading(eyeray, float2(fTnear, fTfar), f4Col, fDepth);
+    //IsoSurfaceShading(eyeray, float2(fTnear, fTfar), f4Col, fDepthBuf);
     float3 f3SurfPos;
     if (!FindIntersectPos(eyeray, float2(fTnear, fTfar), f3SurfPos)) {
         return;
     }
     float4 f4Pos = mul(CAMVIEW, float4(f3SurfPos, 1.f));
-    uDepth = -1000.f * f4Pos.z + 0.5f;
+    fDepth = f4Pos.z < -10.f ? 0.f : f4Pos.z * -0.1f;
 #if FOR_VCAMERA
     f4Pos = mul(mProjView, float4(f3SurfPos, 1.f));
-    fDepth = f4Pos.z / f4Pos.w;
+    fDepthBuf = f4Pos.z / f4Pos.w;
 #endif // FOR_VCAMERA
     return;
 }

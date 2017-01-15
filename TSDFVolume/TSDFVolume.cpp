@@ -274,7 +274,7 @@ void _CreatePSOs()
     // Create PSO for volume update and volume render
     DXGI_FORMAT ColorBufFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
     DXGI_FORMAT DepthBufFormat = Graphics::g_SceneDepthBuffer.GetFormat();
-    DXGI_FORMAT DepthMapFormat = DXGI_FORMAT_R16_UINT;
+    DXGI_FORMAT DepthMapFormat = DXGI_FORMAT_R16_UNORM;
     //DXGI_FORMAT ExtractTexFormat = DXGI_FORMAT_R16_UINT;
 
 #define CreatePSO( ObjName, Shader)\

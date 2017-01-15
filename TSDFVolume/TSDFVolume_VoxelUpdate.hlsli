@@ -2,7 +2,7 @@
 #include "TSDFVolume.hlsli"
 #include "CalibData.inl"
 
-Texture2D<uint> tex_srvDepth : register(t0);
+Texture2D<float> tex_srvNormDepth : register(t0);
 #if TYPED_UAV
 RWBuffer<float> tex_uavTSDFVol : register(u0);
 RWBuffer<float> tex_uavWeightVol : register(u1);
@@ -68,7 +68,7 @@ bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
     int2 i2uv;
     float fDepthToSensor;
     if (GetValidDepthUV(u3DTid, fDepthToSensor, i2uv)) {
-        float fSurfaceDepthToSensor = tex_srvDepth.Load(int3(i2uv, 0)) * 0.001f;
+        float fSurfaceDepthToSensor = tex_srvNormDepth.Load(int3(i2uv, 0)) * 10.f;
         float fSD = fSurfaceDepthToSensor + fDepthToSensor;
         // Discard voxels if it's far behind surface
         if (fSD > -vParam.fTruncDist) {

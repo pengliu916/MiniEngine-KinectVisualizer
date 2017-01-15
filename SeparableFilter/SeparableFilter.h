@@ -18,7 +18,7 @@ public:
 private:
     void _Resize(DirectX::XMUINT2 reso);
     void _UpdateCB(uint2 u2Reso, float fRangeVar, int iKernelRadius,
-        int iEdgeThreshold, int iEdgePixel);
+        float fEdgeThreshold, int iEdgePixel);
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
