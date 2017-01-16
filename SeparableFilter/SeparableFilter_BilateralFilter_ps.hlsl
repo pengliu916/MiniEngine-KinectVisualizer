@@ -29,9 +29,14 @@ float main(float2 Tex : TEXCOORD0) : SV_Target
             tex_srvNormInput.Load(i3CurrentUVIdx + int3(0, i, 0));
 #endif // HorizontalPass
 #if EdgeRemoval
-        if (abs(i) <= iEdgePixel &&
-            // absolute value is diff of norm depth so threshold need * 0.1f
+        // absolute value is diff of norm depth so threshold need * 0.1f
+        if (fSampleNormDepth == 0.f ||
             abs(fSampleNormDepth - fCenterNormDepth) > fEdgeThreshold * 0.1f) {
+            tex_uavWeight[Tex.xy] = 0.f;
+            return 0.f;
+        }
+#else
+        if (fSampleNormDepth == 0.f) {
             tex_uavWeight[Tex.xy] = 0.f;
             return 0.f;
         }
@@ -39,8 +44,8 @@ float main(float2 Tex : TEXCOORD0) : SV_Target
         float weight = buf_srvGaussianWeight.Load(abs(i));
         float delta = fCenterNormDepth - fSampleNormDepth;
         // Multiply by range weight
-        // Since delta is normdepth, thus fRangeVar need times 0.1^2
-        weight *= exp((-1.0f * delta * delta) / (0.02f * fRangeVar));
+        // Since delta is normdepth, thus times 10.f
+        weight *= exp((-100.0f * delta * delta) / (2.f * fRangeVar));
         fNormDepth += fSampleNormDepth * weight;
         fWeight += weight;
     }

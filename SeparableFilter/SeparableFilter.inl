@@ -21,8 +21,8 @@ CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
     uint2 u2Reso;
     float fRangeVar; // Let edge distance threshold as 2*deviation
     float fEdgeThreshold; // Trigger edge removal
-    int iEdgePixel; // Dist of edge finding
     int iKernelRadius;
+    int iUIN;
 #if __cplusplus
     void * operator new(size_t i) {
         return _aligned_malloc(i, 16);

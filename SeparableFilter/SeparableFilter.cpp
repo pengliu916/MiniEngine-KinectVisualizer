@@ -38,9 +38,8 @@ StructuredBuffer _gaussianWeightBuf;
 DynAlloc* _gaussianWeightUploadBuf;
 
 int _iKernelRadius = 3;
-int _iEdgePixel = 2;
 float _fEdgeThreshold = 0.1f;
-float _fRangeSigma = 25;
+float _fRangeSigma = 0.01f;
 float _fGaussianWeight[64] = {};
 bool _cbStaled = true;
 bool _enabled = true;
@@ -209,8 +208,7 @@ SeperableFilter::OnRender(GraphicsContext& gfxCtx, const std::wstring procName,
         _Resize(u2Reso);
     }
     if (_cbStaled) {
-        _UpdateCB(u2Reso, _fRangeSigma,
-            _iKernelRadius, _fEdgeThreshold, _iEdgePixel);
+        _UpdateCB(u2Reso, _fRangeSigma, _iKernelRadius, _fEdgeThreshold);
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         gfxCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
@@ -274,11 +272,8 @@ SeperableFilter::RenderGui()
     Checkbox("EdgeRemoval", &_edgeRemoval);
     if (_enabled) {
         M(SliderInt("Kernel Radius", (int*)&_iKernelRadius, 1, 32));
-        _iEdgePixel = min(_iEdgePixel, _iKernelRadius);
-        M(SliderFloat("Range Sigma", &_fRangeSigma, 5.f, 50.f));
+        M(SliderFloat("Range Sigma", &_fRangeSigma, 0.001f, 0.1f, "%.3fm"));
         if (_edgeRemoval) {
-            M(SliderInt(
-                "Edge Pixel", &_iEdgePixel, 1, min(10, _iKernelRadius)));
             M(SliderFloat(
                 "Edge Threshold", &_fEdgeThreshold, 0.05f, 0.5f, "%.2fm"));
         }
@@ -302,22 +297,20 @@ SeperableFilter::_Resize(DirectX::XMUINT2 reso)
         _scisorRact.right = static_cast<LONG>(reso.x);
         _scisorRact.bottom = static_cast<LONG>(reso.y);
 
-        // We set 50mm as edge threshold, so 50 will be 2*deviation
-        // ->deviation = 25;
-        // ->variance = 625
-        _UpdateCB(reso, _fRangeSigma, _iKernelRadius,
-            _fEdgeThreshold, _iEdgePixel);
+        // We set 50mm (0.05m) as edge threshold, so 50 will be 2*deviation
+        // ->deviation = 0.025;
+        // ->variance = 0.000625
+        _UpdateCB(reso, _fRangeSigma, _iKernelRadius, _fEdgeThreshold);
         _cbStaled = true;
     }
 }
 
 void
 SeperableFilter::_UpdateCB(uint2 u2Reso, float fRangeSigma, int iKernelRadius,
-    float fEdgeThreshold, int iEdgePixel)
+    float fEdgeThreshold)
 {
     _dataCB.u2Reso = u2Reso;
     _dataCB.fRangeVar = fRangeSigma * fRangeSigma;
     _dataCB.iKernelRadius = iKernelRadius;
-    _dataCB.iEdgePixel = iEdgePixel;
     _dataCB.fEdgeThreshold = fEdgeThreshold;
 }
