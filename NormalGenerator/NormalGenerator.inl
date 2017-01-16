@@ -14,7 +14,7 @@
 #endif
 
 #if __cplusplus || (__hlsl)
-CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
+CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b1)
 {
     float fAngleThreshold; // neighbor beyond that threshold is invalid
     float fDistThreshold; // neighbor beyond that threshold is invalid

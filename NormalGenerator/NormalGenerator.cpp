@@ -114,11 +114,13 @@ void _CreateStaticResource()
         }
     }
     // Create RootSignature
-    _rootsig.Reset(3);
-    _rootsig[0].InitAsConstantBuffer(0);
-    _rootsig[1].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 2);
+    _rootsig.Reset(4, 1);
+    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
+    _rootsig[0].InitAsConstants(0, 2);
+    _rootsig[1].InitAsConstantBuffer(1);
     _rootsig[2].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 2);
+    _rootsig[3].InitAsDescriptorRange(
         D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 2);
     _rootsig.Finalize(L"NormalGenerator",
         D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
@@ -181,9 +183,9 @@ NormalGenerator::OnProcessing(
     if (pWeightTex) {
         if (_bOutWeight) {
             Trans(cptCtx, *pWeightTex, UAV);
-            Bind(cptCtx, 1, 1, 1, &pWeightTex->GetUAV());
+            Bind(cptCtx, 2, 1, 1, &pWeightTex->GetUAV());
             if (!_typedLoadSupported) {
-                Bind(cptCtx, 2, 1, 1, &pWeightTex->GetSRV());
+                Bind(cptCtx, 3, 1, 1, &pWeightTex->GetSRV());
             }
             cptCtx.SetPipelineState(_cptGetNormalPSO[kWithWeight]);
         } else {
@@ -192,9 +194,11 @@ NormalGenerator::OnProcessing(
     } else {
         cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
     }
-    cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
-    Bind(cptCtx, 1, 0, 1, &pOutputTex->GetUAV());
-    Bind(cptCtx, 2, 0, 1, &pInputTex->GetSRV());
+    cptCtx.SetConstants(0, DWParam(1.f / pOutputTex->GetWidth()),
+        DWParam(1.f / pOutputTex->GetHeight()));
+    cptCtx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
+    Bind(cptCtx, 2, 0, 1, &pOutputTex->GetUAV());
+    Bind(cptCtx, 3, 0, 1, &pInputTex->GetSRV());
     cptCtx.Dispatch2D(pOutputTex->GetWidth(), pOutputTex->GetHeight());
 }
 
@@ -209,6 +213,8 @@ NormalGenerator::RenderGui()
         _CreatePSO();
     }
     Checkbox("Output Weight", &_bOutWeight);
-    _scbStaled = SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.5f);
-    _scbStaled = SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f);
+#define M(x) _scbStaled |= x
+    M(SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.5f));
+    M(SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f, "%.2fm"));
+#undef M
 }
