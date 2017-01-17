@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "FastICP.h"
+#include "LDLT.h"
 #include "Reduction/Reduction.h"
 
 #define Trans(ctx, res, state) \
@@ -65,7 +66,8 @@ ObjName.Finalize();
 void _CreateStaticResource()
 {
     // Create RootSignature
-    _rootsig.Reset(3);
+    _rootsig.Reset(3, 1);
+    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
     _rootsig[0].InitAsConstantBuffer(0);
     _rootsig[1].InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 7);
     _rootsig[2].InitAsDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 5);
@@ -82,7 +84,9 @@ void _CreateStaticResource()
 FastICP::FastICP()
 {
     _dataCB.u2AlignedReso = uint2(0, 0);
+    _dataCB.f2InvOrigReso = float2(0.f, 0.f);
     _dataCB.fNormalDiffThreshold = 0.3f;
+    _dataCB.mXform = DirectX::XMMatrixIdentity();
 }
 
 FastICP::~FastICP()
@@ -103,6 +107,7 @@ FastICP::OnCreateResource(uint2 inputReso)
     h = (h + THREAD_Y - 1) & ~(THREAD_Y - 1);
     if (_dataCB.u2AlignedReso.x != w || _dataCB.u2AlignedReso.y != h) {
         _dataCB.u2AlignedReso = uint2(w, h);
+        _dataCB.f2InvOrigReso = float2( 1.f / inputReso.x, 1.f/ inputReso.y);
         _CreatePrepareBuffers(uint2(w, h));
     }
 }
@@ -130,11 +135,12 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
     ASSERT(w == pKinectDepth->GetWidth() && h == pKinectDepth->GetHeight());
     ASSERT(w == pKinectNormal->GetWidth() && h == pKinectNormal->GetHeight());
 
-    w = (w + THREAD_X - 1) & ~(THREAD_X - 1);
-    h = (h + THREAD_Y - 1) & ~(THREAD_Y - 1);
-    if (_dataCB.u2AlignedReso.x != w || _dataCB.u2AlignedReso.y != h) {
-        _dataCB.u2AlignedReso = uint2(w, h);
-        _CreatePrepareBuffers(uint2(w, h));
+    uint16_t _w = (w + THREAD_X - 1) & ~(THREAD_X - 1);
+    uint16_t _h = (h + THREAD_Y - 1) & ~(THREAD_Y - 1);
+    if (_dataCB.u2AlignedReso.x != _w || _dataCB.u2AlignedReso.y != _h) {
+        _dataCB.u2AlignedReso = uint2(_w, _h);
+        _dataCB.f2InvOrigReso = float2(1.f / w, 1.f / h);
+        _CreatePrepareBuffers(uint2(_w, _h));
     }
     Trans(cptCtx, *pWeight, SRV);
     Trans(cptCtx, *pTSDFDepth, SRV);
@@ -155,7 +161,7 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
         for (int i = 0; i < DATABUF_COUNT; ++i) {
             Bind(cptCtx, 1, i, 1, &_dataPackBuf[i].GetUAV());
         }
-        cptCtx.Dispatch2D(w, h);
+        cptCtx.Dispatch2D(_w, _h);
     }
     {
         swprintf_s(profilerName, 32, L"ICP_Reduction[%d]", iteration);
@@ -172,6 +178,21 @@ void
 FastICP::OnSolving()
 {
     _pReductionExec->ReadLastResult(_reductionResult);
+    float* m = _reductionResult;
+    float a[36] = {
+        m[0],  m[1],  m[2],  m[4],  m[5],  m[6],
+        m[1],  m[7],  m[11], m[8],  m[9],  m[10],
+        m[2],  m[11], m[15], m[12], m[13], m[14],
+        m[4],  m[8],  m[12], m[16], m[17], m[18],
+        m[5],  m[9],  m[13], m[17], m[20], m[21],
+        m[6],  m[10], m[14], m[18], m[21], m[22],
+    };
+    float b[6] = {
+        -m[19], -m[23], -m[27], -m[24], -m[25], -m[26],
+    };
+    float x[6];
+    LDLT cholesky(a);
+    cholesky.Backsub(x, b);
 }
 
 void

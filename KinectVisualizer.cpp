@@ -106,6 +106,7 @@ void InitialSurfBuffer(SurfBufId id) {
     _surfBufs[id].depBuf = new DepthBuffer();
     if (_surfBufs[id].colorFormat == DXGI_FORMAT_R11G11B10_FLOAT ||
         _surfBufs[id].colorFormat == DXGI_FORMAT_R8_UNORM ||
+        _surfBufs[id].colorFormat == DXGI_FORMAT_R16_UNORM ||
         _surfBufs[id].colorFormat == DXGI_FORMAT_R10G10B10A2_UNORM) {
         _surfDebugShow.push_back({id, false});
     }

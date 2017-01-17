@@ -1,10 +1,12 @@
 #include "FastICP.inl"
 #include "CalibData.inl"
-Texture2D<uint> tex_srvKinectDepth : register(t0);
-Texture2D<uint> tex_srvTSDFDepth : register(t1);
+Texture2D<float> tex_srvKinectNormDepth : register(t0);
+Texture2D<float> tex_srvTSDFNormDepth : register(t1);
 Texture2D<float4> tex_srvKinectNormal : register(t2);
 Texture2D<float4> tex_srvTSDFNormal : register(t3);
 Texture2D<float> tex_srvWeight : register(t4);
+
+SamplerState samp_Linear : register(s0);
 
 RWStructuredBuffer<float4> buf_uavData0 : register(u0);//CxCx,CxCy,CxCz,Ctr
 RWStructuredBuffer<float4> buf_uavData1 : register(u1);//CxNx,CxNy,CxNz,CyCy
@@ -30,13 +32,11 @@ float3 ReprojectPt(uint2 u2xy, float fDepth)
     return float3(float2(u2xy - DEPTH_C) * fDepth / DEPTH_F, fDepth);
 }
 
-float GetNormalMatchedDepth(Texture2D<uint> tex_srvDepth, uint3 DTid)
+float GetNormalMatchedDepth(Texture2D<float> tex_srvNormDepth, uint3 DTid)
 {
-    uint uAccDepth = tex_srvDepth.Load(DTid);
-    uAccDepth += tex_srvDepth.Load(DTid, uint2(0, 1));
-    uAccDepth += tex_srvDepth.Load(DTid, uint2(1, 0));
-    uAccDepth += tex_srvDepth.Load(DTid, uint2(1, 1));
-    return uAccDepth * -0.001f / 4.f;
+    float4 f4 = tex_srvNormDepth.Gather(
+        samp_Linear, (DTid.xy + .5f) * f2InvOrigReso) * -10.f;
+    return dot(f4, 1.f) * .25f;
 }
 
 [numthreads(THREAD_X, THREAD_Y, 1)]
@@ -47,12 +47,11 @@ void main(uint3 DTid : SV_DispatchThreadID)
         AllZero(uIdx);
         return;
     }
-    float4 f4KinectNormal = tex_srvKinectNormal.Load(DTid);
-    // No valid normal data
-    if (f4KinectNormal.w < 0.05f) {
-        AllZero(uIdx);
-        return;
-    }
+    float3 f3KinectNormal = tex_srvKinectNormal.Load(DTid).xyz * 2.f - 1.f;
+    f3KinectNormal.x = dot(mXform[0].xyz, f3KinectNormal);
+    f3KinectNormal.y = dot(mXform[1].xyz, f3KinectNormal);
+    f3KinectNormal.z = dot(mXform[2].xyz, f3KinectNormal);
+
     float4 f4TSDFNormal = tex_srvTSDFNormal.Load(DTid);
     // No valid normal data
     if (f4TSDFNormal.w < 0.05f) {
@@ -60,14 +59,14 @@ void main(uint3 DTid : SV_DispatchThreadID)
         return;
     }
     // Normals are too different
-    if (dot(f4TSDFNormal.xyz, f4KinectNormal.xyz) < fNormalDiffThreshold) {
+    if (dot(f4TSDFNormal.xyz, f3KinectNormal) < fNormalDiffThreshold) {
         AllZero(uIdx);
         return;
     }
-    float fDepth = GetNormalMatchedDepth(tex_srvKinectDepth, DTid);
+    float fDepth = GetNormalMatchedDepth(tex_srvKinectNormDepth, DTid);
     // p is Kinect point, q is TSDF point, n is TSDF normal
     // c = p x n
-    float3 p = ReprojectPt(DTid.xy, fDepth);
+    float3 p = mul(mXform, float4(ReprojectPt(DTid.xy, fDepth), 1.f)).xyz;
     float3 n = f4TSDFNormal.xyz;
     float3 c = cross(p, n);
 
@@ -84,7 +83,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     cn = c.z * n; // Get CzNx, CzNy, CzNz
     buf_uavData3[uIdx] = float4(cn, cc.z);
 
-    fDepth = GetNormalMatchedDepth(tex_srvTSDFDepth, DTid);
+    fDepth = GetNormalMatchedDepth(tex_srvTSDFNormDepth, DTid);
     float3 q = ReprojectPt(DTid.xy, fDepth);
     float pqn = dot(p - q, n);
     float3 cpqn = c * pqn; // Get cx(p-q)n, cy(p-q)n, cz(p-q)n

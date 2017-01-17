@@ -110,6 +110,7 @@
   <ItemGroup>
     <ClInclude Include="FastICP\FastICP.h" />
     <ClCompile Include="FastICP\FastICP.cpp" />
+    <ClInclude Include="FastICP\LDLT.h" />
     <ClInclude Include="KinectVisualizer.h" />
     <ClCompile Include="KinectVisualizer.cpp" />
     <ClCompile Include="Main.cpp" />

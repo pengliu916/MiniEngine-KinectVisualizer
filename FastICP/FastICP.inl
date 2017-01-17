@@ -13,6 +13,8 @@
 #define STRUCT(x) x
 #else 
 typedef DirectX::XMUINT2 uint2;
+typedef DirectX::XMFLOAT2 float2;
+typedef DirectX::XMMATRIX matrix;
 #define REGISTER(x)
 #define STRUCT(x) struct
 #endif
@@ -20,6 +22,8 @@ typedef DirectX::XMUINT2 uint2;
 #if __cplusplus || (__hlsl)
 CBUFFER_ALIGN STRUCT(cbuffer) CBuffer REGISTER(b0)
 {
+    matrix mXform;
+    float2 f2InvOrigReso;
     uint2 u2AlignedReso;
     float fNormalDiffThreshold;
 #if __cplusplus
