@@ -61,6 +61,7 @@ private:
     void _CleanTSDFVols(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf);
     void _CleanFuseBlockVol(ComputeContext& cptCtx);
+    void _RefreshFuseBlockVol(ComputeContext& cptCtx);
     void _CleanRenderBlockVol(ComputeContext& cptCtx);
     void _UpdateVolume(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf,

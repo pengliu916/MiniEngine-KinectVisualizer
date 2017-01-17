@@ -103,10 +103,10 @@ uint3 GetBlockIdx(float3 f3Pos)
 
 void InterlockedAddToUpdateQueue(uint3 u3BlockIdx)
 {
-    uint uOrig = 1;
+    uint uOrig = BLOCKSTATEMASK_UPDATE;
     InterlockedOr(
         tex_uavFuseBlockVol[u3BlockIdx], BLOCKSTATEMASK_UPDATE, uOrig);
-    if ((uOrig & BLOCKSTATEMASK_UPDATE) == 0) {
+    if (!(uOrig & BLOCKSTATEMASK_UPDATE)) {
         AddToUpdateQueue(u3BlockIdx);
     }
 }

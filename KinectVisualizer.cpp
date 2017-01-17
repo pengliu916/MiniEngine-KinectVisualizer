@@ -328,12 +328,14 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         _bilateralFilter.IsEnabled() ? GetColBuf(FILTERED_DEPTH)
                                      : GetColBuf(KINECT_DEPTH),
         GetColBuf(KINECT_NORMAL), GetColBuf(WEIGHT));
-
-    for (uint8_t i = 0; i < 10; ++i) {
-        _fastICP.OnProcessing(cptCtx, i, GetColBuf(WEIGHT),
-            GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
-            GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
-        _fastICP.OnSolving();
+    {
+        GPU_PROFILE(cptCtx, L"ICP");
+        for (uint8_t i = 0; i < 10; ++i) {
+            _fastICP.OnProcessing(cptCtx, i, GetColBuf(WEIGHT),
+                GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
+                GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
+            _fastICP.OnSolving();
+        }
     }
     BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
     BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), RTV);

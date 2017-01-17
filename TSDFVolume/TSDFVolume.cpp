@@ -85,6 +85,7 @@ GraphicsPSO _gfxStepInfoDebugPSO;
 GraphicsPSO _gfxHelperWireframePSO;
 // PSOs for reseting
 ComputePSO _cptFuseBlockVolResetPSO;
+ComputePSO _cptFuseBlockVolRefreshPSO;
 ComputePSO _cptRenderBlockVolResetPSO;
 ComputePSO _cptTSDFBufResetPSO[kBuf];
 
@@ -132,6 +133,7 @@ void _CreatePSOs()
     ComPtr<ID3DBlob> blockUpdateCS[kBuf][kTG];
     ComPtr<ID3DBlob> tsdfVolResetCS[kBuf];
     ComPtr<ID3DBlob> fuseBlockVolResetCS;
+    ComPtr<ID3DBlob> fuseBlockVolRefreshCS;
     ComPtr<ID3DBlob> renderBlockVolResetCS;
 
     ComPtr<ID3DBlob> blockQCreate_Pass1CS;
@@ -182,6 +184,7 @@ void _CreatePSOs()
         { "FOR_VCAMERA", "0" },//9
         { "THREAD_DIM", "8" },//10
         { "RENDERBLOCKVOL_RESET", "0"},//11
+        { "FUSEBLOCKVOL_REFRESH", "0"},//12
         { nullptr, nullptr }
     };
 
@@ -196,7 +199,9 @@ void _CreatePSOs()
     V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolResetCS));
     macro[7].Definition = "0"; macro[11].Definition = "1";
     V(_Compile(L"VolumeReset_cs", macro, &renderBlockVolResetCS));
-    macro[11].Definition = "0";
+    macro[11].Definition = "0"; macro[12].Definition = "1";
+    V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolRefreshCS));
+    macro[12].Definition = "0";
     uint DefIdx;
     bool compiledOnce = false;
     for (int j = 0; j < kStruct; ++j) {
@@ -283,6 +288,7 @@ ObjName.SetComputeShader(Shader->GetBufferPointer(), Shader->GetBufferSize());\
 ObjName.Finalize();
 
     CreatePSO(_cptFuseBlockVolResetPSO, fuseBlockVolResetCS);
+    CreatePSO(_cptFuseBlockVolRefreshPSO, fuseBlockVolRefreshCS);
     CreatePSO(_cptRenderBlockVolResetPSO, renderBlockVolResetCS);
     CreatePSO(_cptBlockVolUpdate_Pass1, blockQCreate_Pass1CS);
     CreatePSO(_cptBlockVolUpdate_Pass2, blockQCreate_Pass2CS);
@@ -618,6 +624,7 @@ TSDFVolume::ResetAllResource()
     ComputeContext& cptCtx = ComputeContext::Begin(L"ResetContext");
     cptCtx.SetRootSignature(_rootsig);
     cptCtx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
+    _RefreshFuseBlockVol(cptCtx);
     _CleanTSDFVols(cptCtx, _curBufInterface);
     _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
@@ -1114,6 +1121,17 @@ TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx)
 }
 
 void
+TSDFVolume::_RefreshFuseBlockVol(ComputeContext& cptCtx)
+{
+    cptCtx.SetPipelineState(_cptFuseBlockVolRefreshPSO);
+    Bind(cptCtx, 2, 1, 1, &_fuseBlockVol.GetUAV());
+    const uint3 xyz = _volParam->u3VoxelReso;
+    const uint ratio = _volParam->uVoxelFuseBlockRatio;
+    cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
+        THREAD_X, THREAD_Y, THREAD_Z);
+}
+
+void
 TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 {
     cptCtx.SetPipelineState(_cptRenderBlockVolResetPSO);
@@ -1153,6 +1171,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _fuseBlockVol, UAV);
         Trans(cptCtx, *pDepthTex, psSRV | csSRV);
         Trans(cptCtx, *pWeightTex, csSRV);
+        Trans(cptCtx, _updateBlocksBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"Depth2UpdateQ");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
@@ -1169,6 +1188,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         BeginTrans(cptCtx, _fuseBlockVol, UAV);
         // Resolve UpdateBlockQueue for DispatchIndirect
         Trans(cptCtx, _indirectParams, UAV);
+        Trans(cptCtx, _updateBlocksBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"UpdateQResolve");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Resolve);
@@ -1201,6 +1221,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 3, 1, &_updateBlocksBuf.GetSRV());
             cptCtx.DispatchIndirect(_indirectParams, 12);
         }
+        BeginTrans(cptCtx, _fuseBlockVol, UAV);
         BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
         BeginTrans(cptCtx, _newFuseBlocksBuf, csSRV);
         BeginTrans(cptCtx, _freedFuseBlocksBuf, csSRV);
@@ -1222,6 +1243,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
                 _freedFuseBlocksBuf.GetCounterBuffer(), 0, 4);
             _readBackFence = cptCtx.Flush();
         }
+
         // Create indirect argument and params for Filling in
         // OccupiedBlockFreedSlot and AppendingNewOccupiedBlock
         Trans(cptCtx, _indirectParams, UAV);
@@ -1274,6 +1296,11 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, 1, &_occupiedBlocksBuf.GetCounterSRV(cptCtx));
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
+
+        // Reset FuseBlock for next update
+        Trans(cptCtx, _fuseBlockVol, UAV);
+        _RefreshFuseBlockVol(cptCtx);
+        BeginTrans(cptCtx, _fuseBlockVol, UAV);
     } else {
         GPU_PROFILE(cptCtx, L"Volume Updating");
         _CleanRenderBlockVol(cptCtx);
