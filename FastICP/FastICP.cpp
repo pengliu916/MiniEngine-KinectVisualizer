@@ -142,6 +142,9 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
         _dataCB.f2InvOrigReso = float2(1.f / w, 1.f / h);
         _CreatePrepareBuffers(uint2(_w, _h));
     }
+    for (int i = 0; i < DATABUF_COUNT; ++i) {
+        Trans(cptCtx, _dataPackBuf[i], UAV);
+    }
     Trans(cptCtx, *pWeight, SRV);
     Trans(cptCtx, *pTSDFDepth, SRV);
     Trans(cptCtx, *pTSDFNormal, SRV);

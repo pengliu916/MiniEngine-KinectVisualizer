@@ -19,6 +19,7 @@ enum OutMode {
 
 typedef D3D12_RESOURCE_STATES State;
 const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+const State CBV   = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
@@ -183,6 +184,7 @@ NormalGenerator::OnProcessing(
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         cptCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
+        Trans(cptCtx, _gpuCB, CBV);
         _cbStaled = false;
     }
     Trans(cptCtx, *pInputTex, csSRV);

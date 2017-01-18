@@ -16,6 +16,7 @@ ctx.BeginResourceTransition(res, state)
 namespace {
 typedef D3D12_RESOURCE_STATES State;
 const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+const State CBV   = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 const State RTV   = D3D12_RESOURCE_STATE_RENDER_TARGET;
 const State DSV   = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
@@ -288,6 +289,7 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
         memcpy(_pUploadCB->DataPtr, &_cbKinect, sizeof(RenderCB));
         cmdCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(RenderCB));
+        Trans(cmdCtx, _gpuCB, CBV);
         _cbStaled = false;
     }
     // retire Kinect buffers used for previous frame

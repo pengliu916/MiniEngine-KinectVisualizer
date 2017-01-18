@@ -214,6 +214,7 @@ Reduction::ProcessingOneBuffer(ComputeContext& cptCtx,
             groupCount = (groupCount + _reduceRatio -  1) / _reduceRatio;
         }
     }
+    BeginTrans(cptCtx, *pInputBuf, UAV);
     if (_reductionPassMode == kDone1Goup) {
         Trans(cptCtx, _resultBuf, UAV);
         Bind(cptCtx, 1, 0, 1, &_resultBuf.GetUAV());
