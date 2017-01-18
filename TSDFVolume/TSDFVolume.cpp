@@ -671,7 +671,11 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
     if (_IsResolutionChanged(reso, _curReso)) {
         _curReso = reso;
         _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
+        _UpdateBlockSettings(_fuseBlockVoxelRatio,
+            _renderBlockVoxelRatio, _TGSize);
         Graphics::g_cmdListMngr.IdleGPU();
+        _CreateRenderBlockVol(
+            _volBuf.GetReso(), _renderBlockVoxelRatio);
         _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
     }
 }
