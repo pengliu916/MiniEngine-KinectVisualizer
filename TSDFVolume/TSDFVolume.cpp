@@ -35,7 +35,11 @@ const UINT kStruct = TSDFVolume::kNumStruct;
 const UINT kFilter = TSDFVolume::kNumFilter;
 const UINT kTG     = TSDFVolume::kTG;
 
+const UINT numSRVs = 4;
+const UINT numUAVs = 7;
+
 const DXGI_FORMAT _stepInfoTexFormat = DXGI_FORMAT_R16G16_FLOAT;
+
 bool _typedLoadSupported = false;
 
 bool _useStepInfoTex = true;
@@ -64,8 +68,8 @@ const uint16_t cubeLineStripIndices[CUBE_LINESTRIP_LENGTH] = {
 
 std::once_flag _psoCompiled_flag;
 RootSignature _rootsig;
-std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> _nullUAVs;
-std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> _nullSRVs;
+std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> _nullUAVs;
+std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> _nullSRVs;
 
 // PSO for naive updating voxels
 ComputePSO _cptUpdatePSO[kBuf][kStruct];
@@ -265,9 +269,9 @@ void _CreatePSOs()
     _rootsig[0].InitAsConstantBuffer(0);
     _rootsig[1].InitAsConstantBuffer(1);
     _rootsig[2].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, 7);
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, numUAVs);
     _rootsig[3].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, 4);
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, numSRVs);
     _rootsig.Finalize(L"TSDFVolume",
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -486,13 +490,15 @@ void _CreateResource()
     SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     SRVDesc.Texture2D.MipLevels = 1;
 
-    for (int i = 0; i < 7; ++i) {
-        _nullSRVs[i] = Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
+    for (int i = 0; i < numUAVs; ++i) {
         _nullUAVs[i] = Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
-        Graphics::g_device->CreateShaderResourceView(
-            NULL, &SRVDesc, _nullSRVs[i]);
         Graphics::g_device->CreateUnorderedAccessView(
             NULL, NULL, &UAVDesc, _nullUAVs[i]);
+    }
+    for (int i = 0; i < numSRVs; ++i) {
+        _nullSRVs[i] = Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
+        Graphics::g_device->CreateShaderResourceView(
+            NULL, &SRVDesc, _nullSRVs[i]);
     }
 
     _CreatePSOs();
@@ -691,14 +697,14 @@ TSDFVolume::DefragmentActiveBlockQueue(ComputeContext& cptCtx)
         GPU_PROFILE(cptCtx, L"Defragment");
         cptCtx.SetPipelineState(_cptBlockQDefragment);
         cptCtx.SetRootSignature(_rootsig);
-        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
         UAVs[0] = _occupiedBlocksBuf.GetUAV();
         UAVs[1] = _freedFuseBlocksBuf.GetCounterUAV(cptCtx);
-        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
         SRVs[0] = _freedFuseBlocksBuf.GetSRV();
         SRVs[1] = _jobParamBuf.GetSRV();
-        Bind(cptCtx, 2, 0, 7, UAVs.data());
-        Bind(cptCtx, 3, 0, 4, SRVs.data());
+        Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+        Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
         cptCtx.DispatchIndirect(_indirectParams, 48);
     }
     //BeginTrans(cptCtx, _occupiedBlocksBuf, csSRV);
@@ -1146,11 +1152,11 @@ void
 TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx)
 {
     cptCtx.SetPipelineState(_cptFuseBlockVolResetPSO);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     UAVs[1] = _fuseBlockVol.GetUAV();
-    Bind(cptCtx, 2, 0, 7, UAVs.data());
-    Bind(cptCtx, 3, 0, 4, SRVs.data());
+    Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelFuseBlockRatio;
     cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
@@ -1161,11 +1167,11 @@ void
 TSDFVolume::_RefreshFuseBlockVol(ComputeContext& cptCtx)
 {
     cptCtx.SetPipelineState(_cptFuseBlockVolRefreshPSO);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     UAVs[1] = _fuseBlockVol.GetUAV();
-    Bind(cptCtx, 2, 0, 7, UAVs.data());
-    Bind(cptCtx, 3, 0, 4, SRVs.data());
+    Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelFuseBlockRatio;
     cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
@@ -1176,11 +1182,11 @@ void
 TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 {
     cptCtx.SetPipelineState(_cptRenderBlockVolResetPSO);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     UAVs[0] = _renderBlockVol.GetUAV();
-    Bind(cptCtx, 2, 0, 7, UAVs.data());
-    Bind(cptCtx, 3, 0, 4, SRVs.data());
+    Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _renderBlockVoxelRatio;
     cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
@@ -1204,14 +1210,14 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             GPU_PROFILE(cptCtx, L"Occupied2UpdateQ");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass1);
             cptCtx.ResetCounter(_updateBlocksBuf);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _updateBlocksBuf.GetUAV();
             UAVs[1] = _fuseBlockVol.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _occupiedBlocksBuf.GetSRV();
             SRVs[1] = _occupiedBlocksBuf.GetCounterSRV(cptCtx);
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 0);
         }
         BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
@@ -1226,14 +1232,14 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
             // UAV barrier for _updateBlocksBuf is omit since the order of ops
             // on it does not matter before reading it during UpdateVoxel
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _updateBlocksBuf.GetUAV();
             UAVs[1] = _fuseBlockVol.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = pDepthTex->GetSRV();
             SRVs[1] = pWeightTex->GetSRV();
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch2D(
                 _cbPerCall.i2DepthReso.x, _cbPerCall.i2DepthReso.y);
         }
@@ -1245,12 +1251,12 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         {
             GPU_PROFILE(cptCtx, L"UpdateQResolve");
             cptCtx.SetPipelineState(_cptBlockVolUpdate_Resolve);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _indirectParams.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _updateBlocksBuf.GetCounterSRV(cptCtx);
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
         cptCtx.Flush();
@@ -1269,7 +1275,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             GPU_PROFILE(cptCtx, L"UpdateVoxels");
             cptCtx.SetPipelineState(
                 _cptBlockVolUpdate_Pass3[buf.type][_TGSize]);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs;
             UAVs[0] = buf.UAV[0];
             UAVs[1] = buf.UAV[1];
             UAVs[2] = _fuseBlockVol.GetUAV();
@@ -1277,13 +1283,13 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             UAVs[4] = _freedFuseBlocksBuf.GetUAV();
             UAVs[5] = _occupiedBlocksBuf.GetUAV();
             UAVs[6] = _renderBlockVol.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = pDepthTex->GetSRV();
             SRVs[1] = buf.SRV[0];
             SRVs[2] = buf.SRV[1];
             SRVs[3] = _updateBlocksBuf.GetSRV();
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 12);
         }
         BeginTrans(cptCtx, _fuseBlockVol, UAV);
@@ -1315,15 +1321,15 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _newFuseBlocksBuf.GetCounterUAV(cptCtx);
             UAVs[1] = _freedFuseBlocksBuf.GetCounterUAV(cptCtx);
             UAVs[2] = _indirectParams.GetUAV();
             UAVs[3] = _jobParamBuf.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _occupiedBlocksBuf.GetCounterSRV(cptCtx);
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.SetConstantBuffer(1, _gpuCB.RootConstantBufferView());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
@@ -1336,27 +1342,27 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         {
             GPU_PROFILE(cptCtx, L"FreedQFillIn");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Pass1);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _occupiedBlocksBuf.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _newFuseBlocksBuf.GetSRV();
             SRVs[1] = _freedFuseBlocksBuf.GetSRV();
             SRVs[2] = _jobParamBuf.GetSRV();
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 24);
         }
         // Appending new occupied blocks to OccupiedBlockQueue
         {
             GPU_PROFILE(cptCtx, L"OccupiedQAppend");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Pass2);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _occupiedBlocksBuf.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _newFuseBlocksBuf.GetSRV();
             SRVs[1] = _jobParamBuf.GetSRV();
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 36);
         }
         BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
@@ -1368,12 +1374,12 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         {
             GPU_PROFILE(cptCtx, L"OccupiedQResolve");
             cptCtx.SetPipelineState(_cptBlockQUpdate_Resolve);
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _indirectParams.GetUAV();
-            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+            std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _occupiedBlocksBuf.GetCounterSRV(cptCtx);
-            Bind(cptCtx, 2, 0, 7, UAVs.data());
-            Bind(cptCtx, 3, 0, 4, SRVs.data());
+            Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+            Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
     } else {
@@ -1381,16 +1387,16 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         _CleanRenderBlockVol(cptCtx);
         cptCtx.SetPipelineState(_cptUpdatePSO[buf.type][type]);
 
-        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
         UAVs[0] = buf.UAV[0];
         UAVs[1] = buf.UAV[1];
         UAVs[2] = _renderBlockVol.GetUAV();
-        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+        std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
         SRVs[0] = pDepthTex->GetSRV();
         SRVs[1] = buf.SRV[0];
         SRVs[2] = buf.SRV[1];
-        Bind(cptCtx, 2, 0, 7, UAVs.data());
-        Bind(cptCtx, 3, 0, 4, SRVs.data());
+        Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+        Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
         cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
     }
 }
@@ -1402,11 +1408,11 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
         ? _gfxStepInfoSensorPSO[_noInstance]
         : _gfxStepInfoVCamPSO[_noInstance]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
     SRVs[1] = _renderBlockVol.GetSRV();
-    Bind(gfxCtx, 2, 0, 7, UAVs.data());
-    Bind(gfxCtx, 3, 0, 4, SRVs.data());
+    Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
 
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
@@ -1429,16 +1435,16 @@ TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
         ? _gfxSensorRenderPSO[buf.type][type][_filterType]
         : _gfxVCamRenderPSO[buf.type][type][_filterType]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
     SRVs[0] = buf.SRV[0];
     if (_useStepInfoTex) {
         SRVs[1] = toOutTex ?
             _nearFarForProcess.GetSRV() : _nearFarForVisual.GetSRV();
         SRVs[2] = _renderBlockVol.GetSRV();
     }
-    Bind(gfxCtx, 2, 0, 7, UAVs.data());
-    Bind(gfxCtx, 3, 0, 4, SRVs.data());
+    Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
 
     gfxCtx.Draw(3);
 }
@@ -1454,11 +1460,11 @@ void
 TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
 {
     gfxCtx.SetPipelineState(_gfxStepInfoDebugPSO);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> UAVs = _nullUAVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 7> SRVs = _nullSRVs;
-    SRVs[1] = _fuseBlockVol.GetSRV();
-    Bind(gfxCtx, 2, 0, 7, UAVs.data());
-    Bind(gfxCtx, 3, 0, 4, SRVs.data());
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    SRVs[1] = _renderBlockVol.GetSRV();
+    Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
     uint BrickCount = xyz.x * xyz.y * xyz.z / ratio / ratio / ratio;
