@@ -29,7 +29,12 @@ public:
         m_GpuVirtualAddress = one.m_GpuVirtualAddress;
     }
 
-    void Destroy() { m_pResource = nullptr; }
+    void Destroy() {
+        m_pResource = nullptr;
+        m_UsageState = D3D12_RESOURCE_STATE_COMMON;
+        m_TransitioningState = (D3D12_RESOURCE_STATES)-1;
+        m_GpuVirtualAddress = D3D12_GPU_VIRTUAL_ADDRESS_NULL;
+    }
 
     ID3D12Resource* operator->() { return m_pResource.Get(); }
     const ID3D12Resource* operator->() const { return m_pResource.Get(); }
