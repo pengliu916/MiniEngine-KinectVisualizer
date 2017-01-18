@@ -77,10 +77,8 @@ void main(uint3 u3GID : SV_GroupID, uint3 u3GTID : SV_GroupThreadID,
         }
     }
     // Reset block's update status for next update iteration
-    // Moved to a separated cs to avoid 'weird bug' and atomic ops 
-    //if (uThreadGroupIdxInBlock == 0 && uGIdx == 0) {
-    //    InterlockedAnd(tex_uavDebugFuseBlockVol[u3BlockIdx], ~1);
-    //    InterlockedAnd(
-    //        tex_uavFuseBlockVol[u3BlockIdx], ~BLOCKSTATEMASK_UPDATE);
-    //}
+    if (uThreadGroupIdxInBlock == 0 && uGIdx == 0) {
+        InterlockedAnd(
+            tex_uavFuseBlockVol[u3BlockIdx], ~BLOCKSTATEMASK_UPDATE);
+    }
 }

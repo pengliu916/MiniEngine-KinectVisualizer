@@ -1249,6 +1249,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, 4, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
+        cptCtx.Flush();
+        cptCtx.SetRootSignature(_rootsig);
+        _UpdateAndBindConstantBuffer(cptCtx);
         // Update voxels in blocks from UpdateBlockQueue and create queues for
         // NewOccupiedBlocks and FreedOccupiedBlocks
         Trans(cptCtx, _occupiedBlocksBuf, UAV);
@@ -1301,7 +1304,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
                 _freedFuseBlocksBuf.GetCounterBuffer(), 0, 4);
             _readBackFence = cptCtx.Flush();
         }
-
         // Create indirect argument and params for Filling in
         // OccupiedBlockFreedSlot and AppendingNewOccupiedBlock
         Trans(cptCtx, _indirectParams, UAV);
@@ -1370,11 +1372,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, 4, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
-
-        // Reset FuseBlock for next update
-        //Trans(cptCtx, _fuseBlockVol, UAV);
-        //_RefreshFuseBlockVol(cptCtx);
-        //BeginTrans(cptCtx, _fuseBlockVol, UAV);
     } else {
         GPU_PROFILE(cptCtx, L"Volume Updating");
         _CleanRenderBlockVol(cptCtx);
