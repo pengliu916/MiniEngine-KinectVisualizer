@@ -134,6 +134,8 @@ CommandQueue::Shutdown()
     CloseHandle(m_FenceEventHandle);
 
     m_pFence->Release();
+    m_pFence = nullptr;
+
     m_CommandQueue->Release();
     m_CommandQueue = nullptr;
 }

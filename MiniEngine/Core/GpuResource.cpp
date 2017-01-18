@@ -82,11 +82,19 @@ PixelBuffer::CreateTextureResource(
     const D3D12_RESOURCE_DESC& ResourceDesc, D3D12_CLEAR_VALUE ClearValue,
     D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr /*= D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN*/)
 {
-    CD3DX12_HEAP_PROPERTIES HeapProps(D3D12_HEAP_TYPE_DEFAULT);
     HRESULT hr;
-    V(Device->CreateCommittedResource(&HeapProps, D3D12_HEAP_FLAG_NONE,
-        &ResourceDesc, D3D12_RESOURCE_STATE_COMMON,
-        &ClearValue, IID_PPV_ARGS(&m_pResource)));
+    {
+        D3D12_HEAP_PROPERTIES HeapProps;
+        HeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+        HeapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+        HeapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+        HeapProps.CreationNodeMask = 1;
+        HeapProps.VisibleNodeMask = 1;
+
+        V(Device->CreateCommittedResource(&HeapProps, D3D12_HEAP_FLAG_NONE,
+            &ResourceDesc, D3D12_RESOURCE_STATE_COMMON,
+            &ClearValue, IID_PPV_ARGS(&m_pResource)));
+    }
 #ifdef RELEASE
     (Name);
 #else
