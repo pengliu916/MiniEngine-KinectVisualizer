@@ -22,6 +22,8 @@ const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State psSRV = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 const State csSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
+D3D12_CPU_DESCRIPTOR_HANDLE _nullUAVDescrptor;
+
 RootSignature _rootsig;
 ComputePSO _cptGetNormalPSO[kOutMode];
 std::once_flag _psoCompiled_flag;
@@ -113,6 +115,14 @@ void _CreateStaticResource()
             PRINTWARN("TypedLoad AdditionalFormats load is not supported");
         }
     }
+    // Create nulldescriptor
+    _nullUAVDescrptor = Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
+    D3D12_UNORDERED_ACCESS_VIEW_DESC UAVDesc = {};
+    UAVDesc.Format = DXGI_FORMAT_R8_UNORM;
+    UAVDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    Graphics::g_device->CreateUnorderedAccessView(
+        nullptr, nullptr, &UAVDesc, _nullUAVDescrptor);
+
     // Create RootSignature
     _rootsig.Reset(4, 1);
     _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
@@ -128,7 +138,6 @@ void _CreateStaticResource()
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
-
     _CreatePSO();
 }
 }
@@ -192,6 +201,7 @@ NormalGenerator::OnProcessing(
             cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
         }
     } else {
+        Bind(cptCtx, 2, 1, 1, &_nullUAVDescrptor);
         cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
     }
     cptCtx.SetConstants(0, DWParam(1.f / pOutputTex->GetWidth()),
