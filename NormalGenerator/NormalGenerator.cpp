@@ -178,14 +178,14 @@ NormalGenerator::OnProcessing(
     ASSERT(pOutputTex->GetWidth() == pInputTex->GetWidth());
     ASSERT(pOutputTex->GetHeight() == pInputTex->GetHeight());
 
-    if (_cbStaled || _scbStaled) {
+    if (_scbStaled) {
         _dataCB.fAngleThreshold = _fAngleThreshold;
         _dataCB.fDistThreshold = _fDistThreshold;
         memcpy(_pUploadCB->DataPtr, &_dataCB, sizeof(CBuffer));
         cptCtx.CopyBufferRegion(_gpuCB, 0, _pUploadCB->Buffer,
             _pUploadCB->Offset, sizeof(CBuffer));
         Trans(cptCtx, _gpuCB, CBV);
-        _cbStaled = false;
+        _scbStaled = false;
     }
     Trans(cptCtx, *pInputTex, csSRV);
     Trans(cptCtx, *pOutputTex, UAV);

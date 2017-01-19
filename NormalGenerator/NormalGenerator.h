@@ -17,5 +17,4 @@ private:
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     CBuffer _dataCB;
-    bool _cbStaled = true;
 };
