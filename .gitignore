@@ -101,9 +101,21 @@ publish/
 # Publish Web Output
 *.Publish.xml
 
-# NuGet Packages Directory
-## TODO: If you have NuGet Package Restore enabled, uncomment the next line
-#packages/
+# Ignore NuGet Packages
+*.nupkg
+
+# Ignore the packages folder
+**/packages/*
+
+# except build/, which is used as an MSBuild target.
+!**/packages/build/
+
+# Uncomment if necessary; generally it will be regenerated when needed
+#!**/packages/repositories.config
+
+# Ignore other intermediate files that NuGet might create
+project.json.lock
+*.nuget.props
 
 # Windows Azure Build Output
 csx
