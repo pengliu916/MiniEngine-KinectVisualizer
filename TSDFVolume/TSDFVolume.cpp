@@ -141,7 +141,6 @@ void _CreatePSOs()
     ComPtr<ID3DBlob> blockUpdateCS[kBuf][kTG];
     ComPtr<ID3DBlob> tsdfVolResetCS[kBuf];
     ComPtr<ID3DBlob> fuseBlockVolResetCS;
-    ComPtr<ID3DBlob> fuseBlockVolRefreshCS;
     ComPtr<ID3DBlob> renderBlockVolResetCS;
 
     ComPtr<ID3DBlob> blockQCreate_Pass1CS;
@@ -192,7 +191,6 @@ void _CreatePSOs()
         { "FOR_VCAMERA", "0" },//9
         { "THREAD_DIM", "8" },//10
         { "RENDERBLOCKVOL_RESET", "0"},//11
-        { "FUSEBLOCKVOL_REFRESH", "0"},//12
         { nullptr, nullptr }
     };
 
@@ -207,9 +205,7 @@ void _CreatePSOs()
     V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolResetCS));
     macro[7].Definition = "0"; macro[11].Definition = "1";
     V(_Compile(L"VolumeReset_cs", macro, &renderBlockVolResetCS));
-    macro[11].Definition = "0"; macro[12].Definition = "1";
-    V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolRefreshCS));
-    macro[12].Definition = "0";
+    macro[11].Definition = "0";
     uint DefIdx;
     bool compiledOnce = false;
     for (int j = 0; j < kStruct; ++j) {
@@ -296,7 +292,6 @@ ObjName.SetComputeShader(Shader->GetBufferPointer(), Shader->GetBufferSize());\
 ObjName.Finalize();
 
     CreatePSO(_cptFuseBlockVolResetPSO, fuseBlockVolResetCS);
-    CreatePSO(_cptFuseBlockVolRefreshPSO, fuseBlockVolRefreshCS);
     CreatePSO(_cptRenderBlockVolResetPSO, renderBlockVolResetCS);
     CreatePSO(_cptBlockVolUpdate_Pass1, blockQCreate_Pass1CS);
     CreatePSO(_cptBlockVolUpdate_Pass2, blockQCreate_Pass2CS);
@@ -537,6 +532,9 @@ TSDFVolume::TSDFVolume()
     _cbPerCall.mXForm[2] = _cbPerCall.mXForm[1];
     _cbPerCall.mXForm[2].r[2] = {0.f, 0.f, 1.f, 5.f};
     _cbPerCall.mXForm[2].r[3] = {0.f, 0.f, -0.5f, -2.5f};
+
+    if (_fuseBlockVoxelRatio == 4) _TGSize = k64;
+    if (_fuseBlockVoxelRatio == 8) _TGSize = k512;
 }
 
 TSDFVolume::~TSDFVolume()
@@ -596,7 +594,7 @@ TSDFVolume::CreateResource(
     const uint3 reso = _volBuf.GetReso();
     _submittedReso = reso;
     _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
-    _UpdateBlockSettings(_fuseBlockVoxelRatio, _renderBlockVoxelRatio, _TGSize);
+    _UpdateBlockSettings(_fuseBlockVoxelRatio, _renderBlockVoxelRatio);
 
     // Create Spacial Structure Buffer
     Graphics::g_cmdListMngr.IdleGPU();
@@ -678,7 +676,7 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
         _curReso = reso;
         _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
         _UpdateBlockSettings(_fuseBlockVoxelRatio,
-            _renderBlockVoxelRatio, _TGSize);
+            _renderBlockVoxelRatio);
         Graphics::g_cmdListMngr.IdleGPU();
         _CreateRenderBlockVol(
             _volBuf.GetReso(), _renderBlockVoxelRatio);
@@ -859,22 +857,6 @@ TSDFVolume::RenderGui()
     if (_blockVolumeUpdate) {
         _cbStaled |= SliderInt("Defragment Threshold",
             &_cbPerCall.iDefragmentThreshold, 5000, 500000);
-        Text("BlockUpdate CS Threadgroup Size:");
-        static int iTGSize = (int)_TGSize;
-        RadioButton("4x4x4##TG", &iTGSize, k64); SameLine();
-        RadioButton("8x8x8##TG", &iTGSize, k512);
-        if (iTGSize != (int)_TGSize) {
-            if (iTGSize == (int)k512 && _fuseBlockVoxelRatio == 4) {
-                iTGSize = (int)_TGSize;
-            } else {
-                _TGSize = (ThreadGroup)iTGSize;
-                _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                    _renderBlockVoxelRatio, _TGSize);
-                Graphics::g_cmdListMngr.IdleGPU();
-                _CreateFuseBlockVolAndRelatedBuf(
-                    _curReso, _fuseBlockVoxelRatio);
-            }
-        }
     }
     if (_readBackGPUBufStatus && _blockVolumeUpdate) {
         char buf[64];
@@ -926,50 +908,46 @@ TSDFVolume::RenderGui()
         uType = _volBuf.GetType();
     }
 
+    static bool bNeedUpdate = false;
     Separator();
-    Columns(2, "Block Ratio");
-    Text("FuseBlockRatio:"); NextColumn();
-    Text("RenderBlockRatio:"); NextColumn();
-    static int fuseBlockRatio = (int)_fuseBlockVoxelRatio;
+    Text("RenderBlockRatio:");
     static int renderBlockRatio = (int)_renderBlockVoxelRatio;
-    RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4); NextColumn();
-    RadioButton("4x4x4##Render", &renderBlockRatio, 4); NextColumn();
-    RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8); NextColumn();
-    RadioButton("8x8x8##Render", &renderBlockRatio, 8); NextColumn();
-    RadioButton("16x16x16##Fuse", &fuseBlockRatio, 16); NextColumn();
-    RadioButton("16x16x16##Render", &renderBlockRatio, 16); NextColumn();
-    NextColumn();
+    RadioButton("4x4x4##Render", &renderBlockRatio, 4); SameLine();
+    RadioButton("8x8x8##Render", &renderBlockRatio, 8); SameLine();
+    RadioButton("16x16x16##Render", &renderBlockRatio, 16); SameLine();
     RadioButton("32x32x32##Render", &renderBlockRatio, 32);
 
+    Separator();
+    Text("FuseBlockRatio:");
+    static int fuseBlockRatio = (int)_fuseBlockVoxelRatio;
+    RadioButton("4x4x4##Fuse", &fuseBlockRatio, 4); SameLine();
+    RadioButton("8x8x8##Fuse", &fuseBlockRatio, 8);
+    Separator();
     if (fuseBlockRatio != _fuseBlockVoxelRatio) {
-        if (!(fuseBlockRatio == 4 && _TGSize != k64) &&
-            fuseBlockRatio <= renderBlockRatio) {
+        if (fuseBlockRatio <= renderBlockRatio) {
+            bNeedUpdate = true;
             _fuseBlockVoxelRatio = fuseBlockRatio;
-            _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                _renderBlockVoxelRatio, _TGSize);
-            Graphics::g_cmdListMngr.IdleGPU();
-            _CreateFuseBlockVolAndRelatedBuf(
-                _curReso, _fuseBlockVoxelRatio);
+            if (_fuseBlockVoxelRatio == 4) _TGSize = k64;
+            if (_fuseBlockVoxelRatio == 8) _TGSize = k512;
         } else {
             fuseBlockRatio = _fuseBlockVoxelRatio;
         }
     }
     if (renderBlockRatio != _renderBlockVoxelRatio) {
         if (renderBlockRatio >= fuseBlockRatio) {
+            bNeedUpdate = true;
             _renderBlockVoxelRatio = renderBlockRatio;
-            _UpdateBlockSettings(_fuseBlockVoxelRatio,
-                _renderBlockVoxelRatio, _TGSize);
-            Graphics::g_cmdListMngr.IdleGPU();
-            _CreateRenderBlockVol(
-                _volBuf.GetReso(), _renderBlockVoxelRatio);
-            _CreateFuseBlockVolAndRelatedBuf(
-                _curReso, _fuseBlockVoxelRatio);
         } else {
             renderBlockRatio = _renderBlockVoxelRatio;
         }
     }
-    Columns(1);
-    Separator();
+    if (bNeedUpdate) {
+        bNeedUpdate = false;
+        _UpdateBlockSettings(_fuseBlockVoxelRatio, _renderBlockVoxelRatio);
+        Graphics::g_cmdListMngr.IdleGPU();
+        _CreateRenderBlockVol(_volBuf.GetReso(), _renderBlockVoxelRatio);
+        _CreateFuseBlockVolAndRelatedBuf(_curReso, _fuseBlockVoxelRatio);
+    }
 
     Text("Volume Size Settings:");
     static uint3 uiReso = _volBuf.GetReso();
@@ -1008,7 +986,7 @@ TSDFVolume::RenderGui()
         &fVoxelSize, 1.f / 256.f, 10.f / 256.f)) {
         _UpdateVolumeSettings(_curReso, fVoxelSize);
         _UpdateBlockSettings(_fuseBlockVoxelRatio,
-            _renderBlockVoxelRatio, _TGSize);
+            _renderBlockVoxelRatio);
         ResetAllResource();
     }
 }
@@ -1103,22 +1081,13 @@ TSDFVolume::_UpdateVolumeSettings(const uint3 reso, const float voxelSize)
 
 void
 TSDFVolume::_UpdateBlockSettings(const uint fuseBlockVoxelRatio,
-    const uint renderBlockVoxelRatio, const TSDFVolume::ThreadGroup tg)
+    const uint renderBlockVoxelRatio)
 {
     _cbStaled = true;
     _volParam->uVoxelFuseBlockRatio = fuseBlockVoxelRatio;
     _volParam->uVoxelRenderBlockRatio = renderBlockVoxelRatio;
     _volParam->fFuseBlockSize = fuseBlockVoxelRatio * _volParam->fVoxelSize;
     _volParam->fRenderBlockSize = renderBlockVoxelRatio * _volParam->fVoxelSize;
-    uint threadCtr1D = 8;
-    switch (tg) {
-    case k512: threadCtr1D = 8; break;
-    case k64: threadCtr1D = 4; break;
-    }
-    uint TGBlockRatio = fuseBlockVoxelRatio / threadCtr1D;
-    _cbPerCall.uTGFuseBlockRatio = TGBlockRatio;
-    _cbPerCall.uTGPerFuseBlock =
-        TGBlockRatio * TGBlockRatio * TGBlockRatio;
 }
 
 void

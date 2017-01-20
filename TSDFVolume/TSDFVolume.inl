@@ -13,10 +13,10 @@
 #endif
 // Do not modify below this line
 
-#define BLOCKSTATEMASK_OCCUPIED 0x7f
-#define BLOCKSTATEMASK_UPDATE 0x80 // this will be 1 bit left to the previous
-#define BLOCKSTATEMASK_IDXOFFSET 8 // total bits of the above two
-#define BLOCKSTATEMASK_IDX ~0xff // 32bit mask 
+#define BLOCKSTATEMASK_OCCUPIED 0x1
+#define BLOCKSTATEMASK_UPDATE 0x2 // this will be 1 bit left to the previous
+#define BLOCKSTATEMASK_IDXOFFSET 2 // total bits of the above two
+#define BLOCKSTATEMASK_IDX ~0x3 // 32bit mask 
 
 #define BLOCKFREEDMASK 0x40000000
 
@@ -98,8 +98,7 @@ CBUFFER_ALIGN STRUCT(cbuffer) PerCallDataCB REGISTER(b1)
     float2 f2DepthRange;
     int2 i2DepthReso;
     int2 i2ColorReso;
-    uint uTGPerFuseBlock;
-    uint uTGFuseBlockRatio;
+    uint2 uNIU;
     float fWideHeightRatio;
     float fTanHFov;
     float fClipDist;

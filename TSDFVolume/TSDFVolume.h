@@ -56,7 +56,7 @@ private:
     void _UpdateSensorData(const DirectX::XMMATRIX& mSensor_T);
     void _UpdateVolumeSettings(const uint3 reso, const float voxelSize);
     void _UpdateBlockSettings(const uint fuseBlockVoxelRatio,
-        const uint renderBlockVoxelRatio, const ThreadGroup TG);
+        const uint renderBlockVoxelRatio);
     void _ClearBlockQueues(ComputeContext& cptCtx);
     void _CleanTSDFVols(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf);
@@ -89,7 +89,7 @@ private:
     uint3 _submittedReso;
 
     // Threadgroup size in use
-    ThreadGroup _TGSize = k64;
+    ThreadGroup _TGSize;
 
     // per instance buffer resource
     // Texture3Ds for TSDF and its weight

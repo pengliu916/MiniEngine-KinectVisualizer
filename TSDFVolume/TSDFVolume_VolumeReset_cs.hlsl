@@ -26,19 +26,9 @@ RWTexture3D<int> tex_uavFuseBlockVol : register(u1);
 [numthreads(THREAD_X, THREAD_Y, THREAD_Z)]
 void main(uint3 u3DTid : SV_DispatchThreadID)
 {
-    tex_uavFuseBlockVol[u3DTid] = uTGPerFuseBlock;
+    tex_uavFuseBlockVol[u3DTid] = 0;
 }
 #endif // FUSEBLOCKVOL_RESET
-
-#if FUSEBLOCKVOL_REFRESH
-RWTexture3D<uint> tex_uavFuseBlockVol : register(u1);
-
-[numthreads(THREAD_X, THREAD_Y, THREAD_Z)]
-void main(uint3 u3DTid : SV_DispatchThreadID)
-{
-    tex_uavFuseBlockVol[u3DTid] &= (~BLOCKSTATEMASK_UPDATE);
-}
-#endif // FUSEBLOCKVOL_REFRESH
 
 #if RENDERBLOCKVOL_RESET
 RWTexture3D<uint> tex_uavRenderBlockVol : register(u0);

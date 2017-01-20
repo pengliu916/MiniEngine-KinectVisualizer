@@ -10,8 +10,7 @@ RWByteAddressBuffer buf_uavIndirectParams : register(u0);
 void main(uint uGIdx : SV_GroupIndex)
 {
     if (uGIdx == 0) {
-        uint uNumThreadGroupX = buf_srvUploadBlocksBufCtr.Load(0)
-            * uTGPerFuseBlock;
+        uint uNumThreadGroupX = buf_srvUploadBlocksBufCtr.Load(0);
         buf_uavIndirectParams.Store(12, uNumThreadGroupX);
     }
 }

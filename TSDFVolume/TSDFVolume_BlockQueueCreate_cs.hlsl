@@ -84,8 +84,8 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     }
     AddToUpdateQueue(u3BlockIdx);
     // The following also set NumEmptyTG to 0;
-    tex_uavFuseBlockVol[u3BlockIdx] =
-        u3DTid.x << BLOCKSTATEMASK_IDXOFFSET | BLOCKSTATEMASK_UPDATE;
+    tex_uavFuseBlockVol[u3BlockIdx] = u3DTid.x << BLOCKSTATEMASK_IDXOFFSET
+        | BLOCKSTATEMASK_UPDATE | BLOCKSTATEMASK_OCCUPIED;
 }
 #endif // PASS_1
 
