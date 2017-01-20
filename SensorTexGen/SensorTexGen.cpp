@@ -35,8 +35,8 @@ const IRGBDStreamer::BufferType kIColor = IRGBDStreamer::kColor;
 bool _useCS = true;
 bool _streaming = true;
 bool _perFrameUpdate = true;
-bool _fakeDepthMap = false;
-bool _animateFakedDepth = false;
+bool _fakeDepthMap = true;
+bool _animateFakedDepth = true;
 bool _cbStaled = true;
 
 RootSignature _rootSignature;

@@ -513,13 +513,13 @@ void _CreateResource()
 }
 
 TSDFVolume::TSDFVolume()
-    : _volBuf(XMUINT3(512, 512, 512)),
+    : _volBuf(XMUINT3(128, 128, 128)),
     _nearFarForVisual(XMVectorSet(MAX_DEPTH, 0, 0, 0)),
     _nearFarForProcess(XMVectorSet(MAX_DEPTH, 0, 0, 0))
 {
     _volParam = &_cbPerCall.vParam;
-    _volParam->fMaxWeight = 20.f;
-    _volParam->fVoxelSize = 1.f / 100.f;
+    _volParam->fMaxWeight = 1.f;
+    _volParam->fVoxelSize = 10.f / 256.f;
     _cbPerCall.f2DepthRange = float2(-0.2f, -12.f);
     _cbPerCall.iDefragmentThreshold = 200000;
     // Create helper wireframe for frustum
@@ -1225,9 +1225,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
-        cptCtx.Flush();
-        cptCtx.SetRootSignature(_rootsig);
-        _UpdateAndBindConstantBuffer(cptCtx);
+        //cptCtx.Flush();
+        //cptCtx.SetRootSignature(_rootsig);
+        //_UpdateAndBindConstantBuffer(cptCtx);
         // Update voxels in blocks from UpdateBlockQueue and create queues for
         // NewOccupiedBlocks and FreedOccupiedBlocks
         Trans(cptCtx, _occupiedBlocksBuf, UAV);

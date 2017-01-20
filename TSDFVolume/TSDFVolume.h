@@ -103,7 +103,7 @@ private:
     // [26-31] num of empty threadgroup block
     VolumeTexture _fuseBlockVol;
     // Voxel block ratio
-    int _fuseBlockVoxelRatio = 4;
+    int _fuseBlockVoxelRatio = 8;
 
     // 8 bit Texture3D for spacial structure for rendering
     VolumeTexture _renderBlockVol;

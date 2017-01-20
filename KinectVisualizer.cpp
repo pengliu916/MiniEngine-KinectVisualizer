@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "KinectVisualizer.h"
 #include "CalibData.inl"
-#include "Reduction/Reduction.h"
 #include <ppl.h>
 
 using namespace DirectX;
@@ -177,8 +176,9 @@ void
 KinectVisualizer::OnConfiguration()
 {
     Core::g_config.FXAA = false;
-    Core::g_config.enableDebuglayer = true;
-    Core::g_config.enableGPUBasedValidationInDebug = false;
+    Core::g_config.warpDevice = false;
+    Core::g_config.enableDebuglayer = false;
+    Core::g_config.enableGPUBasedValidationInDebug = true;
     Core::g_config.swapChainDesc.Width = _width;
     Core::g_config.swapChainDesc.Height = _height;
     Core::g_config.swapChainDesc.BufferCount = 5;
@@ -193,10 +193,8 @@ KinectVisualizer::OnCreateResource()
         InitialSurfBuffer((SurfBufId)i);
     }
     _sensorTexGen.OnCreateResource(_uploadHeapAlloc);
-    _bilateralFilter.OnCreateResoure(_uploadHeapAlloc);
     _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
     _normalGen.OnCreateResource(_uploadHeapAlloc);
-    _fastICP.OnCreateResource(DEPTH_RESO);
 
     OnSizeChanged();
     _ResizeVisWin();
@@ -222,10 +220,7 @@ KinectVisualizer::OnUpdate()
             ShowDebugWindowMenu();
             ImGui::EndMenu();
         }
-        _fastICP.RenderGui();
-        Reduction::RenderGui();
         _sensorTexGen.RenderGui();
-        SeperableFilter::RenderGui();
         NormalGenerator::RenderGui();
         _tsdfVolume.RenderGui();
     }
@@ -279,71 +274,29 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
     ComputeContext& cptCtx = cmdCtx.GetComputeContext();
     static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
-    //BeginTrans(cptCtx, Graphics::g_SceneDepthBuffer, DSV);
-    BeginTrans(cptCtx, *GetColBuf(VISUAL_NORMAL), UAV);
     Trans(cptCtx, *GetColBuf(WEIGHT), UAV);
 
     // Request depthmap for ICP
     _tsdfVolume.ExtractSurface(gfxCtx, GetColBuf(TSDF_DEPTH),
-        _visualize ? GetColBuf(VISUAL_DEPTH)
-                    : nullptr, GetDepBuf(VISUAL_DEPTH));
-    BeginTrans(cptCtx, *GetColBuf(TSDF_DEPTH), csSRV);
+        GetColBuf(VISUAL_DEPTH), GetDepBuf(VISUAL_DEPTH));
     cptCtx.ClearUAV(*GetColBuf(WEIGHT), ClearVal);
-    if (_visualize) {
-        // Generate normalmap for visualized depthmap
-        _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
-            GetColBuf(VISUAL_DEPTH), GetColBuf(VISUAL_NORMAL));
-        _tsdfVolume.RenderDebugGrid(
-            gfxCtx, GetColBuf(VISUAL_NORMAL), GetDepBuf(VISUAL_DEPTH));
-        BeginTrans(gfxCtx, *GetColBuf(VISUAL_DEPTH), RTV);
-    }
-    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
-    // Generate normalmap for TSDF depthmap
-    _normalGen.OnProcessing(cptCtx, L"Norm_TSDF",
-        &*GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL));
-    BeginTrans(cptCtx, *GetColBuf(TSDF_DEPTH), csSRV);
-    BeginTrans(cptCtx, *GetColBuf(TSDF_NORMAL), csSRV);
+    // Generate normalmap for visualized depthmap
+    _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
+        GetColBuf(VISUAL_DEPTH), GetColBuf(VISUAL_NORMAL));
+    _tsdfVolume.RenderDebugGrid(
+        gfxCtx, GetColBuf(VISUAL_NORMAL), GetDepBuf(VISUAL_DEPTH));
+    Trans(gfxCtx, *GetColBuf(VISUAL_NORMAL), psSRV);
 
     // Pull new data from Kinect
     bool newData = _sensorTexGen.OnRender(cmdCtx, GetColBuf(KINECT_DEPTH),
         GetColBuf(KINECT_COLOR), GetColBuf(KINECT_INFRA),
         GetColBuf(KINECT_DEPTH_VIS));
     cmdCtx.Flush();
-    // Bilateral filtering
-    _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw",
-        GetColBuf(KINECT_DEPTH), GetColBuf(FILTERED_DEPTH), GetColBuf(WEIGHT));
-
-    BeginTrans(cptCtx, *GetColBuf(WEIGHT), csSRV);
-    if (_bilateralFilter.IsEnabled()) {
-        BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), csSRV);
-    }
     // TSDF volume updating
     _tsdfVolume.UpdateVolume(
         cptCtx, GetColBuf(KINECT_DEPTH), GetColBuf(WEIGHT));
 
-    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
-    // Defragment active block queue in TSDF
     _tsdfVolume.DefragmentActiveBlockQueue(cptCtx);
-
-    // Generate normalmap for Kinect depthmap
-    _normalGen.OnProcessing(cptCtx, L"Norm_Raw",
-        _bilateralFilter.IsEnabled() ? GetColBuf(FILTERED_DEPTH)
-                                     : GetColBuf(KINECT_DEPTH),
-        GetColBuf(KINECT_NORMAL), GetColBuf(WEIGHT));
-    {
-        GPU_PROFILE(cptCtx, L"ICP");
-        for (uint8_t i = 0; i < 10; ++i) {
-            _fastICP.OnProcessing(cptCtx, i, GetColBuf(WEIGHT),
-                GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
-                GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
-            _fastICP.OnSolving();
-        }
-    }
-    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
-    BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), RTV);
-    BeginTrans(cptCtx, *GetColBuf(TSDF_DEPTH), RTV);
-    BeginTrans(cptCtx, *GetColBuf(TSDF_NORMAL), UAV);
-    BeginTrans(cptCtx, *GetColBuf(KINECT_NORMAL), UAV);
 }
 
 void
@@ -355,8 +308,6 @@ KinectVisualizer::OnDestroy()
     _sensorTexGen.OnDestory();
     _normalGen.OnDestory();
     _tsdfVolume.Destory();
-    _bilateralFilter.OnDestory();
-    _fastICP.OnDestory();
 }
 
 bool

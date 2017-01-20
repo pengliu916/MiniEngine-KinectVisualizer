@@ -1,11 +1,8 @@
 #pragma once
 #include "DX12Framework.h"
 #include "SensorTexGen\SensorTexGen.h"
-#include "PointCloudRenderer\PointCloudRenderer.h"
-#include "SeparableFilter\SeparableFilter.h"
 #include "TSDFVolume\TSDFVolume.h"
 #include "NormalGenerator\NormalGenerator.h"
-#include "FastICP\FastICP.h"
 
 class KinectVisualizer :public Core::IDX12Framework
 {
@@ -24,10 +21,8 @@ public:
 private:
     void _ResizeVisWin();
     TSDFVolume _tsdfVolume;
-    SeperableFilter _bilateralFilter;
     SensorTexGen _sensorTexGen;
     NormalGenerator _normalGen;
-    FastICP _fastICP;
 
     uint16_t _width;
     uint16_t _height;
