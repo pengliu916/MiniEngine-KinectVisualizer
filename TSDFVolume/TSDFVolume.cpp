@@ -513,13 +513,13 @@ void _CreateResource()
 }
 
 TSDFVolume::TSDFVolume()
-    : _volBuf(XMUINT3(128, 128, 128)),
+    : _volBuf(XMUINT3(64, 64, 64)),
     _nearFarForVisual(XMVectorSet(MAX_DEPTH, 0, 0, 0)),
     _nearFarForProcess(XMVectorSet(MAX_DEPTH, 0, 0, 0))
 {
     _volParam = &_cbPerCall.vParam;
     _volParam->fMaxWeight = 1.f;
-    _volParam->fVoxelSize = 10.f / 256.f;
+    _volParam->fVoxelSize = 10.f / 128.f;
     _cbPerCall.f2DepthRange = float2(-0.2f, -12.f);
     _cbPerCall.iDefragmentThreshold = 200000;
     // Create helper wireframe for frustum
@@ -953,6 +953,8 @@ TSDFVolume::RenderGui()
     static uint3 uiReso = _volBuf.GetReso();
     AlignFirstTextHeightToWidgets();
     Text("X:"); SameLine();
+    RadioButton("32##X", (int*)&uiReso.x, 32); SameLine();
+    RadioButton("64##X", (int*)&uiReso.x, 64); SameLine();
     RadioButton("128##X", (int*)&uiReso.x, 128); SameLine();
     RadioButton("256##X", (int*)&uiReso.x, 256); SameLine();
     RadioButton("384##X", (int*)&uiReso.x, 384); SameLine();
@@ -960,6 +962,8 @@ TSDFVolume::RenderGui()
 
     AlignFirstTextHeightToWidgets();
     Text("Y:"); SameLine();
+    RadioButton("32##Y", (int*)&uiReso.y, 32); SameLine();
+    RadioButton("64##Y", (int*)&uiReso.y, 64); SameLine();
     RadioButton("128##Y", (int*)&uiReso.y, 128); SameLine();
     RadioButton("256##Y", (int*)&uiReso.y, 256); SameLine();
     RadioButton("384##Y", (int*)&uiReso.y, 384); SameLine();
@@ -967,6 +971,8 @@ TSDFVolume::RenderGui()
 
     AlignFirstTextHeightToWidgets();
     Text("Z:"); SameLine();
+    RadioButton("32##Z", (int*)&uiReso.z, 32); SameLine();
+    RadioButton("64##Z", (int*)&uiReso.z, 64); SameLine();
     RadioButton("128##Z", (int*)&uiReso.z, 128); SameLine();
     RadioButton("256##Z", (int*)&uiReso.z, 256); SameLine();
     RadioButton("384##Z", (int*)&uiReso.z, 384); SameLine();
