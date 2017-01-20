@@ -193,11 +193,12 @@ void Shutdown() {
 HRESULT CreateResource() {
     HRESULT hr;
 #ifdef _DEBUG
-    // Enable the D3D12 debug layer.
-    ComPtr<ID3D12Debug> debugController;
+    if (Core::g_config.enableDebuglayer) {
+        // Enable the D3D12 debug layer.
+        ComPtr<ID3D12Debug> debugController;
         ComPtr<ID3D12Debug1> debugController1;
-    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
-        debugController->EnableDebugLayer();
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
+            debugController->EnableDebugLayer();
             if (Core::g_config.enableGPUBasedValidationInDebug) {
                 if (SUCCEEDED(debugController->QueryInterface(
                     IID_PPV_ARGS(&debugController1)))) {
@@ -206,8 +207,9 @@ HRESULT CreateResource() {
                     PRINTWARN(L"Unable to enable GPU-Based Validation");
                 }
             }
-    } else {
-        PRINTWARN(L"Unable to enable D3D12 debug validation layer.")
+        } else {
+            PRINTWARN(L"Unable to enable D3D12 debug validation layer.")
+        }
     }
 #endif
 

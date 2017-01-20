@@ -177,6 +177,7 @@ void
 KinectVisualizer::OnConfiguration()
 {
     Core::g_config.FXAA = false;
+    Core::g_config.enableDebuglayer = true;
     Core::g_config.enableGPUBasedValidationInDebug = false;
     Core::g_config.swapChainDesc.Width = _width;
     Core::g_config.swapChainDesc.Height = _height;
