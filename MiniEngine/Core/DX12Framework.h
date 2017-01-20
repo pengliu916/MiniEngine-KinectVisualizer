@@ -29,6 +29,7 @@ namespace Core
     const uint32_t NUM_CSU = 384;
 
     struct Settings {
+        bool enableDebuglayer = true;
         bool enableGPUBasedValidationInDebug = false;
         bool enableFullScreen = false;
         bool warpDevice = false;
