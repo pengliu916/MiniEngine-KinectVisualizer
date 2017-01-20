@@ -749,30 +749,27 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
     gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
 
     Trans(gfxCtx, _renderBlockVol, vsSRV | psSRV);
-    if (pDepthOut) {
+    if (pDepthOut && _useStepInfoTex) {
         gfxCtx.SetViewport(_depthViewPort);
         gfxCtx.SetScisor(_depthSissorRect);
-        if (_useStepInfoTex) {
-            GPU_PROFILE(gfxCtx, L"NearFar_Proc");
-            gfxCtx.ClearColor(_nearFarForProcess);
-            gfxCtx.SetRenderTarget(_nearFarForProcess.GetRTV());
-            _RenderNearFar(gfxCtx, true);
-        }
+        GPU_PROFILE(gfxCtx, L"NearFar_Proc");
+        gfxCtx.ClearColor(_nearFarForProcess);
+        gfxCtx.SetRenderTarget(_nearFarForProcess.GetRTV());
+        _RenderNearFar(gfxCtx, true);
+        // Early submit to keep GPU busy
+        gfxCtx.Flush();
+        gfxCtx.SetRootSignature(_rootsig);
+        _UpdateAndBindConstantBuffer(gfxCtx);
+        gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
     }
-    gfxCtx.Flush();
-    gfxCtx.SetRootSignature(_rootsig);
-    _UpdateAndBindConstantBuffer(gfxCtx);
-    gfxCtx.SetVertexBuffer(0, _cubeVB.VertexBufferView());
-    if (pVisDepthOut) {
+    if (pVisDepthOut && _useStepInfoTex) {
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
-        if (_useStepInfoTex) {
-            BeginTrans(gfxCtx, _nearFarForProcess, psSRV);
-            GPU_PROFILE(gfxCtx, L"NearFar_Visu");
-            gfxCtx.ClearColor(_nearFarForVisual);
-            gfxCtx.SetRenderTarget(_nearFarForVisual.GetRTV());
-            _RenderNearFar(gfxCtx);
-        }
+        BeginTrans(gfxCtx, _nearFarForProcess, psSRV);
+        GPU_PROFILE(gfxCtx, L"NearFar_Visu");
+        gfxCtx.ClearColor(_nearFarForVisual);
+        gfxCtx.SetRenderTarget(_nearFarForVisual.GetRTV());
+        _RenderNearFar(gfxCtx);
     }
     if (pDepthOut) {
         if (_useStepInfoTex) {
