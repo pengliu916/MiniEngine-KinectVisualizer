@@ -91,6 +91,7 @@ GraphicsPSO _gfxStepInfoVCamPSO[2]; // index is noInstance on/off
 GraphicsPSO _gfxStepInfoSensorPSO[2]; // index is noInstance on/off
 GraphicsPSO _gfxStepInfoDebugPSO;
 GraphicsPSO _gfxHelperWireframePSO;
+GraphicsPSO _gfxDebugFuseBlockPSO;
 // PSOs for reseting
 ComputePSO _cptFuseBlockVolResetPSO;
 ComputePSO _cptFuseBlockVolRefreshPSO;
@@ -355,11 +356,14 @@ ObjName.Finalize();
     // Create PSO for render near far plane
     ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS, wireframePS;
     ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2], wireframeVS;
+    ComPtr<ID3DBlob> debugFuseBlockVS;
+    ComPtr<ID3DBlob> debugFuseBlockPS;
     D3D_SHADER_MACRO macro1[] = {
         {"__hlsl", "1"},
         {"DEBUG_VIEW", "0"},
         {"FOR_VCAMERA", "1"},
         {"FOR_SENSOR", "0"},
+        {"FUSEDEBUG", "0"},
         {nullptr, nullptr}
     };
     V(_Compile(L"HelperWireframe_vs", macro1, &wireframeVS));
@@ -372,6 +376,9 @@ ObjName.Finalize();
     V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoSensorVS[1]));
     macro1[1].Definition = "1";
     V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
+    macro1[4].Definition = "1";
+    V(_Compile(L"StepInfo_vs", macro1, &debugFuseBlockVS));
+    V(_Compile(L"StepInfo_ps", macro1, &debugFuseBlockPS));
 
     _gfxStepInfoVCamPSO[0].SetRootSignature(_rootsig);
     _gfxStepInfoVCamPSO[0].SetPrimitiveRestart(
@@ -443,6 +450,14 @@ ObjName.Finalize();
         stepInfoVCamVS[1]->GetBufferSize());
     _gfxStepInfoVCamPSO[0].Finalize();
     _gfxStepInfoVCamPSO[1].Finalize();
+    _gfxDebugFuseBlockPSO = _gfxStepInfoDebugPSO;
+    _gfxDebugFuseBlockPSO.SetVertexShader(
+        debugFuseBlockVS->GetBufferPointer(),
+        debugFuseBlockVS->GetBufferSize());
+    _gfxDebugFuseBlockPSO.SetPixelShader(
+        debugFuseBlockPS->GetBufferPointer(),
+        debugFuseBlockPS->GetBufferSize());
+    _gfxDebugFuseBlockPSO.Finalize();
     _gfxStepInfoDebugPSO.Finalize();
 }
 
@@ -557,7 +572,7 @@ TSDFVolume::CreateResource(
     // 1 : _updateBlocksBuf.counter
     // 2 : _newOccupiedBlocksBuf.counter
     // 3 : _freedOccupiedBlocksBuf.counter
-    _debugBuf.Create(L"DebugBuf", 4, 4);
+    _debugBuf.Create(L"DebugBuf", 8, 4);
 
     // Initial value for dispatch indirect args. args are thread group count
     // x, y, z. Since we only need 1 dimensional dispatch thread group, we
@@ -830,7 +845,7 @@ TSDFVolume::RenderDebugGrid(GraphicsContext& gfxCtx,
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINESTRIP);
     gfxCtx.SetIndexBuffer(_cubeLineStripIB.IndexBufferView());
     _RenderHelperWireframe(gfxCtx);
-    if (_useStepInfoTex && _stepInfoDebug) {
+    if (_blockVolumeUpdate && _stepInfoDebug) {
         _RenderBrickGrid(gfxCtx);
     }
 }
@@ -872,6 +887,14 @@ TSDFVolume::RenderGui()
         data = (float)_readBackData[3] / _freedQSize;
         sprintf_s(buf, 64, "%d/%d FreeQ", _readBackData[3], _freedQSize);
         ProgressBar(data, ImVec2(-1.f, 0.f), buf);
+
+        sprintf_s(buf, 64, "UpdateBlock:%d", _readBackData[4]);
+        Text(buf);
+        sprintf_s(buf, 64, "DispatchCt:%d", _readBackData[5]);
+        Text(buf);
+        if (_readBackData[4] != _readBackData[5]) {
+            PRINTERROR("UpdateBlock:%d DispatchCt:%d", _readBackData[4], _readBackData[5]);
+        }
     }
     Separator();
     Checkbox("StepInfoTex", &_useStepInfoTex); SameLine();
@@ -989,7 +1012,7 @@ TSDFVolume::RenderGui()
     _cbStaled |= SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
     static float fVoxelSize = _volParam->fVoxelSize;
     if (SliderFloat("VoxelSize",
-        &fVoxelSize, 1.f / 256.f, 10.f / 256.f)) {
+        &fVoxelSize, 1.f / 256.f, 10.f / 128.f)) {
         _UpdateVolumeSettings(_curReso, fVoxelSize);
         _UpdateBlockSettings(_fuseBlockVoxelRatio,
             _renderBlockVoxelRatio);
@@ -1269,12 +1292,13 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         BeginTrans(cptCtx, _newFuseBlocksBuf, csSRV);
         BeginTrans(cptCtx, _freedFuseBlocksBuf, csSRV);
         // Read queue buffer counter back for debugging
+        Trans(cptCtx, _indirectParams, UAV);
         if (_readBackGPUBufStatus) {
             Graphics::g_cmdListMngr.WaitForFence(_readBackFence);
             static D3D12_RANGE range = {0, 16};
             static D3D12_RANGE umapRange = {};
             _debugBuf.Map(&range, reinterpret_cast<void**>(&_readBackPtr));
-            memcpy(_readBackData, _readBackPtr, 4 * sizeof(uint32_t));
+            memcpy(_readBackData, _readBackPtr, 8 * sizeof(uint32_t));
             _debugBuf.Unmap(&umapRange);
             cptCtx.CopyBufferRegion(_debugBuf, 0,
                 _occupiedBlocksBuf.GetCounterBuffer(), 0, 4);
@@ -1284,11 +1308,17 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
                 _newFuseBlocksBuf.GetCounterBuffer(), 0, 4);
             cptCtx.CopyBufferRegion(_debugBuf, 12,
                 _freedFuseBlocksBuf.GetCounterBuffer(), 0, 4);
+
+
+
+            cptCtx.CopyBufferRegion(_debugBuf, 16,
+                _updateBlocksBuf.GetCounterBuffer(), 0, 4);
+            cptCtx.CopyBufferRegion(_debugBuf, 20,
+                _indirectParams, 12, 4);
             _readBackFence = cptCtx.Flush();
         }
         // Create indirect argument and params for Filling in
         // OccupiedBlockFreedSlot and AppendingNewOccupiedBlock
-        Trans(cptCtx, _indirectParams, UAV);
         Trans(cptCtx, _jobParamBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
@@ -1431,14 +1461,15 @@ TSDFVolume::_RenderHelperWireframe(GraphicsContext& gfxCtx)
 void
 TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
 {
-    gfxCtx.SetPipelineState(_gfxStepInfoDebugPSO);
+    gfxCtx.SetPipelineState(_gfxDebugFuseBlockPSO);
+    _UpdateAndBindConstantBuffer(gfxCtx);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-    SRVs[1] = _renderBlockVol.GetSRV();
+    SRVs[1] = _fuseBlockVol.GetSRV();
     Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
     Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
     const uint3 xyz = _volParam->u3VoxelReso;
-    const uint ratio = _volParam->uVoxelRenderBlockRatio;
+    const uint ratio = _volParam->uVoxelFuseBlockRatio;
     uint BrickCount = xyz.x * xyz.y * xyz.z / ratio / ratio / ratio;
     gfxCtx.DrawIndexedInstanced(CUBE_LINESTRIP_LENGTH, BrickCount, 0, 0, 0);
 }

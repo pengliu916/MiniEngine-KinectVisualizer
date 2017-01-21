@@ -160,7 +160,7 @@ private:
     // Debug buffer for queue buffer size
     ReadBackBuffer _debugBuf;
     uint32_t* _readBackPtr;
-    uint32_t _readBackData[4];
+    uint32_t _readBackData[8];
     uint64_t _readBackFence = 0;
 
     // GPU constant buffer for per frame update basis

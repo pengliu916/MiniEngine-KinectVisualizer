@@ -1,6 +1,12 @@
 // PS for rendering the stepinfo Texture for raymarching
 // [Warning] keep this PS short since during alpha blending, each pixel will be
 // shaded multiple times
+#if FUSEDEBUG
+float4 main(float4 f4ProjPos : SV_POSITION, float4 f4Col : COLOR0) : SV_Target
+{
+    return f4Col;
+}
+#else
 #if DEBUG_VIEW
 float4
 #else
@@ -17,3 +23,4 @@ main(float4 f4ProjPos : SV_POSITION,
     return f2Depth;
 #endif // !DEBUG_VIEW
 }
+#endif

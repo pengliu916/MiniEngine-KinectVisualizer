@@ -21,7 +21,7 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
 #endif // TSDFVOL_RESET
 
 #if FUSEBLOCKVOL_RESET
-RWTexture3D<int> tex_uavFuseBlockVol : register(u1);
+RWTexture3D<uint> tex_uavFuseBlockVol : register(u1);
 
 [numthreads(THREAD_X, THREAD_Y, THREAD_Z)]
 void main(uint3 u3DTid : SV_DispatchThreadID)
