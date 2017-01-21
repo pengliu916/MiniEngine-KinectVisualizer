@@ -26,12 +26,12 @@ void main(uint3 u3GID : SV_GroupID, uint3 u3GTID : SV_GroupThreadID,
     bool bOccupied = uBlockInfo & BLOCKSTATEMASK_OCCUPIED;
     bool bVoxelEmpty;
 
-    if (UpdateVoxel(u3VolumeIdx, bVoxelEmpty)) {
-        if (bVoxelEmpty) {
-            InterlockedAdd(uEmptyThread, 1);
-        } else {
-            uOccupied = 1;
-        }
+    // When block contains voxels outside of depthMap,
+    // need to assume it's occupied
+    if (UpdateVoxel(u3VolumeIdx, bVoxelEmpty) && bVoxelEmpty) {
+        InterlockedAdd(uEmptyThread, 1);
+    } else {
+        uOccupied = 1;
     }
     GroupMemoryBarrierWithGroupSync();
 
