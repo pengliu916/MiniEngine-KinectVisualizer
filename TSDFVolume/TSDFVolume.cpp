@@ -887,14 +887,6 @@ TSDFVolume::RenderGui()
         data = (float)_readBackData[3] / _freedQSize;
         sprintf_s(buf, 64, "%d/%d FreeQ", _readBackData[3], _freedQSize);
         ProgressBar(data, ImVec2(-1.f, 0.f), buf);
-
-        sprintf_s(buf, 64, "UpdateBlock:%d", _readBackData[4]);
-        Text(buf);
-        sprintf_s(buf, 64, "DispatchCt:%d", _readBackData[5]);
-        Text(buf);
-        if (_readBackData[4] != _readBackData[5]) {
-            PRINTERROR("UpdateBlock:%d DispatchCt:%d", _readBackData[4], _readBackData[5]);
-        }
     }
     Separator();
     Checkbox("StepInfoTex", &_useStepInfoTex); SameLine();
@@ -1316,13 +1308,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
                 _newFuseBlocksBuf.GetCounterBuffer(), 0, 4);
             cptCtx.CopyBufferRegion(_debugBuf, 12,
                 _freedFuseBlocksBuf.GetCounterBuffer(), 0, 4);
-
-
-
-            cptCtx.CopyBufferRegion(_debugBuf, 16,
-                _updateBlocksBuf.GetCounterBuffer(), 0, 4);
-            cptCtx.CopyBufferRegion(_debugBuf, 20,
-                _indirectParams, 12, 4);
             _readBackFence = cptCtx.Flush();
         }
         // Create indirect argument and params for Filling in

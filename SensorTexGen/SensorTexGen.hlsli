@@ -29,19 +29,10 @@ static const float2 f2f = COLOR_F;
 static const float2 f2p = COLOR_P;
 static const float4 f4k = COLOR_K;
 #define U2RESO u2ColorReso
-Buffer<uint4> ColBuffer : register(t2);
 
 float4 GetColor(uint2 u2Out_xy, uint uId, float4 f4w)
 {
-#   if UNDISTORTION
-    float4 f400 = ColBuffer[uId];
-    float4 f410 = ColBuffer[uId + 1];
-    float4 f401 = ColBuffer[uId + U2RESO.x];
-    float4 f411 = ColBuffer[uId + U2RESO.x + 1];
-    return (f400 * f4w.x + f410 * f4w.y + f401 * f4w.z + f411 * f4w.w) / 255.f;
-#   else
-    return ColBuffer[uId] / 255.f;
-#   endif // UNDISTORTION
+    return 0.f;
 }
 #endif // COLOR_TEX
 
@@ -51,7 +42,6 @@ static const float2 f2f = DEPTH_F;
 static const float2 f2p = DEPTH_P;
 static const float4 f4k = DEPTH_K;
 #define U2RESO u2DepthInfraredReso
-Buffer<uint> DepBuffer : register(t0);
 
 float GetFakedNormDepth(uint2 u2uv)
 {
@@ -76,39 +66,13 @@ float GetNormDepth(uint2 u2Out_xy, uint uId, float4 f4w)
 #   if FAKEDDEPTH
     return GetFakedNormDepth(u2Out_xy);
 #   else
-#       if UNDISTORTION
-    uint4 u4;
-    u4.x = DepBuffer[uId];
-    u4.y = DepBuffer[uId + 1];
-    u4.z = DepBuffer[uId + U2RESO.x];
-    u4.w = DepBuffer[uId + U2RESO.x + 1];
-    float4 f4 = (u4 > 200 && u4 < 10000);
-    // * 0.001 to get meter, and since range [0,10] meters need to map to [0, 1]
-    // * 0.1 again
-    return (dot(u4 * f4, f4w) / dot(f4, f4w) + 0.5f) * 0.0001f;
-#       else
-    return DepBuffer[uId] * 0.0001f;
-#       endif // UNDISTORTION
+    return 0.f;
 #   endif // FAKEDDEPTH
 }
 #   if INFRARED_TEX
-Buffer<uint> InfBuffer : register(t1);
 float GetInfrared(uint2 u2Out_xy, uint uId, float4 f4w)
 {
-#       if UNDISTORTION
-    uint4 u4;
-    u4.x = InfBuffer[uId];
-    u4.y = InfBuffer[uId + 1];
-    u4.z = InfBuffer[uId + U2RESO.x];
-    u4.w = InfBuffer[uId + U2RESO.x + 1];
-#pragma warning(push)
-    // dot(u4, f4w) guarantee to return positive so suppress the warning
-#pragma warning(disable: 3571)
-    return pow(dot(u4, f4w) / 65535.f, 0.32f);
-#pragma warning(pop)
-#       else
-    return pow(InfBuffer[uId] / 65535.f, 0.32f);
-#       endif // UNDISTORTION
+    return 0.f;
 }
 #   endif // INFRARED_TEX
 #endif // DEPTH_TEX || INFRARED_TEX || VISUALIZED_DEPTH_TEX

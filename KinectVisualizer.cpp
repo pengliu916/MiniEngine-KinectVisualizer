@@ -178,7 +178,7 @@ KinectVisualizer::OnConfiguration()
     Core::g_config.FXAA = false;
     Core::g_config.warpDevice = false;
     Core::g_config.enableDebuglayer = false;
-    Core::g_config.enableGPUBasedValidationInDebug = true;
+    Core::g_config.enableGPUBasedValidationInDebug = false;
     Core::g_config.swapChainDesc.Width = _width;
     Core::g_config.swapChainDesc.Height = _height;
     Core::g_config.swapChainDesc.BufferCount = 5;

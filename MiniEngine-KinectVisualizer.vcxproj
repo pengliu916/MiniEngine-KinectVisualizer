@@ -103,9 +103,6 @@
     <ProjectReference Include="MiniEngine\MiniEngine.vcxproj">
       <Project>{0f8ae16c-7913-4786-8379-b8018af82843}</Project>
     </ProjectReference>
-    <ProjectReference Include="RGBDStreamer\RGBDStreamer.vcxproj">
-      <Project>{1ecc86a1-f932-4e8f-837e-d573a0e6bc7f}</Project>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FastICP\FastICP.h" />

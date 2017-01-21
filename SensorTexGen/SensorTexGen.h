@@ -1,11 +1,28 @@
 #pragma once
-#include "IRGBDStreamer.h"
-#include "LinearFrameAllocator.h"
 
 class SensorTexGen
 {
 #include "SensorTexGen.inl"
 public:
+    struct FrameData
+    {
+        uint64_t captureTimeStamp = 0;
+        uint8_t* pData = nullptr;
+        uint32_t Size = 0;
+
+        ~FrameData()
+        {
+            captureTimeStamp = 0;
+            Size = 0;
+        }
+    };
+    enum BufferType
+    {
+        kCamColor = 0,
+        kCamDepth = 1,
+        kCamInfrared = 2,
+        kNumBufferTypes
+    };
     enum ProcessMode {
         kRaw = 0,
         kUndistorted = 1,
@@ -44,11 +61,8 @@ public:
 private:
     ColorMode _colorMode = kColor, _preColorMode;
     DepthMode _depthMode = kDepthWithVisualWithInfrared, _preDepthMode;
-    ProcessMode _processMode = kUndistorted;
+    ProcessMode _processMode = kRaw;
 
-    IRGBDStreamer* _pKinect2 = nullptr;
-    LinearFrameAllocator* _pFrameAlloc[IRGBDStreamer::kNumBufferTypes] = {};
-    KinectBuffer* _pKinectBuf[IRGBDStreamer::kNumBufferTypes] = {};
     RenderCB _cbKinect;
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
@@ -57,9 +71,4 @@ private:
     D3D12_RECT _depthInfraredScissorRect = {};
     D3D12_VIEWPORT _colorViewport = {};
     D3D12_RECT _colorScissorRect = {};
-
-    void _RetirePreviousFrameKinectBuffer();
-    bool _PrepareAndFillinKinectBuffers();
-    bool _FillinKinectBuffer(
-        IRGBDStreamer::BufferType, const FrameData& frame);
 };
