@@ -213,9 +213,17 @@ KinectVisualizer::OnUpdate()
     using namespace ImGui;
     _windowActive = false;
     _camera.ProcessInertia();
-
+    ImVec2 f2ScreenSize = ImVec2((float)Graphics::g_SceneColorBuffer.GetWidth(),
+        (float)Graphics::g_SceneColorBuffer.GetHeight());
+    float fPanelWidth = 350.f;
+    float fPanelHeight = f2ScreenSize.y - Core::g_config.fUIPanelHeight;
     static bool showPanel = true;
-    if (Begin("KinectVisualizer", &showPanel)) {
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    SetNextWindowPos(ImVec2(f2ScreenSize.x - fPanelWidth, 0));
+    SetNextWindowSize(ImVec2(fPanelWidth, fPanelHeight),
+        ImGuiSetCond_Always);
+    if (Begin("KinectVisualizer", &showPanel, window_flags)) {
         if (BeginMenu("Debug textures")) {
             ShowDebugWindowMenu();
             ImGui::EndMenu();
@@ -225,9 +233,10 @@ KinectVisualizer::OnUpdate()
         _tsdfVolume.RenderGui();
     }
     End();
-    SetNextWindowSizeConstraints(ImVec2(640, 480),
-        ImVec2(FLT_MAX, FLT_MAX), ImGuiResizeConstrain::Step, (void*)32);
-    if (Begin("Visualize Image")) {
+    SetNextWindowPos(ImVec2(0, 0));
+    SetNextWindowSize(ImVec2(f2ScreenSize.x - fPanelWidth, f2ScreenSize.y),
+        ImGuiSetCond_Always);
+    if (Begin("Visualize Image", nullptr, window_flags)) {
         _visWinPos = GetCursorScreenPos();
         _visWinSize = GetContentRegionAvail();
         _visualize = true;

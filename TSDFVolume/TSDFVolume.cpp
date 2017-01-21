@@ -1215,7 +1215,14 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 0);
         }
-        //===============BeginTrans(cptCtx, _indirectParams, UAV);
+        //======================================================================
+        // Code Part A
+        //
+        // The following line will cause the bug if 'Code Part B' is commented
+        
+        //BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
+
+
         // Add blocks to UpdateBlockQueue from DepthMap
         Trans(cptCtx, _fuseBlockVol, UAV);
         Trans(cptCtx, *pDepthTex, psSRV | csSRV);
@@ -1237,9 +1244,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             cptCtx.Dispatch2D(
                 _cbPerCall.i2DepthReso.x, _cbPerCall.i2DepthReso.y);
         }
-        BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
-        //===============BeginTrans(cptCtx, _updateBlocksBuf, csSRV);
-        //===============BeginTrans(cptCtx, _fuseBlockVol, UAV);
         // Resolve UpdateBlockQueue for DispatchIndirect
         Trans(cptCtx, _indirectParams, UAV);
         Trans(cptCtx, _updateBlocksBuf, UAV);
@@ -1254,9 +1258,17 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
+        //======================================================================
+        // Code Part B
+        //
+        // The following 3 lines is one work around the bug if
+        // 'Code Part A' is uncommented
+        
         //cptCtx.Flush();
         //cptCtx.SetRootSignature(_rootsig);
         //_UpdateAndBindConstantBuffer(cptCtx);
+        
+        
         // Update voxels in blocks from UpdateBlockQueue and create queues for
         // NewOccupiedBlocks and FreedOccupiedBlocks
         Trans(cptCtx, _occupiedBlocksBuf, UAV);
@@ -1287,10 +1299,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 12);
         }
-        //===============BeginTrans(cptCtx, _fuseBlockVol, UAV);
-        //===============BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
-        //===============BeginTrans(cptCtx, _newFuseBlocksBuf, csSRV);
-        //===============BeginTrans(cptCtx, _freedFuseBlocksBuf, csSRV);
         // Read queue buffer counter back for debugging
         Trans(cptCtx, _indirectParams, UAV);
         if (_readBackGPUBufStatus) {
@@ -1367,10 +1375,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 36);
         }
-        //===============BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
-        //===============BeginTrans(cptCtx, _jobParamBuf, csSRV);
-        //===============BeginTrans(cptCtx, _newFuseBlocksBuf, UAV);
-        //===============BeginTrans(cptCtx, _freedFuseBlocksBuf, csSRV);
         // Resolve OccupiedBlockQueue for next VoxelUpdate DispatchIndirect
         Trans(cptCtx, _indirectParams, UAV);
         {

@@ -358,8 +358,21 @@ GuiRenderer::NewFrame()
 void
 GuiRenderer::Render(GraphicsContext& gfxContext)
 {
-    static bool showEnginePenal = false;
-    if (ImGui::Begin("Engine Penal", &showEnginePenal)) {
+    using namespace ImGui;
+    static bool showEnginePenal = true;
+    ImVec2 f2ScreenSize = ImVec2((float)Graphics::g_SceneColorBuffer.GetWidth(),
+        (float)Graphics::g_SceneColorBuffer.GetHeight());
+    ImVec2 f2Size = ImVec2(Core::g_config.fUIPanelWidth, 
+        showEnginePenal ? 350.f : 20.f);
+    Core::g_config.fUIPanelHeight = showEnginePenal ? 350.f : 20.f;
+
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    SetNextWindowPos( ImVec2(f2ScreenSize.x - f2Size.x,
+        f2ScreenSize.y - f2Size.y), ImGuiSetCond_Always);
+    SetNextWindowSize(f2Size, ImGuiSetCond_Always);
+
+    if (showEnginePenal = ImGui::Begin("Engine Penal", nullptr, window_flags)) {
         Graphics::UpdateGUI();
         FXAA::UpdateGUI();
     }

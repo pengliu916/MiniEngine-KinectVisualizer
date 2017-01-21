@@ -42,6 +42,8 @@ namespace Core
         bool showPerf = true;
         bool passThroughMsg = false;
         bool useSceneBuf = true;
+        float fUIPanelWidth = 350.f;
+        float fUIPanelHeight = 350.f;
     };
 
     class IDX12Framework
