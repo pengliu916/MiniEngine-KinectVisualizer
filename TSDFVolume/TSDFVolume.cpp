@@ -1186,7 +1186,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 0);
         }
-        BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
+        // The following line is totally valid, but will cause bug in Nvidia
+        // GPUs, see https://www.gamedev.net/topic/685636-bug-only-appear-when-debug-layer-is-off-need-help/
+        //BeginTrans(cptCtx, _occupiedBlocksBuf, UAV);
         BeginTrans(cptCtx, _indirectParams, UAV);
         // Add blocks to UpdateBlockQueue from DepthMap
         Trans(cptCtx, _fuseBlockVol, UAV);
@@ -1225,9 +1227,6 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch1D(1, WARP_SIZE);
         }
-        cptCtx.Flush();
-        cptCtx.SetRootSignature(_rootsig);
-        _UpdateAndBindConstantBuffer(cptCtx);
         // Update voxels in blocks from UpdateBlockQueue and create queues for
         // NewOccupiedBlocks and FreedOccupiedBlocks
         Trans(cptCtx, _occupiedBlocksBuf, UAV);
