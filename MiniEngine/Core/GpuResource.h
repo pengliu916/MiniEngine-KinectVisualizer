@@ -156,6 +156,34 @@ protected:
 };
 
 //------------------------------------------------------------------------------
+// Texture
+//------------------------------------------------------------------------------
+class Texture : public ColorBuffer
+{
+    friend class CommandContext;
+public:
+    void CreateFromSwapChain(const std::wstring&, ID3D12Resource*) = delete;
+    void Create(const std::wstring&, uint32_t, uint32_t, uint32_t, DXGI_FORMAT,
+        D3D12_GPU_VIRTUAL_ADDRESS) = delete;
+    const D3D12_CPU_DESCRIPTOR_HANDLE& GetRTV() const = delete;
+    void SetClearColor(DirectX::XMVECTOR) = delete;
+    void SetMsaaMode(uint32_t, uint32_t) = delete;
+    DirectX::XMVECTOR GetClearColor() const = delete;
+    static inline uint32_t ComputeNumMips(uint32_t, uint32_t) = delete;
+    void CreateDerivedViews(
+        ID3D12Device*, DXGI_FORMAT,uint32_t, uint32_t) = delete;
+    // Create a 2D texture
+    void Create(const std::wstring& Name,
+        size_t Width, size_t Height, DXGI_FORMAT Format, const void* InitData);
+    /*void CreateTGAFromMemory(
+    const void* memBuffer, size_t fileSize, bool sRGB);
+    bool CreateDDSFromMemory(
+    const void* memBuffer, size_t fileSize, bool sRGB);*/
+    HRESULT CreateFromFile(const wchar_t* FileName, bool sRGB);
+
+};
+
+//------------------------------------------------------------------------------
 // DepthBuffer
 //------------------------------------------------------------------------------
 class DepthBuffer : public PixelBuffer
@@ -369,32 +397,6 @@ class IndirectArgsBuffer : public ByteAddressBuffer
 {
 public:
     IndirectArgsBuffer() {}
-};
-
-//------------------------------------------------------------------------------
-// Texture
-//------------------------------------------------------------------------------
-class Texture : public GpuResource
-{
-    friend class CommandContext;
-public:
-    Texture();
-    Texture(D3D12_CPU_DESCRIPTOR_HANDLE Handle);
-
-    // Create a 2D texture
-    void Create(const std::wstring& Name,
-        size_t Width, size_t Height, DXGI_FORMAT Format, const void* InitData);
-    /*void CreateTGAFromMemory(
-        const void* memBuffer, size_t fileSize, bool sRGB);
-    bool CreateDDSFromMemory(
-        const void* memBuffer, size_t fileSize, bool sRGB);*/
-    bool CreateFromFIle(const wchar_t* FileName, bool sRGB);
-    void Destroy();
-    const D3D12_CPU_DESCRIPTOR_HANDLE& GetSRV() const;
-    bool operator!();
-
-protected:
-    D3D12_CPU_DESCRIPTOR_HANDLE m_hCpuDescriptorHandle;
 };
 
 //------------------------------------------------------------------------------

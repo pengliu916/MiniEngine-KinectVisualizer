@@ -109,8 +109,10 @@ namespace
                         (LONG)pcmd->ClipRect.x, (LONG)pcmd->ClipRect.y,
                         (LONG)pcmd->ClipRect.z, (LONG)pcmd->ClipRect.w
                     };
-                    context.SetDynamicDescriptors(1, 0, 1,
-                        (D3D12_CPU_DESCRIPTOR_HANDLE*)(pcmd->TextureId));
+                    ColorBuffer* ColBuf = (ColorBuffer*)pcmd->TextureId;
+                    context.TransitionResource(*ColBuf,
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                    context.SetDynamicDescriptors(1, 0, 1, &ColBuf->GetSRV());
                     context.SetScisor(r);
                     context.DrawIndexed(
                         pcmd->ElemCount, idx_offset, vtx_offset);
@@ -132,7 +134,7 @@ namespace
             width, height, DXGI_FORMAT_R8G8B8A8_UNORM, pixels);
 
         // Store our identifier
-        io.Fonts->TexID = (void *)&(_texture.GetSRV());
+        io.Fonts->TexID = (void *)&_texture;
     }
 }
 

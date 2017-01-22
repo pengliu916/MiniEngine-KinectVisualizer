@@ -189,6 +189,7 @@ KinectVisualizer::OnConfiguration()
 HRESULT
 KinectVisualizer::OnCreateResource()
 {
+    HRESULT hr = S_OK;
     for (uint8_t i = 0; i < SURFBUF_COUNT; ++i) {
         InitialSurfBuffer((SurfBufId)i);
     }
@@ -197,10 +198,9 @@ KinectVisualizer::OnCreateResource()
     _tsdfVolume.CreateResource(DEPTH_RESO, _uploadHeapAlloc);
     _normalGen.OnCreateResource(_uploadHeapAlloc);
     _fastICP.OnCreateResource(DEPTH_RESO);
-
     OnSizeChanged();
     _ResizeVisWin();
-    return S_OK;
+    return hr;
 }
 
 HRESULT
@@ -241,8 +241,7 @@ KinectVisualizer::OnUpdate()
             _height = static_cast<uint16_t>(_visWinSize.y);
             _ResizeVisWin();
         }
-        ImTextureID tex_id =
-            (void*)&GetColBuf(VISUAL_NORMAL)->GetSRV();
+        ImTextureID tex_id = (void*)GetColBuf(VISUAL_NORMAL);
         ImDrawList* draw_list = GetWindowDrawList();
         InvisibleButton("canvas", _visWinSize);
         ImVec2 bbmin = _visWinPos;

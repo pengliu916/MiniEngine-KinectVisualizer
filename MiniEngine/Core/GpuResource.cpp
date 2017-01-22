@@ -336,7 +336,7 @@ ColorBuffer::GuiShow(bool* opened)
     using namespace ImGui;
     USES_CONVERSION;
     if (Begin(W2A(m_Name.c_str()), opened)) {
-        ImTextureID tex_id = (void*)&this->GetSRV();
+        ImTextureID tex_id = (void*)this;
         uint32_t OrigTexWidth = this->GetWidth();
         uint32_t OrigTexHeight = this->GetHeight();
 
@@ -844,21 +844,15 @@ TypedBuffer::CreateDerivedViews()
 //------------------------------------------------------------------------------
 // Texture
 //------------------------------------------------------------------------------
-Texture::Texture()
-{
-    m_hCpuDescriptorHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
-}
-
-Texture::Texture(D3D12_CPU_DESCRIPTOR_HANDLE Handle)
-    :m_hCpuDescriptorHandle(Handle)
-{
-}
-
 void
 Texture::Create(const std::wstring& Name, size_t Width, size_t Height,
     DXGI_FORMAT Format, const void* InitData)
 {
     m_UsageState = D3D12_RESOURCE_STATE_COPY_DEST;
+    m_Width = (uint32_t)Width;
+    m_Height = (uint32_t)Height;
+    m_Format = Format;
+    m_Name = Name;
 
     D3D12_RESOURCE_DESC textDesc = {};
     textDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -892,44 +886,36 @@ Texture::Create(const std::wstring& Name, size_t Width, size_t Height,
 
     CommandContext::InitializeTexture(*this, 1, &texResource);
 
-    if (m_hCpuDescriptorHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN) {
-        m_hCpuDescriptorHandle =
+    if (m_SRVHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN) {
+        m_SRVHandle =
             Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
     }
     Graphics::g_device->CreateShaderResourceView(
-        m_pResource.Get(), nullptr, m_hCpuDescriptorHandle);
+        m_pResource.Get(), nullptr, m_SRVHandle);
 }
 
-bool
-Texture::CreateFromFIle(const wchar_t* FileName, bool sRGB)
+HRESULT
+Texture::CreateFromFile(const wchar_t* FileName, bool sRGB)
 {
-    if (m_hCpuDescriptorHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN) {
-        m_hCpuDescriptorHandle =
+    if (m_SRVHandle.ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN) {
+        m_SRVHandle =
             Graphics::g_pCSUDescriptorHeap->Append().GetCPUHandle();
     }
-    HRESULT hr = CreateDDSTextureFromFile(Graphics::g_device.Get(),
-        FileName, 0, sRGB, &m_pResource, m_hCpuDescriptorHandle);
-    return SUCCEEDED(hr);
+    HRESULT hr;
+    VRET(CreateDDSTextureFromFile(Graphics::g_device.Get(),
+        FileName, 0, sRGB, &m_pResource, m_SRVHandle));
+    m_pResource->SetName(FileName);
+    D3D12_RESOURCE_DESC ResourceDesc = m_pResource->GetDesc();
+    m_Width = (uint32_t)ResourceDesc.Width;
+    m_Height = (uint32_t)ResourceDesc.Height;
+    m_Format = ResourceDesc.Format;
+    m_Name = FileName;
+    return hr;
 }
 
-void
-Texture::Destroy()
-{
-    GpuResource::Destroy();
-}
-
-const D3D12_CPU_DESCRIPTOR_HANDLE&
-Texture::GetSRV() const
-{
-    return m_hCpuDescriptorHandle;
-}
-
-bool
-Texture::operator!()
-{
-    return m_hCpuDescriptorHandle.ptr == 0;
-}
-
+//------------------------------------------------------------------------------
+// ReadBackBuffer
+//------------------------------------------------------------------------------
 void
 ReadBackBuffer::Create(
     const std::wstring& Name, uint32_t NumElements, uint32_t ElementSize)
