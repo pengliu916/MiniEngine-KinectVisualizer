@@ -119,8 +119,8 @@ protected:
     UINT m_NumSamplers;
     UINT m_NumInitializedStaticSamplers;
     uint32_t m_DescriptorTableBitMap;
+    uint32_t m_SamplerTableBitMap;
     uint32_t m_DescriptorTableSize[16];
-    UINT m_MaxDescriptorCacheHandleCount;
     std::unique_ptr<RootParameter[]> m_ParamArray;
     std::unique_ptr<D3D12_STATIC_SAMPLER_DESC[]> m_SamplerArray;
     ID3D12RootSignature* m_Signature;

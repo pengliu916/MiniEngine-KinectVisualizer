@@ -46,10 +46,10 @@ namespace Graphics
     extern SamplerDesc g_SamplerLinearClampDesc;
     extern SamplerDesc g_SamplerLinearWrapDesc;
     extern SamplerDesc g_SamplerAnisoWrapDesc;
-    extern SamplerDescriptor g_SamplerPointClamp;
-    extern SamplerDescriptor g_SamplerLinearClamp;
-    extern SamplerDescriptor g_SamplerLinearWrap;
-    extern SamplerDescriptor g_SamplerAnisoWrap;
+    extern D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerPointClamp;
+    extern D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerLinearClamp;
+    extern D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerLinearWrap;
+    extern D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerAnisoWrap;
 
     extern D3D12_RASTERIZER_DESC g_RasterizerDefault;
     extern D3D12_RASTERIZER_DESC g_RasterizerDefaultCW;

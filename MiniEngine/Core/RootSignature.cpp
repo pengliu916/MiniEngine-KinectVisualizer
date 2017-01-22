@@ -127,7 +127,7 @@ RootSignature::Finalize(const std::wstring& Name,
     RootDesc.Flags = Flags;
 
     m_DescriptorTableBitMap = 0;
-    m_MaxDescriptorCacheHandleCount = 0;
+    m_SamplerTableBitMap = 0;
 
     size_t HashCode = HashState(&RootDesc.Flags);
     HashCode = HashStateArray(
@@ -145,10 +145,10 @@ RootSignature::Finalize(const std::wstring& Name,
 
             if (RootParam.DescriptorTable.pDescriptorRanges->RangeType ==
                 D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER) {
-                continue;
+                m_SamplerTableBitMap |= (1 << Param);
+            } else {
+                m_DescriptorTableBitMap |= (1 << Param);
             }
-
-            m_DescriptorTableBitMap |= (1 << Param);
             for (UINT TableRange = 0;
                 TableRange < RootParam.DescriptorTable.NumDescriptorRanges;
                 ++TableRange) {
@@ -156,7 +156,6 @@ RootSignature::Finalize(const std::wstring& Name,
                     RootParam.DescriptorTable.
                     pDescriptorRanges[TableRange].NumDescriptors;
             }
-            m_MaxDescriptorCacheHandleCount += m_DescriptorTableSize[Param];
         } else {
             HashCode = HashState(&RootParam, HashCode);
         }

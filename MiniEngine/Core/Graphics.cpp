@@ -85,13 +85,13 @@ D3D12_VIEWPORT g_DisplayPlaneViewPort;
 D3D12_RECT g_DisplayPlaneScissorRect;
 
 SamplerDesc g_SamplerPointClampDesc;
-SamplerDescriptor g_SamplerPointClamp;
 SamplerDesc g_SamplerLinearClampDesc;
-SamplerDescriptor g_SamplerLinearClamp;
 SamplerDesc g_SamplerLinearWrapDesc;
-SamplerDescriptor g_SamplerLinearWrap;
 SamplerDesc g_SamplerAnisoWrapDesc;
-SamplerDescriptor g_SamplerAnisoWrap;
+D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerPointClamp;
+D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerLinearClamp;
+D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerLinearWrap;
+D3D12_CPU_DESCRIPTOR_HANDLE g_SamplerAnisoWrap;
 
 D3D12_RASTERIZER_DESC g_RasterizerDefault;
 D3D12_RASTERIZER_DESC g_RasterizerDefaultCW;
@@ -350,17 +350,17 @@ HRESULT CreateResource() {
     g_SamplerPointClampDesc.Filter = D3D12_FILTER_COMPARISON_MIN_MAG_MIP_POINT;
     g_SamplerPointClampDesc.SetTextureAddressMode(
         D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
-    g_SamplerPointClamp.Create(g_SamplerPointClampDesc);
+    g_SamplerPointClamp = g_SamplerPointClampDesc.CreateDescriptor();
     g_SamplerLinearClampDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     g_SamplerLinearClampDesc.SetTextureAddressMode(
         D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
-    g_SamplerLinearClamp.Create(g_SamplerLinearClampDesc);
+    g_SamplerLinearClamp = g_SamplerLinearClampDesc.CreateDescriptor();
     g_SamplerLinearWrapDesc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     g_SamplerLinearWrapDesc.SetTextureAddressMode(
         D3D12_TEXTURE_ADDRESS_MODE_WRAP);
-    g_SamplerLinearWrap.Create(g_SamplerLinearWrapDesc);
+    g_SamplerLinearWrap = g_SamplerLinearWrapDesc.CreateDescriptor();
     g_SamplerAnisoWrapDesc.MaxAnisotropy = 8;
-    g_SamplerAnisoWrap.Create(g_SamplerAnisoWrapDesc);
+    g_SamplerAnisoWrap = g_SamplerAnisoWrapDesc.CreateDescriptor();
 
     // Rasterizer states
     g_RasterizerDefault.FillMode = D3D12_FILL_MODE_SOLID;

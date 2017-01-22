@@ -332,7 +332,7 @@ GPU_Profiler::FillVertexData()
         _BGMargin + _entryMargin,
         _BGMargin + _entryMargin + _wordSpace + (UINT)(t * fScale),
         _BGMargin + _entryMargin + _wordHeight);
-    _RectData[1].Col = XMFLOAT4(0.8f, 0.8f, 1.f, 0.5f);
+    _RectData[1].Col = XMFLOAT4(0.5f, 0.5f, 0.5f, 0.5f);
     showCnt++;
     _RectData[0].TLBR = Corner(_BGMargin, _BGMargin, _maxWidth + _wordSpace,
         _BGMargin + (showCnt)* _entryHeight);

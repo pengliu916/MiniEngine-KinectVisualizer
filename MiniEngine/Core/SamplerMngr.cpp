@@ -49,32 +49,23 @@ SamplerDesc::SetBorderColor(DirectX::XMVECTOR BorderCol)
     BorderColor[3] = DirectX::XMVectorGetW(BorderCol);
 }
 
-//------------------------------------------------------------------------------
-// SamplerMngr
-//------------------------------------------------------------------------------
-SamplerDescriptor::SamplerDescriptor() {}
 
-SamplerDescriptor::SamplerDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE hCpuDescriptor)
-    :m_hCpuDescriptorHandle(hCpuDescriptor)
+D3D12_CPU_DESCRIPTOR_HANDLE SamplerDesc::CreateDescriptor()
 {
-}
-
-void
-SamplerDescriptor::Create(const D3D12_SAMPLER_DESC& Desc)
-{
-    size_t hashValue = HashState(&Desc);
+    size_t hashValue = HashState(this);
     auto iter = s_SamplerCache.find(hashValue);
-    if (iter != s_SamplerCache.end()) {
-        *this = SamplerDescriptor(iter->second);
-        return;
+    if (iter != s_SamplerCache.end())
+    {
+        return iter->second;
     }
-    m_hCpuDescriptorHandle =
+
+    D3D12_CPU_DESCRIPTOR_HANDLE Handle =
         Graphics::g_pSMPDescriptorHeap->Append().GetCPUHandle();
-    Graphics::g_device->CreateSampler(&Desc, m_hCpuDescriptorHandle);
+    Graphics::g_device->CreateSampler(this, Handle);
+    return Handle;
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE
-SamplerDescriptor::GetCpuDescriptorHandle() const
+void SamplerDesc::CreateDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE& Handle)
 {
-    return m_hCpuDescriptorHandle;
+    Graphics::g_device->CreateSampler(this, Handle);
 }

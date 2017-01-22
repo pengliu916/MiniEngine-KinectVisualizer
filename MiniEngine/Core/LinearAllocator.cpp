@@ -14,24 +14,6 @@ LinearAllocatorPageMngr LinearAllocator::sm_PageMngr[2] = {
 };
 
 //------------------------------------------------------------------------------
-// LinearAllocationPage
-//------------------------------------------------------------------------------
-LinearAllocationPage::LinearAllocationPage(
-    ID3D12Resource* pGfxResource, D3D12_RESOURCE_STATES Usage)
-    : GpuResource()
-{
-    m_pResource.Attach(pGfxResource);
-    m_UsageState = Usage;
-    m_GpuVirtualAddr = m_pResource->GetGPUVirtualAddress();
-    m_pResource->Map(0, nullptr, &m_CpuVirtualAddr);
-}
-
-LinearAllocationPage::~LinearAllocationPage()
-{
-    m_pResource->Unmap(0, nullptr);
-}
-
-//------------------------------------------------------------------------------
 // LinearAllocatorPageMngr
 //------------------------------------------------------------------------------
 LinearAllocatorPageMngr::LinearAllocatorPageMngr(LinearAllocatorType Type)
@@ -59,7 +41,7 @@ LinearAllocatorPageMngr::RequestPage()
         PagePtr = m_AvailablePages.front();
         m_AvailablePages.pop();
     } else {
-        PagePtr = _CreateNewPage();
+        PagePtr = CreateNewPage();
         m_PagePool.emplace_back(PagePtr);
     }
     return PagePtr;
@@ -75,28 +57,67 @@ LinearAllocatorPageMngr::DiscardPages(
     }
 }
 
+void
+LinearAllocatorPageMngr::FreeLargePages(
+    uint64_t FenceValue, const vector<LinearAllocationPage*>& LargePages)
+{
+    CriticalSectionScope LockGard(&m_CS);
+
+    while (!m_DeletionQueue.empty() &&
+        Graphics::g_cmdListMngr.IsFenceComplete(
+            m_DeletionQueue.front().first)) {
+        delete m_DeletionQueue.front().second;
+        m_DeletionQueue.pop();
+    }
+
+    for (auto iter = LargePages.begin(); iter != LargePages.end(); ++iter) {
+        (*iter)->Unmap();
+        m_DeletionQueue.push(make_pair(FenceValue, *iter));
+    }
+}
+
 LinearAllocationPage*
-LinearAllocatorPageMngr::_CreateNewPage()
+LinearAllocatorPageMngr::CreateNewPage(size_t PageSize)
 {
     HRESULT hr;
-    ID3D12Resource* pBuffer;
+    D3D12_HEAP_PROPERTIES HeapProps;
+    HeapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    HeapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    HeapProps.CreationNodeMask = 1;
+    HeapProps.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC ResourceDesc;
+    ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    ResourceDesc.Alignment = 0;
+    ResourceDesc.Height = 1;
+    ResourceDesc.DepthOrArraySize = 1;
+    ResourceDesc.MipLevels = 1;
+    ResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+    ResourceDesc.SampleDesc.Count = 1;
+    ResourceDesc.SampleDesc.Quality = 0;
+    ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
     D3D12_RESOURCE_STATES DefaultUsage;
-    if (m_AllocationType == kGpuExclusive) {
+
+    if (m_AllocationType == kGpuExclusive)
+    {
+        HeapProps.Type = D3D12_HEAP_TYPE_DEFAULT;
+        ResourceDesc.Width = PageSize == 0 ? kGpuAllocatorPageSize : PageSize;
+        ResourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         DefaultUsage = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        V(Graphics::g_device->CreateCommittedResource(
-            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
-            D3D12_HEAP_FLAG_NONE,
-            &CD3DX12_RESOURCE_DESC::Buffer(kGpuAllocatorPageSize,
-                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS),
-            DefaultUsage, nullptr, IID_PPV_ARGS(&pBuffer)));
-    } else {
+    } else
+    {
+        HeapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+        ResourceDesc.Width = PageSize == 0 ? kCpuAllocatorPageSize : PageSize;
+        ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
         DefaultUsage = D3D12_RESOURCE_STATE_GENERIC_READ;
-        V(Graphics::g_device->CreateCommittedResource(
-            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-            D3D12_HEAP_FLAG_NONE,
-            &CD3DX12_RESOURCE_DESC::Buffer(kCpuAllocatorPageSize),
-            DefaultUsage, nullptr, IID_PPV_ARGS(&pBuffer)));
     }
+
+    ID3D12Resource* pBuffer;
+    V(Graphics::g_device->CreateCommittedResource(&HeapProps,
+        D3D12_HEAP_FLAG_NONE, &ResourceDesc, DefaultUsage,
+        nullptr, IID_PPV_ARGS(&pBuffer)));
+
     pBuffer->SetName(L"LinearAllocator Page");
 
     return new LinearAllocationPage(pBuffer, DefaultUsage);
@@ -123,11 +144,14 @@ LinearAllocator::LinearAllocator(LinearAllocatorType Type)
 DynAlloc
 LinearAllocator::Allocate(size_t SizeInByte, size_t Alignment)
 {
-    ASSERT(SizeInByte <= m_PageSize);
     const size_t AlignmentMask = Alignment - 1;
     // Assert that it's a power of two.
     ASSERT((AlignmentMask & Alignment) == 0);
     const size_t AlignedSize = AlignUpWithMask(SizeInByte, AlignmentMask);
+
+    if (AlignedSize > m_PageSize)
+        return AllocateLargePage(AlignedSize);
+
     m_CurOffset = AlignUp(m_CurOffset, Alignment);
     if (m_CurOffset + AlignedSize > m_PageSize) {
         ASSERT(m_CurPage != nullptr);
@@ -160,6 +184,9 @@ LinearAllocator::CleanupUsedPages(uint64_t FenceID)
 
     sm_PageMngr[m_AllocationType].DiscardPages(FenceID, m_RetiredPages);
     m_RetiredPages.clear();
+
+    sm_PageMngr[m_AllocationType].FreeLargePages(FenceID, m_LargePageList);
+    m_LargePageList.clear();
 }
 
 void
@@ -167,4 +194,19 @@ LinearAllocator::DestroyAll()
 {
     sm_PageMngr[0].Destory();
     sm_PageMngr[1].Destory();
+}
+
+
+DynAlloc
+LinearAllocator::AllocateLargePage(size_t SizeInBytes)
+{
+    LinearAllocationPage* OneOff =
+        sm_PageMngr[m_AllocationType].CreateNewPage(SizeInBytes);
+    m_LargePageList.push_back(OneOff);
+
+    DynAlloc ret(*OneOff, 0, SizeInBytes);
+    ret.DataPtr = OneOff->m_CpuVirtualAddr;
+    ret.GpuAddress = OneOff->m_GpuVirtualAddr;
+
+    return ret;
 }

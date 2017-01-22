@@ -310,10 +310,13 @@ ColorBuffer::Create(const std::wstring& Name, uint32_t Width, uint32_t Height,
     D3D12_GPU_VIRTUAL_ADDRESS VidMemPtr /*= D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN*/)
 {
     NumMips = (NumMips == 0 ? ComputeNumMips(Width, Height) : NumMips);
+    D3D12_RESOURCE_FLAGS Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    if (m_FragmentCount == 1)
+        Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     D3D12_RESOURCE_DESC ResourceDesc =
-        DescribeTex2D(Width, Height, 1, NumMips, Format,
-        D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-            D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        DescribeTex2D(Width, Height, 1, NumMips, Format, Flags);
+    ResourceDesc.SampleDesc.Count = m_FragmentCount;
+    ResourceDesc.SampleDesc.Quality = 0;
 
     D3D12_CLEAR_VALUE ClearValue = {};
     ClearValue.Format = Format;
@@ -386,6 +389,9 @@ ColorBuffer::CreateDerivedViews(ID3D12Device* Device, DXGI_FORMAT Format,
         SRVDesc.Texture2DArray.MostDetailedMip = 0;
         SRVDesc.Texture2DArray.FirstArraySlice = 0;
         SRVDesc.Texture2DArray.ArraySize = (UINT)ArraySize;
+    } else if (m_FragmentCount > 1) {
+        RTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
+        SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
     } else {
         RTVDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
         RTVDesc.Texture2D.MipSlice = 0;
@@ -404,6 +410,8 @@ ColorBuffer::CreateDerivedViews(ID3D12Device* Device, DXGI_FORMAT Format,
     ID3D12Resource* Resource = m_pResource.Get();
     Device->CreateRenderTargetView(Resource, &RTVDesc, m_RTVHandle);
     Device->CreateShaderResourceView(Resource, &SRVDesc, m_SRVHandle);
+    if (m_FragmentCount > 1)
+        return;
     for (uint32_t i = 0; i < NumMips; ++i) {
         if (m_UAVHandle[i].ptr == D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN) {
             m_UAVHandle[i] =

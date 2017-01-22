@@ -20,7 +20,9 @@ public:
     void ConstantBufferView(UINT RootParameterIndex);
     void ShaderResourceView(UINT RootParameterIndex);
     void UnorderedAccessView(UINT RootParameterIndex);
-    D3D12_INDIRECT_ARGUMENT_TYPE GetType() const;
+    const D3D12_INDIRECT_ARGUMENT_DESC& GetDesc(void) const {
+        return m_IndirectParam;
+    }
 
 protected:
     D3D12_INDIRECT_ARGUMENT_DESC m_IndirectParam;

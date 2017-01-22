@@ -6,18 +6,11 @@ public:
     SamplerDesc();
     void SetTextureAddressMode(D3D12_TEXTURE_ADDRESS_MODE AddressMode);
     void SetBorderColor(DirectX::XMVECTOR BorderCol);
-};
 
-class SamplerDescriptor
-{
-    friend class CommandContext;
+    // Allocate new descriptor as needed;
+    // return handle to existing descriptor when possible
+    D3D12_CPU_DESCRIPTOR_HANDLE CreateDescriptor(void);
 
-public:
-    SamplerDescriptor();
-    SamplerDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE hCpuDescriptor);
-    void Create(const D3D12_SAMPLER_DESC& Desc);
-    D3D12_CPU_DESCRIPTOR_HANDLE GetCpuDescriptorHandle() const;
-
-protected:
-    D3D12_CPU_DESCRIPTOR_HANDLE m_hCpuDescriptorHandle;
+    // Create descriptor in place (no deduplication)
+    void CreateDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE& Handle);
 };

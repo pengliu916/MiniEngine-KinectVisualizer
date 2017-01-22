@@ -20,13 +20,13 @@
 
 #include "LibraryHeader.h"
 
+#include "Utility.h"
 #include "DDSTextureLoader.h"
 
 #include "dds.h"
 #include "GpuResource.h"
 #include "Graphics.h"
 #include "CommandContext.h"
-#include "Utility.h"
 
 using namespace DirectX;
 
@@ -788,7 +788,6 @@ static HRESULT CreateD3DResources(_In_ ID3D12Device* d3dDevice,
     _In_ DXGI_FORMAT format,
     _In_ bool forceSRGB,
     _In_ bool isCubeMap,
-    _In_reads_opt_(mipCount*arraySize) D3D12_SUBRESOURCE_DATA* initData,
     _Outptr_opt_ ID3D12Resource** texture,
     _In_ D3D12_CPU_DESCRIPTOR_HANDLE textureView)
 {
@@ -809,17 +808,17 @@ static HRESULT CreateD3DResources(_In_ ID3D12Device* d3dDevice,
     HeapProps.CreationNodeMask = 1;
     HeapProps.VisibleNodeMask = 1;
 
-    D3D12_RESOURCE_DESC ResourceDesc;
-    ResourceDesc.Alignment = 0;
-    ResourceDesc.Width = static_cast<UINT64>(width);
-    ResourceDesc.Height = static_cast<UINT>(height);
-    ResourceDesc.DepthOrArraySize = static_cast<UINT>(arraySize);
-    ResourceDesc.MipLevels = static_cast<UINT>(mipCount);
-    ResourceDesc.Format = format;
-    ResourceDesc.SampleDesc.Count = 1;
-    ResourceDesc.SampleDesc.Quality = 0;
-    ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	D3D12_RESOURCE_DESC ResourceDesc;
+	ResourceDesc.Alignment = 0;
+	ResourceDesc.Width = static_cast<UINT64>( width );
+	ResourceDesc.Height = static_cast<UINT>( height );
+	ResourceDesc.DepthOrArraySize = static_cast<UINT16>( arraySize );
+	ResourceDesc.MipLevels = static_cast<UINT16>( mipCount );
+	ResourceDesc.Format = format;
+	ResourceDesc.SampleDesc.Count = 1;
+	ResourceDesc.SampleDesc.Quality = 0;
+	ResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	ResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
     switch (resDim)
     {
@@ -919,7 +918,7 @@ static HRESULT CreateD3DResources(_In_ ID3D12Device* d3dDevice,
     case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
     {
         ResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE3D;
-        ResourceDesc.DepthOrArraySize = static_cast<UINT>(depth);
+        ResourceDesc.DepthOrArraySize = static_cast<UINT16>(depth);
 
         ID3D12Resource* tex = nullptr;
         hr = d3dDevice->CreateCommittedResource(&HeapProps, D3D12_HEAP_FLAG_NONE, &ResourceDesc,
@@ -1147,7 +1146,7 @@ static HRESULT CreateTextureFromDDS(_In_ ID3D12Device* d3dDevice,
         {
             hr = CreateD3DResources(d3dDevice, resDim, twidth, theight, tdepth, mipCount - skipMip, arraySize,
                 format, forceSRGB,
-                isCubeMap, initData.get(), texture, textureView);
+                isCubeMap, texture, textureView);
 
             if (FAILED(hr) && !maxsize && (mipCount > 1))
             {
@@ -1162,7 +1161,7 @@ static HRESULT CreateTextureFromDDS(_In_ ID3D12Device* d3dDevice,
                 {
                     hr = CreateD3DResources(d3dDevice, resDim, twidth, theight, tdepth, mipCount - skipMip, arraySize,
                         format, forceSRGB,
-                        isCubeMap, initData.get(), texture, textureView);
+                        isCubeMap, texture, textureView);
                 }
             }
         }

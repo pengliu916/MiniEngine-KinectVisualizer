@@ -28,8 +28,29 @@ class LinearAllocationPage : public GpuResource
 {
 public:
     LinearAllocationPage(
-        ID3D12Resource* pGfxResource, D3D12_RESOURCE_STATES Usage);
-    ~LinearAllocationPage();
+        ID3D12Resource* pGfxResource, D3D12_RESOURCE_STATES Usage)
+        : GpuResource() {
+        m_pResource.Attach(pGfxResource);
+        m_UsageState = Usage;
+        m_GpuVirtualAddr = m_pResource->GetGPUVirtualAddress();
+        m_pResource->Map(0, nullptr, &m_CpuVirtualAddr);
+    }
+    ~LinearAllocationPage() {
+        Unmap();
+    }
+
+    void Map(void) {
+        if (m_CpuVirtualAddr == nullptr) {
+            m_pResource->Map(0, nullptr, &m_CpuVirtualAddr);
+        }
+    }
+
+    void Unmap(void) {
+        if (m_CpuVirtualAddr != nullptr) {
+            m_pResource->Unmap(0, nullptr);
+            m_CpuVirtualAddr = nullptr;
+        }
+    }
 
     LinearAllocationPage& operator= (LinearAllocationPage const&) = delete;
     LinearAllocationPage(LinearAllocationPage const&) = delete;
@@ -59,8 +80,11 @@ public:
     ~LinearAllocatorPageMngr();
 
     LinearAllocationPage* RequestPage();
+    LinearAllocationPage* CreateNewPage(size_t PageSize = 0);
     void DiscardPages(
         uint64_t FenceID, const std::vector<LinearAllocationPage*>& Pages);
+    void FreeLargePages(uint64_t FenceID,
+        const std::vector<LinearAllocationPage*>& Pages);
     void Destory();
 
     //LinearAllocatorPageMngr( LinearAllocatorPageMngr const& ) = delete;
@@ -68,11 +92,10 @@ public:
         LinearAllocatorPageMngr const&) = delete;
 
 private:
-    LinearAllocationPage* _CreateNewPage();
-
     LinearAllocatorType m_AllocationType;
     std::vector<std::unique_ptr<LinearAllocationPage>> m_PagePool;
     std::queue<std::pair<uint64_t, LinearAllocationPage*>> m_RetiredPages;
+    std::queue<std::pair<uint64_t, LinearAllocationPage*> > m_DeletionQueue;
     std::queue<LinearAllocationPage*> m_AvailablePages;
     CRITICAL_SECTION m_CS;
 };
@@ -90,6 +113,7 @@ public:
     static void DestroyAll();
 
 private:
+    DynAlloc AllocateLargePage(size_t SizeInByte);
     static LinearAllocatorPageMngr sm_PageMngr[2];
 
     LinearAllocatorType m_AllocationType;
@@ -97,4 +121,5 @@ private:
     size_t m_CurOffset;
     LinearAllocationPage* m_CurPage;
     std::vector<LinearAllocationPage*> m_RetiredPages;
+    std::vector<LinearAllocationPage*> m_LargePageList;
 };

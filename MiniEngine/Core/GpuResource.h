@@ -59,7 +59,8 @@ protected:
 class PixelBuffer : public GpuResource
 {
 public:
-    PixelBuffer() :m_Width(0), m_Height(0) {}
+    PixelBuffer() : m_Width(0), m_Height(0), m_ArraySize(0),
+        m_Format(DXGI_FORMAT_UNKNOWN) {}
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }
     uint32_t GetDepth() const { return m_ArraySize; }
@@ -108,7 +109,8 @@ class ColorBuffer : public PixelBuffer
 public:
     ColorBuffer(DirectX::XMVECTOR ClearColor =
         DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f))
-        : m_ClearColor(ClearColor), m_NumMipMaps(0) {
+        : m_ClearColor(ClearColor), m_NumMipMaps(0),
+        m_FragmentCount(1), m_SampleCount(1) {
         m_SRVHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
         m_RTVHandle.ptr = D3D12_GPU_VIRTUAL_ADDRESS_UNKNOWN;
         std::memset(m_UAVHandle, 0xFF, sizeof(m_UAVHandle));
@@ -123,6 +125,15 @@ public:
     const D3D12_CPU_DESCRIPTOR_HANDLE& GetSRV() const { return m_SRVHandle; }
     const D3D12_CPU_DESCRIPTOR_HANDLE& GetRTV() const { return m_RTVHandle; }
     const D3D12_CPU_DESCRIPTOR_HANDLE& GetUAV() const { return m_UAVHandle[0]; }
+    void SetClearColor(DirectX::XMVECTOR ClearColor) {
+        m_ClearColor = ClearColor;
+    }
+    void SetMsaaMode(uint32_t NumColorSamples, uint32_t NumCoverageSamples)
+    {
+        ASSERT(NumCoverageSamples >= NumColorSamples);
+        m_FragmentCount = NumColorSamples;
+        m_SampleCount = NumCoverageSamples;
+    }
     DirectX::XMVECTOR GetClearColor() const { return m_ClearColor; }
 
 protected:
@@ -139,6 +150,8 @@ protected:
     D3D12_CPU_DESCRIPTOR_HANDLE m_RTVHandle;
     D3D12_CPU_DESCRIPTOR_HANDLE m_UAVHandle[12];
     uint32_t m_NumMipMaps;
+    uint32_t m_FragmentCount;
+    uint32_t m_SampleCount;
     bool m_GuiNativeReso = false;
 };
 
