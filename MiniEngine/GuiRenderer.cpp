@@ -360,12 +360,6 @@ GuiRenderer::NewFrame()
 void
 GuiRenderer::Render(GraphicsContext& gfxContext)
 {
-    static bool showEnginePenal = false;
-    if (ImGui::Begin("Engine Penal", &showEnginePenal)) {
-        Graphics::UpdateGUI();
-        FXAA::UpdateGUI();
-    }
-    ImGui::End();
     ImGui::Render();
     ImGuiRender(ImGui::GetDrawData(), gfxContext);
 }

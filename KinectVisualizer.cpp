@@ -216,8 +216,19 @@ KinectVisualizer::OnUpdate()
     _windowActive = false;
     _camera.ProcessInertia();
 
+    ImVec2 f2ScreenSize = ImVec2((float)Graphics::g_SceneColorBuffer.GetWidth(),
+        (float)Graphics::g_SceneColorBuffer.GetHeight());
+    float fPanelWidth = 350.f;
+    float fPanelHeight = f2ScreenSize.y;
+
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus;
+    SetNextWindowPos(ImVec2(f2ScreenSize.x - fPanelWidth, 0));
+    SetNextWindowSize(ImVec2(fPanelWidth, fPanelHeight),
+        ImGuiSetCond_Always);
     static bool showPanel = true;
-    if (Begin("KinectVisualizer", &showPanel)) {
+    if (Begin("KinectVisualizer", &showPanel, window_flags)) {
         if (BeginMenu("Debug textures")) {
             ShowDebugWindowMenu();
             ImGui::EndMenu();
@@ -228,11 +239,14 @@ KinectVisualizer::OnUpdate()
         SeperableFilter::RenderGui();
         NormalGenerator::RenderGui();
         _tsdfVolume.RenderGui();
+        Graphics::UpdateGUI();
     }
     End();
-    SetNextWindowSizeConstraints(ImVec2(640, 480),
-        ImVec2(FLT_MAX, FLT_MAX), ImGuiResizeConstrain::Step, (void*)32);
-    if (Begin("Visualize Image")) {
+    SetNextWindowPos(ImVec2(0, 0));
+    SetNextWindowSize(ImVec2(f2ScreenSize.x - fPanelWidth, f2ScreenSize.y),
+        ImGuiSetCond_Always);
+    window_flags |= ImGuiWindowFlags_NoScrollbar;
+    if (Begin("Visualize Image", nullptr, window_flags)) {
         _visWinPos = GetCursorScreenPos();
         _visWinSize = GetContentRegionAvail();
         _visualize = true;
@@ -367,7 +381,7 @@ KinectVisualizer::OnEvent(MSG * msg)
     switch (msg->message) {
     case WM_MOUSEWHEEL: {
         auto delta = GET_WHEEL_DELTA_WPARAM(msg->wParam);
-        _camera.ZoomRadius(-0.01f*delta);
+        _camera.ZoomRadius(-0.001f*delta);
     }
     case WM_POINTERDOWN:
     case WM_POINTERUPDATE:
