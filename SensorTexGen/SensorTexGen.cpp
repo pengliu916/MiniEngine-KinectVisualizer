@@ -14,7 +14,7 @@ ctx.TransitionResource(res, state)
 ctx.BeginResourceTransition(res, state)
 
 namespace {
-typedef D3D12_RESOURCE_STATES State;
+using State = D3D12_RESOURCE_STATES;
 const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State CBV   = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 const State RTV   = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -26,6 +26,7 @@ const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 const UINT kDepthMode = SensorTexGen::kNumDepthMode;
 const UINT kColorMode = SensorTexGen::kNumColorMode;
 const UINT kDataMode  = SensorTexGen::kNumDataMode;
+const UINT kDSrcMode  = SensorTexGen::kNumSrcMode;
 
 const IRGBDStreamer::BufferType kIDepth = IRGBDStreamer::kDepth;
 const IRGBDStreamer::BufferType kIInfrared = IRGBDStreamer::kInfrared;
@@ -35,16 +36,16 @@ const IRGBDStreamer::BufferType kIColor = IRGBDStreamer::kColor;
 bool _useCS = true;
 bool _streaming = true;
 bool _perFrameUpdate = true;
-bool _fakeDepthMap = false;
 bool _animateFakedDepth = false;
 bool _cbStaled = true;
+bool _recompie = false;
+
+float _fAnimateTimeOffset = 0.f;
 
 RootSignature _rootSignature;
-// last index indicate whether use faked depthmap
-GraphicsPSO _gfxDepthPSO[kDepthMode][kDataMode][2];
+GraphicsPSO _gfxDepthPSO[kDepthMode][kDataMode][kDSrcMode];
 GraphicsPSO _gfxColorPSO[kColorMode][kDataMode];
-// last index indicate whether use faked depthmap
-ComputePSO _cptDepthPSO[kDepthMode][kDataMode][2];
+ComputePSO _cptDepthPSO[kDepthMode][kDataMode][kDSrcMode];
 ComputePSO _cptColorPSO[kColorMode][kDataMode];
 
 DXGI_FORMAT RTformat[] = {
@@ -75,110 +76,79 @@ inline HRESULT _Compile(LPCWSTR shaderName,
         target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, bolb);
 }
 
-void _CreatePSOs()
+void _CreatePSOs(SensorTexGen::ColorMode CMode, SensorTexGen::DepthMode DMode,
+    SensorTexGen::ProcessMode PMode, SensorTexGen::DepthSource DSrc)
 {
+    _recompie = false;
     HRESULT hr;
-    // Create PSO
     ComPtr<ID3DBlob> quadVS;
-    // last index indicate whether use faked depthmap
-    ComPtr<ID3DBlob> copyDepthPS[kDepthMode][kDataMode][2];
-    ComPtr<ID3DBlob> copyColorPS[kColorMode][kDataMode];
-    // last index indicate whether use faked depthmap
-    ComPtr<ID3DBlob> copyDepthCS[kDepthMode][kDataMode][2];
-    ComPtr<ID3DBlob> copyColorCS[kColorMode][kDataMode];
-    uint32_t compileFlags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
+    ComPtr<ID3DBlob> cpyDPS, cpyCPS, cpyDCS, cpyCCS;
     D3D_SHADER_MACRO macro[] = {
-        {"__hlsl", "1"}, // 0
-        {"UNDISTORTION", "0"}, // 1
-        {"VISUALIZED_DEPTH_TEX", "0"}, // 2
-        {"INFRARED_TEX", "0"}, // 3
-        {"COLOR_TEX", "0"}, // 4
-        {"DEPTH_TEX", "0"}, // 5
-        {"FAKEDDEPTH", "0"}, // 6
-        {nullptr, nullptr}
+        { "__hlsl", "1" }, // 0
+        { "UNDISTORTION", "0" }, // 1
+        { "VISUALIZED_DEPTH_TEX", "0" }, // 2
+        { "INFRARED_TEX", "0" }, // 3
+        { "COLOR_TEX", "0" }, // 4
+        { "DEPTH_TEX", "1" }, // 5
+        { "DEPTH_SOURCE", "0" }, // 6
+        { nullptr, nullptr }
     };
     V(_Compile(L"SingleTriangleQuad_vs", macro, &quadVS));
-
-    char tempChar[8];
-    for (int i = 0; i < kDataMode; ++i) {
-        sprintf_s(tempChar, 8, "%d", i);
-        macro[1].Definition = tempChar; // UNDISTORTION
-        macro[5].Definition = "1";
-        for (int j = 0; j < kDepthMode; ++j) {
-            switch (j) {
-            case SensorTexGen::kDepthWithVisualWithInfrared:
-                macro[3].Definition = "1"; // INFRARED_TEX
-            case SensorTexGen::kDepthVisualTex:
-                macro[2].Definition = "1"; // VISUALIZED_DEPTH_TEX
-            }
-            V(_Compile(L"Copy_ps", macro, &copyDepthPS[j][i][0]));
-            V(_Compile(L"Copy_cs", macro, &copyDepthCS[j][i][0]));
-            macro[6].Definition = "1";
-            V(_Compile(L"Copy_ps", macro, &copyDepthPS[j][i][1]));
-            V(_Compile(L"Copy_cs", macro, &copyDepthCS[j][i][1]));
-            macro[6].Definition = "0";
-            macro[2].Definition = "0"; // VISUALIZED_DEPTH_TEX
-            macro[3].Definition = "0"; // INFRARED_TEX
-        }
-        macro[5].Definition = "0";
-        macro[4].Definition = "1"; // COLOR_TEX
-        V(_Compile(L"Copy_ps", macro, &copyColorPS[0][i]));
-        V(_Compile(L"Copy_cs", macro, &copyColorCS[0][i]));
-        macro[4].Definition = "0"; // COLOR_TEX
+    macro[1].Definition = PMode == SensorTexGen::kRaw ? "0" : "1";
+    UINT numRT = 1;
+    switch (DMode) {
+    case SensorTexGen::kDepthWithVisual:
+        macro[2].Definition = "1"; numRT = 2; break;
+    case SensorTexGen::kDepthWithVisualWithInfrared:
+        macro[2].Definition = "1"; macro[3].Definition = "1"; numRT = 3; break;
     }
+    char tmpChar[8];
+    sprintf_s(tmpChar, 8, "%d", DSrc);
+    macro[6].Definition = tmpChar;
+    V(_Compile(L"Copy_ps", macro, &cpyDPS));
+    V(_Compile(L"Copy_cs", macro, &cpyDCS));
+    GraphicsPSO& gfxDepthPSO = _gfxDepthPSO[DMode][PMode][DSrc];
+    gfxDepthPSO.SetRootSignature(_rootSignature);
+    gfxDepthPSO.SetRasterizerState(Graphics::g_RasterizerDefault);
+    gfxDepthPSO.SetBlendState(Graphics::g_BlendDisable);
+    gfxDepthPSO.SetDepthStencilState(Graphics::g_DepthStateDisabled);
+    gfxDepthPSO.SetSampleMask(0xFFFFFFFF);
+    gfxDepthPSO.SetInputLayout(0, nullptr);
+    gfxDepthPSO.SetPrimitiveTopologyType(
+        D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+    gfxDepthPSO.SetVertexShader(
+        quadVS->GetBufferPointer(), quadVS->GetBufferSize());
+    gfxDepthPSO.SetRenderTargetFormats(numRT, RTformat, DXGI_FORMAT_UNKNOWN);
+    gfxDepthPSO.SetPixelShader(
+        cpyDPS->GetBufferPointer(), cpyDPS->GetBufferSize());
+    gfxDepthPSO.Finalize();
 
-    for (int i = 0; i < kDataMode; ++i) {
-        _gfxColorPSO[0][i].SetRootSignature(_rootSignature);
-        _gfxColorPSO[0][i].SetRasterizerState(Graphics::g_RasterizerTwoSided);
-        _gfxColorPSO[0][i].SetBlendState(Graphics::g_BlendDisable);
-        _gfxColorPSO[0][i].SetDepthStencilState(Graphics::g_DepthStateDisabled);
-        _gfxColorPSO[0][i].SetSampleMask(0xFFFFFFFF);
-        _gfxColorPSO[0][i].SetInputLayout(0, nullptr);
-        _gfxColorPSO[0][i].SetPrimitiveTopologyType(
-            D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-        _gfxColorPSO[0][i].SetVertexShader(
-            quadVS->GetBufferPointer(), quadVS->GetBufferSize());
-        _gfxColorPSO[0][i].SetRenderTargetFormats(
-            1, &RTformat[3], DXGI_FORMAT_UNKNOWN);
-        _gfxColorPSO[0][i].SetPixelShader(copyColorPS[0][i]->GetBufferPointer(),
-            copyColorPS[0][i]->GetBufferSize());
-        _cptColorPSO[0][i].SetRootSignature(_rootSignature);
-        _cptColorPSO[0][i].SetComputeShader(
-            copyColorCS[0][i]->GetBufferPointer(),
-            copyColorCS[0][i]->GetBufferSize());
-        _cptColorPSO[0][i].Finalize();
+    ComputePSO& cptDepthPSO = _cptDepthPSO[DMode][PMode][DSrc];
+    cptDepthPSO.SetRootSignature(_rootSignature);
+    cptDepthPSO.SetComputeShader(
+        cpyDCS->GetBufferPointer(), cpyDCS->GetBufferSize());
+    cptDepthPSO.Finalize();
 
-        for (int j = 0; j < kDepthMode; ++j) {
-            _gfxDepthPSO[j][i][0] = _gfxColorPSO[0][i];
-            _gfxDepthPSO[j][i][0].SetPixelShader(
-                copyDepthPS[j][i][0]->GetBufferPointer(),
-                copyDepthPS[j][i][0]->GetBufferSize());
-            _gfxDepthPSO[j][i][0].SetRenderTargetFormats(
-                j + 1, RTformat, DXGI_FORMAT_UNKNOWN);
-            _gfxDepthPSO[j][i][0].Finalize();
-
-            _gfxDepthPSO[j][i][1] = _gfxColorPSO[0][i];
-            _gfxDepthPSO[j][i][1].SetPixelShader(
-                copyDepthPS[j][i][1]->GetBufferPointer(),
-                copyDepthPS[j][i][1]->GetBufferSize());
-            _gfxDepthPSO[j][i][1].SetRenderTargetFormats(
-                j + 1, RTformat, DXGI_FORMAT_UNKNOWN);
-            _gfxDepthPSO[j][i][1].Finalize();
-
-            _cptDepthPSO[j][i][0].SetRootSignature(_rootSignature);
-            _cptDepthPSO[j][i][0].SetComputeShader(
-                copyDepthCS[j][i][0]->GetBufferPointer(),
-                copyDepthCS[j][i][0]->GetBufferSize());
-            _cptDepthPSO[j][i][0].Finalize();
-
-            _cptDepthPSO[j][i][1].SetRootSignature(_rootSignature);
-            _cptDepthPSO[j][i][1].SetComputeShader(
-                copyDepthCS[j][i][1]->GetBufferPointer(),
-                copyDepthCS[j][i][1]->GetBufferSize());
-            _cptDepthPSO[j][i][1].Finalize();
-        }
-        _gfxColorPSO[0][i].Finalize();
+    if (CMode == SensorTexGen::kNoColor) {
+        return;
     }
+    macro[2].Definition = "0";
+    macro[3].Definition = "0";
+    macro[4].Definition = "1";
+    macro[5].Definition = "0";
+    V(_Compile(L"Copy_ps", macro, &cpyCPS));
+    V(_Compile(L"Copy_cs", macro, &cpyCCS));
+    _gfxColorPSO[CMode][PMode] = gfxDepthPSO;
+    GraphicsPSO& gfxColorPSO = _gfxColorPSO[CMode][PMode];
+    gfxColorPSO.SetRenderTargetFormats(1, &RTformat[3], DXGI_FORMAT_UNKNOWN);
+    gfxColorPSO.SetPixelShader(cpyCPS->GetBufferPointer(), cpyCPS->GetBufferSize());
+    gfxColorPSO.Finalize();
+
+    _cptColorPSO[CMode][PMode] = cptDepthPSO;
+    ComputePSO& cptColorPSO = _cptColorPSO[CMode][PMode];
+    cptColorPSO.SetComputeShader(
+        cpyCCS->GetBufferPointer(), cpyCCS->GetBufferSize());
+    cptColorPSO.Finalize();
 }
 }
 
@@ -243,7 +213,7 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
 
-    _CreatePSOs();
+    //_CreatePSOs();
     _gpuCB.Create(L"SensorTexGen_CB", 1, sizeof(RenderCB),
         (void*)&_cbKinect);
     _pUploadCB = new DynAlloc(
@@ -274,13 +244,15 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
     ColorBuffer* pDepthVisOut)
 {
     static float fAnimTime = 0;
-    if (_animateFakedDepth) {
-        fAnimTime += static_cast<float>(Core::g_deltaTime);
-        float fx = sin(fAnimTime * 0.5f) * 0.8f;
-        float fy = cos(fAnimTime * 0.5f) * 0.8f;
+    if (_depthSource != kKinect) {
+        if (_animateFakedDepth) {
+            fAnimTime += static_cast<float>(Core::g_deltaTime);
+        }
+        float fx = sin((fAnimTime + _fAnimateTimeOffset) * 0.5f) * 0.8f;
+        float fy = cos((fAnimTime + _fAnimateTimeOffset) * 0.5f) * 0.8f;
         _cbKinect.f4S.x = fx;
         _cbKinect.f4S.y = fy;
-        _cbKinect.fTime = fAnimTime;
+        _cbKinect.fTime = fAnimTime + _fAnimateTimeOffset;
         _cbStaled = true;
     }
     if (!_streaming) {
@@ -326,13 +298,21 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
         }
         if (_depthMode != kNoDepth &&
             (pDepthOut || pDepthVisOut || pInfraredOut)) {
-            cptCtx.SetPipelineState(
-                _cptDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
+            ComputePSO& cptPSO =
+                _cptDepthPSO[_depthMode][_processMode][_depthSource];
+            if (_recompie || !cptPSO.GetPipelineStateObject()) {
+                _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
+            }
+            cptCtx.SetPipelineState(cptPSO);
             cptCtx.Dispatch1D(pDepthOut->GetWidth() *
                 pDepthOut->GetHeight(), THREAD_PER_GROUP);
         }
         if (_colorMode != kNoColor && pColorOut) {
-            cptCtx.SetPipelineState(_cptColorPSO[_colorMode][_processMode]);
+            ComputePSO& cptPSO = _cptColorPSO[_colorMode][_processMode];
+            if (_recompie || !cptPSO.GetPipelineStateObject()) {
+                _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
+            }
+            cptCtx.SetPipelineState(cptPSO);
             cptCtx.Dispatch1D(pColorOut->GetWidth() *
                 pColorOut->GetHeight(), THREAD_PER_GROUP);
         }
@@ -368,8 +348,12 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             gfxCtx.SetRenderTargets(_depthMode + 1, RTVs);
             gfxCtx.SetViewports(1, &_depthInfraredViewport);
             gfxCtx.SetScisors(1, &_depthInfraredScissorRect);
-            gfxCtx.SetPipelineState(
-                _gfxDepthPSO[_depthMode][_processMode][_fakeDepthMap]);
+            GraphicsPSO& gfxPSO =
+                _gfxDepthPSO[_depthMode][_processMode][_depthSource];
+            if (_recompie || !gfxPSO.GetPipelineStateObject()) {
+                _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
+            }
+            gfxCtx.SetPipelineState(gfxPSO);
             gfxCtx.Draw(3);
         }
         if (_colorMode != kNoColor && pColorOut)
@@ -377,7 +361,11 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             gfxCtx.SetRenderTarget(pColorOut->GetRTV());
             gfxCtx.SetViewports(1, &_colorViewport);
             gfxCtx.SetScisors(1, &_colorScissorRect);
-            gfxCtx.SetPipelineState(_gfxColorPSO[0][_processMode]);
+            GraphicsPSO& gfxPSO = _gfxColorPSO[_colorMode][_processMode];
+            if (_recompie || !gfxPSO.GetPipelineStateObject()) {
+                _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
+            }
+            gfxCtx.SetPipelineState(gfxPSO);
             gfxCtx.Draw(3);
         }
     }
@@ -392,12 +380,18 @@ SensorTexGen::RenderGui()
     static bool showImage[kNumTargetTex] = {};
     if (CollapsingHeader("SensorTexGen")) {
         if (Button("RecompileShaders##SensorTexGen")) {
-            _CreatePSOs();
+            _recompie = true;
         }
         Separator();
-        Checkbox("Use Faked Depth", &_fakeDepthMap);
-        if (_fakeDepthMap) {
-            Checkbox("Animate", &_animateFakedDepth);
+        Text("DepthMap Source:");
+        RadioButton("Kinect##Src", (int*)&_depthSource, 0); SameLine();
+        RadioButton("Procedual##Src", (int*)&_depthSource, 1); SameLine();
+        RadioButton("Simple##Src", (int*)&_depthSource, 2);
+        Checkbox("Animate", &_animateFakedDepth);
+        if (_depthSource != kKinect && !_animateFakedDepth) {
+            SameLine(); M(DragFloat("TimeSlider", &_fAnimateTimeOffset, 0.1f));
+        }
+        if (_depthSource == kSimple) {
             M(SliderFloat("BGDist", &_cbKinect.fBgDist, 0.5f, 5.f));
             M(SliderFloat("FGDist", &_cbKinect.f4S.z, 0.5f, 5.f));
         }

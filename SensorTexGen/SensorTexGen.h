@@ -6,6 +6,12 @@ class SensorTexGen
 {
 #include "SensorTexGen.inl"
 public:
+    enum DepthSource {
+        kKinect = 0,
+        kProcedual,
+        kSimple,
+        kNumSrcMode,
+    };
     enum ProcessMode {
         kRaw = 0,
         kUndistorted = 1,
@@ -42,6 +48,7 @@ public:
     void RenderGui();
 
 private:
+    DepthSource _depthSource = kKinect;
     ColorMode _colorMode = kColor, _preColorMode;
     DepthMode _depthMode = kDepthWithVisualWithInfrared, _preDepthMode;
     ProcessMode _processMode = kUndistorted;
