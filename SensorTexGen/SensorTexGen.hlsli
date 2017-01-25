@@ -168,13 +168,13 @@ static const float4 f4k = DEPTH_K;
 #define U2RESO u2DepthInfraredReso
 Buffer<uint> DepBuffer : register(t0);
 
-
+#   if DEPTH_SOURCE != 0 // !kKinect
 float GetFakedNormDepth(uint2 u2uv)
 {
-#   if 1
     float2 f2ab = (u2uv - f2c) / f2f;
     f2ab.y *= -1.f;
 
+#       if DEPTH_SOURCE == 1 // kProcedual
     // camera	
     float3 ro = float3(3.f * cos(0.2f * fTime), 1.8f, 3.f * sin(0.2f * fTime));
     float3 ta = float3(0.f, 1.f, 0.f);
@@ -185,9 +185,10 @@ float GetFakedNormDepth(uint2 u2uv)
     float3 pos =  render(ro, rd);
     float z = dot(pos - ro, normalize(ta - ro));
     return z > .2f ? z * 0.1 : 0.f;
-#   else
+#       endif // kProcedual
+
+#       if DEPTH_SOURCE == 2 // kSimple
     float fResult = fBgDist;
-    float2 f2ab = (u2uv - f2c) / f2f;
     float fA = dot(f2ab, f2ab) + 1.f;
     float fB = -2.f * (dot(f2ab, f4S.xy) + f4S.z);
     float fC = dot(f4S.xyz, f4S.xyz) - f4S.w * f4S.w;
@@ -200,12 +201,13 @@ float GetFakedNormDepth(uint2 u2uv)
         fResult += .2f;
     }
     return fResult * 0.1f;
-#   endif
+#       endif // kSimple
 }
+#   endif // !kKinect
 
 float GetNormDepth(uint2 u2Out_xy, uint uId, float4 f4w)
 {
-#   if FAKEDDEPTH
+#   if DEPTH_SOURCE != 0 // !kKinect
     return GetFakedNormDepth(u2Out_xy);
 #   else
 #       if UNDISTORTION
@@ -221,7 +223,7 @@ float GetNormDepth(uint2 u2Out_xy, uint uId, float4 f4w)
 #       else
     return DepBuffer[uId] * 0.0001f;
 #       endif // UNDISTORTION
-#   endif // FAKEDDEPTH
+#   endif // !kKinect
 }
 #   if INFRARED_TEX
 Buffer<uint> InfBuffer : register(t1);
