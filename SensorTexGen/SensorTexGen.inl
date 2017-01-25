@@ -28,7 +28,8 @@ CBUFFER_ALIGN STRUCT(cbuffer) RenderCB REGISTER(b0)
     uint2 u2DepthInfraredReso;
     float4 f4S;
     float fBgDist;
-    float3 f3NIU;
+    float fTime;
+    uint2 u2NIU;
 #if __cplusplus
     void * operator new(size_t i) {
         return _aligned_malloc(i, 16);

@@ -9,7 +9,7 @@ public:
     enum ProcessMode {
         kRaw = 0,
         kUndistorted = 1,
-        kNumDataMode
+        kNumDataMode,
     };
     enum DepthMode {
         kNoDepth = -1,

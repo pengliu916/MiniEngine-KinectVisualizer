@@ -280,6 +280,7 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
         float fy = cos(fAnimTime * 0.5f) * 0.8f;
         _cbKinect.f4S.x = fx;
         _cbKinect.f4S.y = fy;
+        _cbKinect.fTime = fAnimTime;
         _cbStaled = true;
     }
     if (!_streaming) {

@@ -1,3 +1,118 @@
+float opUnion(float fDist1, float fDist2)
+{
+    return (fDist1 < fDist2) ? fDist1 : fDist2;
+}
+//------------------------------------------------------------------
+
+float sdPlane(float3 f3Pos)
+{
+    return f3Pos.y;
+}
+
+float sdSphere(float3 f3Pos, float fRadius)
+{
+    return length(f3Pos) - fRadius;
+}
+
+float sdBox(float3 f3Pos, float3 f3HalfSize)
+{
+    float3 f3d = abs(f3Pos) - f3HalfSize;
+    return length(max(f3d, 0.f));
+}
+
+float sdHexPrism(float3 f3Pos, float2 f2H)
+{
+    float3 q = abs(f3Pos);
+    return max(q.z - f2H.y, max((q.x * 0.866025f + q.y * 0.5f), q.y) - f2H.x);
+}
+
+float sdPryamid4(float3 f3Pos, float3 f3H) // h = { cos a, sin a, height }
+{
+    // Tetrahedron = Octahedron - Cube
+    float box = sdBox(f3Pos - float3(0.f, -2.f * f3H.z, 0.f), 2.f * f3H.z);
+    float d = 0.f;
+    d = max(d, abs(dot(f3Pos, float3(-f3H.x, f3H.y, 0.f))));
+    d = max(d, abs(dot(f3Pos, float3(f3H.x, f3H.y, 0.f))));
+    d = max(d, abs(dot(f3Pos, float3(0.f, f3H.y, f3H.x))));
+    d = max(d, abs(dot(f3Pos, float3(0.f, f3H.y, -f3H.x))));
+    float octa = d - f3H.z;
+    return max(-box, octa); // Subtraction
+}
+
+float udCross(float3 f3Pos, float3 f3Param)
+{
+    float dist = opUnion(sdBox(f3Pos, f3Param), sdBox(f3Pos, f3Param.yzx));
+    return opUnion(dist, sdBox(f3Pos, f3Param.zxy));
+}
+//------------------------------------------------------------------
+
+float map(in float3 pos)
+{
+    float3 offset = float3(0.f, 0.75f, 0.f);
+    float3 scale = float3(0.1f, 0.75f, 0.1f);
+    float dist = opUnion(sdPlane(pos), udCross(pos - offset, scale));
+    offset = float3(1.f, 0.25f, 1.f);
+    scale = float3(0.25f, 0.25f, 0.25f);
+    dist = opUnion(dist, sdBox(pos - offset, scale));
+    offset = float3(-1.f, 0.25f, -1.f);
+    dist = opUnion(dist, sdSphere(pos - offset, 0.25f));
+    offset = float3(1.f, 0.5f, -1.f);
+    dist = opUnion(dist, sdPryamid4(pos - offset, float3(0.8f, 0.6f, 0.25f)));
+    offset = float3(-1.f, 0.5f, 1.f);
+    dist = opUnion(dist, sdHexPrism(pos - offset, float2(0.25f, 0.05f)));
+    return dist;
+}
+
+float castRay(in float3 ro, in float3 rd)
+{
+    float tmin = .2f;
+    float tmax = 10.f;
+
+    float t = tmin;
+    for (int i = 0; i < 64; i++)
+    {
+        float precis = 0.0005 * t;
+        float res = map(ro + rd * t);
+        if (res < precis || t > tmax) break;
+        t += res;
+    }
+    return t;
+}
+
+float3 calcNormal(in float3 pos)
+{
+    float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+    return normalize(e.xyy * map(pos + e.xyy) + e.yyx * map(pos + e.yyx) +
+        e.yxy * map(pos + e.yxy) + e.xxx * map(pos + e.xxx));
+    /*
+    float3 eps = float3( 0.0005, 0.0, 0.0 );
+    float3 nor = float3(
+    map(pos+eps.xyy).x - map(pos-eps.xyy).x,
+    map(pos+eps.yxy).x - map(pos-eps.yxy).x,
+    map(pos+eps.yyx).x - map(pos-eps.yyx).x );
+    return normalize(nor);
+    */
+}
+
+float3 render(in float3 ro, in float3 rd)
+{
+    float t = castRay(ro, rd);
+    if (t > 10.f) t = 0.f;
+    float3 pos = ro + t * rd;
+
+    //float3 nor = calcNormal(pos);
+    return pos;
+}
+
+float3x3 setCamera(in float3 ro, in float3 ta, float cr)
+{
+    float3 f3z = -normalize(ro - ta);
+    float3 f3up = float3(sin(cr), cos(cr), 0.0);
+    float3 f3x = normalize(cross(f3up, f3z));
+    float3 f3y = normalize(cross(f3z, f3x));
+    return float3x3(f3x, f3y, f3z);
+}
+
 float4 GetBilinearWeights(float2 f2uv)
 {
     float4 f4w;
@@ -53,8 +168,24 @@ static const float4 f4k = DEPTH_K;
 #define U2RESO u2DepthInfraredReso
 Buffer<uint> DepBuffer : register(t0);
 
+
 float GetFakedNormDepth(uint2 u2uv)
 {
+#   if 1
+    float2 f2ab = (u2uv - f2c) / f2f;
+    f2ab.y *= -1.f;
+
+    // camera	
+    float3 ro = float3(3.f * cos(0.2f * fTime), 1.8f, 3.f * sin(0.2f * fTime));
+    float3 ta = float3(0.f, 1.f, 0.f);
+    // camera-to-world transformation
+    float3x3 ca = setCamera(ro, ta, 0.f);
+    float3 rd = mul(transpose(ca), normalize(float3(f2ab, 1.f)));
+
+    float3 pos =  render(ro, rd);
+    float z = dot(pos - ro, normalize(ta - ro));
+    return z > .2f ? z * 0.1 : 0.f;
+#   else
     float fResult = fBgDist;
     float2 f2ab = (u2uv - f2c) / f2f;
     float fA = dot(f2ab, f2ab) + 1.f;
@@ -69,6 +200,7 @@ float GetFakedNormDepth(uint2 u2uv)
         fResult += .2f;
     }
     return fResult * 0.1f;
+#   endif
 }
 
 float GetNormDepth(uint2 u2Out_xy, uint uId, float4 f4w)
