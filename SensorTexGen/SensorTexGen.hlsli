@@ -173,21 +173,31 @@ float GetFakedNormDepth(uint2 u2uv)
 {
     float2 f2ab = (u2uv - f2c) / f2f;
     f2ab.y *= -1.f;
+    float t = fTime;
 
 #       if DEPTH_SOURCE == 1 // kProcedual
-    // camera	
-    float3 ro = float3(3.f * cos(0.2f * fTime), 1.8f, 3.f * sin(0.2f * fTime));
+    // camera
+    // the trajectory is demonstrated in here
+    // https://www.desmos.com/calculator/zrv7kxlhvc
+    float x = 0.5f * sin(t * 0.5f) + 2.f * sin(-t);
+    float z = 0.5f * cos(t * 0.5f) + 2.f * cos(-t);
+    float y = sqrt(6.25f - x * x + z * z);
+    float3 ro = float3(x, 0.7 * y, z);
     float3 ta = float3(0.f, 1.f, 0.f);
     // camera-to-world transformation
     float3x3 ca = setCamera(ro, ta, 0.f);
     float3 rd = mul(transpose(ca), normalize(float3(f2ab, 1.f)));
 
     float3 pos =  render(ro, rd);
-    float z = dot(pos - ro, normalize(ta - ro));
-    return z > .2f ? z * 0.1 : 0.f;
+    float fDepth = dot(pos - ro, normalize(ta - ro));
+    return fDepth > .2f ? fDepth * 0.1f : 0.f;
 #       endif // kProcedual
 
 #       if DEPTH_SOURCE == 2 // kSimple
+    float x = sin(t * 0.5f) * 0.8f;
+    float y = cos(t * 0.5f) * 0.8f;
+    float z = fFgDist;
+    float4 f4S = float4(x, y, z, 0.5f);
     float fResult = fBgDist;
     float fA = dot(f2ab, f2ab) + 1.f;
     float fB = -2.f * (dot(f2ab, f4S.xy) + f4S.z);

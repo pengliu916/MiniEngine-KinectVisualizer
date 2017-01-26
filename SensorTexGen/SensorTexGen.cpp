@@ -40,7 +40,8 @@ bool _animateFakedDepth = false;
 bool _cbStaled = true;
 bool _recompie = false;
 
-float _fAnimateTimeOffset = 0.f;
+float _fAnimTOffset = 0.f;
+float _fAnimSpeed = 0.2f;
 
 RootSignature _rootSignature;
 GraphicsPSO _gfxDepthPSO[kDepthMode][kDataMode][kDSrcMode];
@@ -160,7 +161,7 @@ SensorTexGen::SensorTexGen(
     _pKinect2 = StreamFactory::createFromKinect2(
         enableColor, enableDepth, enableInfrared);
     _pKinect2->StartStream();
-    _cbKinect.f4S = float4(0.f, 0.f, 3.f, 0.5f);
+    _cbKinect.fFgDist = 3.f;
     _cbKinect.fBgDist = 5.f;
 }
 
@@ -246,13 +247,9 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
     static float fAnimTime = 0;
     if (_depthSource != kKinect) {
         if (_animateFakedDepth) {
-            fAnimTime += static_cast<float>(Core::g_deltaTime);
+            fAnimTime += static_cast<float>(Core::g_deltaTime) * _fAnimSpeed;
         }
-        float fx = sin((fAnimTime + _fAnimateTimeOffset) * 0.5f) * 0.8f;
-        float fy = cos((fAnimTime + _fAnimateTimeOffset) * 0.5f) * 0.8f;
-        _cbKinect.f4S.x = fx;
-        _cbKinect.f4S.y = fy;
-        _cbKinect.fTime = fAnimTime + _fAnimateTimeOffset;
+        _cbKinect.fTime = fAnimTime + _fAnimTOffset;
         _cbStaled = true;
     }
     if (!_streaming) {
@@ -388,12 +385,17 @@ SensorTexGen::RenderGui()
         RadioButton("Procedual##Src", (int*)&_depthSource, 1); SameLine();
         RadioButton("Simple##Src", (int*)&_depthSource, 2);
         Checkbox("Animate", &_animateFakedDepth);
-        if (_depthSource != kKinect && !_animateFakedDepth) {
-            SameLine(); M(DragFloat("TimeSlider", &_fAnimateTimeOffset, 0.1f));
+        if (_depthSource != kKinect) {
+            SameLine();
+            if (!_animateFakedDepth) {
+                M(DragFloat("TimeSlider", &_fAnimTOffset, 0.1f));
+            } else {
+                M(SliderFloat("AnimSpeed", &_fAnimSpeed, 0.1f, 2.f));
+            }
         }
         if (_depthSource == kSimple) {
             M(SliderFloat("BGDist", &_cbKinect.fBgDist, 0.5f, 5.f));
-            M(SliderFloat("FGDist", &_cbKinect.f4S.z, 0.5f, 5.f));
+            M(SliderFloat("FGDist", &_cbKinect.fFgDist, 0.5f, 5.f));
         }
         Separator();
         Checkbox("Streaming Data", &_streaming);
