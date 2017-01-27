@@ -169,6 +169,8 @@ static const float4 f4k = DEPTH_K;
 Buffer<uint> DepBuffer : register(t0);
 
 #   if DEPTH_SOURCE != 0 // !kKinect
+RWStructuredBuffer<float4> camMatrixBuf : register(u4);
+
 float GetFakedNormDepth(uint2 u2uv)
 {
     float2 f2ab = (u2uv - f2c) / f2f;
@@ -186,6 +188,12 @@ float GetFakedNormDepth(uint2 u2uv)
     float3 ta = float3(0.f, 1.f, 0.f);
     // camera-to-world transformation
     float3x3 ca = setCamera(ro, ta, 0.f);
+    // Arbitrary chosen thread to write to that buffer
+    if (all(u2uv == uint2(50, 50))) {
+        camMatrixBuf[0] = float4(ca[0], x);
+        camMatrixBuf[1] = float4(ca[1], y);
+        camMatrixBuf[2] = float4(ca[2], z);
+    }
     float3 rd = mul(transpose(ca), normalize(float3(f2ab, 1.f)));
 
     float3 pos =  render(ro, rd);

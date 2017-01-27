@@ -46,6 +46,7 @@ public:
         ColorBuffer* pColorOut = nullptr, ColorBuffer* pInfraredOut = nullptr,
         ColorBuffer* pDepthVisOut = nullptr);
     void RenderGui();
+    StructuredBuffer* GetVCamMatrixBuf();
 
 private:
     DepthSource _depthSource = kKinect;
@@ -59,6 +60,7 @@ private:
     RenderCB _cbKinect;
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
+    StructuredBuffer _camMatrixBuf;
 
     D3D12_VIEWPORT _depthInfraredViewport = {};
     D3D12_RECT _depthInfraredScissorRect = {};

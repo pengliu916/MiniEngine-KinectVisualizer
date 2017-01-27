@@ -208,13 +208,21 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
     _rootSignature[1].InitAsDescriptorRange(
         D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, IRGBDStreamer::kNumBufferTypes);
     _rootSignature[2].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, IRGBDStreamer::kNumBufferTypes + 1);
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, IRGBDStreamer::kNumBufferTypes + 2);
     _rootSignature.Finalize(L"SensorTexGen",
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
 
-    //_CreatePSOs();
+    // GPU buffer for fake scene camera matrix
+    float cameraMatrix[12] = {
+        1.f,   0.f,   0.f,   0.f,
+        0.f,   1.f,   0.f,   0.f,
+        0.f,   0.f,   1.f,   0.f,
+    };
+    _camMatrixBuf.Create(L"FakeSceneCameraMatrix",
+        3, 4 * sizeof(float), (void*)cameraMatrix);
+
     _gpuCB.Create(L"SensorTexGen_CB", 1, sizeof(RenderCB),
         (void*)&_cbKinect);
     _pUploadCB = new DynAlloc(
@@ -237,6 +245,7 @@ SensorTexGen::OnDestory()
     }
     delete _pUploadCB;
     _gpuCB.Destroy();
+    _camMatrixBuf.Destroy();
 }
 
 bool
@@ -274,6 +283,10 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
         cptCtx.SetRootSignature(_rootSignature);
         cptCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
 
+        if (_depthSource != kKinect) {
+            Trans(cptCtx, _camMatrixBuf, UAV);
+            Bind(cptCtx, 2, 4, 1, &_camMatrixBuf.GetUAV());
+        }
         if (_depthMode != kNoDepth && pDepthOut) {
             Bind(cptCtx, 1, 0, 1, &_pKinectBuf[kIDepth]->GetSRV());
             Bind(cptCtx, 2, 0, 1, &pDepthOut->GetUAV());
@@ -320,6 +333,11 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
         gfxCtx.SetRootSignature(_rootSignature);
         gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
+
+        if (_depthSource != kKinect) {
+            Trans(gfxCtx, _camMatrixBuf, UAV);
+            Bind(gfxCtx, 2, 4, 1, &_camMatrixBuf.GetUAV());
+        }
 
         if (_depthMode != kNoDepth && pDepthOut) {
             Bind(gfxCtx, 1, 0, 1, &_pKinectBuf[kIDepth]->GetSRV());
@@ -415,6 +433,12 @@ SensorTexGen::RenderGui()
         _depthMode = kDepth;
     }
 #undef M
+}
+
+StructuredBuffer*
+SensorTexGen::GetVCamMatrixBuf()
+{
+    return &_camMatrixBuf;
 }
 
 void
