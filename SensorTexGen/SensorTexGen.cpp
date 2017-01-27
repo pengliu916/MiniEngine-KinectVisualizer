@@ -223,6 +223,9 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
     _camMatrixBuf.Create(L"FakeSceneCameraMatrix",
         3, 4 * sizeof(float), (void*)cameraMatrix);
 
+#if VCAM_DEBUG
+    _debugBuf.Create(L"VCamDebugBuf", 12, sizeof(float));
+#endif
     _gpuCB.Create(L"SensorTexGen_CB", 1, sizeof(RenderCB),
         (void*)&_cbKinect);
     _pUploadCB = new DynAlloc(
@@ -246,6 +249,9 @@ SensorTexGen::OnDestory()
     delete _pUploadCB;
     _gpuCB.Destroy();
     _camMatrixBuf.Destroy();
+#if VCAM_DEBUG
+    _debugBuf.Destroy();
+#endif
 }
 
 bool
@@ -301,11 +307,6 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             Bind(cptCtx, 2, 2, 1, &pInfraredOut->GetUAV());
             Trans(cptCtx, *pInfraredOut, UAV);
         }
-        if (_colorMode == kColor && pColorOut) {
-            Bind(cptCtx, 1, 2, 1, &_pKinectBuf[kIColor]->GetSRV());
-            Bind(cptCtx, 2, 3, 1, &pColorOut->GetUAV());
-            Trans(cptCtx, *pColorOut, UAV);
-        }
         if (_depthMode != kNoDepth &&
             (pDepthOut || pDepthVisOut || pInfraredOut)) {
             ComputePSO& cptPSO =
@@ -316,6 +317,25 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             cptCtx.SetPipelineState(cptPSO);
             cptCtx.Dispatch1D(pDepthOut->GetWidth() *
                 pDepthOut->GetHeight(), THREAD_PER_GROUP);
+#if VCAM_DEBUG
+            if (_showDebugData) {
+                Graphics::g_cmdListMngr.WaitForFence(_debugFence);
+                static D3D12_RANGE range = {0, 48};
+                static D3D12_RANGE unmapRange = {};
+                _debugBuf.Map(&range, reinterpret_cast<void**>(&_debugPtr));
+                memcpy(_debugData, _debugPtr, 12 * sizeof(float));
+                _debugBuf.Unmap(&unmapRange);
+                Trans(cptCtx, _camMatrixBuf, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                cptCtx.CopyBufferRegion(
+                    _debugBuf, 0, _camMatrixBuf, 0, 12 * sizeof(float));
+                _debugFence = cptCtx.Flush();
+            }
+#endif
+        }
+        if (_colorMode == kColor && pColorOut) {
+            Bind(cptCtx, 1, 2, 1, &_pKinectBuf[kIColor]->GetSRV());
+            Bind(cptCtx, 2, 3, 1, &pColorOut->GetUAV());
+            Trans(cptCtx, *pColorOut, UAV);
         }
         if (_colorMode != kNoColor && pColorOut) {
             ComputePSO& cptPSO = _cptColorPSO[_colorMode][_processMode];
@@ -370,6 +390,20 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             }
             gfxCtx.SetPipelineState(gfxPSO);
             gfxCtx.Draw(3);
+#if VCAM_DEBUG
+            if (_showDebugData) {
+                Graphics::g_cmdListMngr.WaitForFence(_debugFence);
+                static D3D12_RANGE range = {0, 48};
+                static D3D12_RANGE unmapRange = {};
+                _debugBuf.Map(&range, reinterpret_cast<void**>(&_debugPtr));
+                memcpy(_debugData, _debugPtr, 12 * sizeof(float));
+                _debugBuf.Unmap(&unmapRange);
+                Trans(gfxCtx, _camMatrixBuf, D3D12_RESOURCE_STATE_COPY_SOURCE);
+                gfxCtx.CopyBufferRegion(
+                    _debugBuf, 0, _camMatrixBuf, 0, 12 * sizeof(float));
+                _debugFence = gfxCtx.Flush();
+            }
+#endif
         }
         if (_colorMode != kNoColor && pColorOut)
         {
@@ -393,6 +427,9 @@ SensorTexGen::RenderGui()
 #define M(x) _cbStaled |= x
     using namespace ImGui;
     static bool showImage[kNumTargetTex] = {};
+#if VCAM_DEBUG
+    _showDebugData = false;
+#endif
     if (CollapsingHeader("SensorTexGen")) {
         if (Button("RecompileShaders##SensorTexGen")) {
             _recompie = true;
@@ -411,6 +448,19 @@ SensorTexGen::RenderGui()
                 M(SliderFloat("AnimSpeed", &_fAnimSpeed, 0.1f, 2.f));
             }
         }
+#if VCAM_DEBUG
+        if (_depthSource == kProcedual) {
+            _showDebugData = true;
+            float* d = _debugData;
+            Text("\
+%8.3f,%8.3f,%8.3f,%8.3f\n\
+%8.3f,%8.3f,%8.3f,%8.3f\n\
+%8.3f,%8.3f,%8.3f,%8.3f\n",
+d[0], d[1], d[2], d[3],
+d[4], d[5], d[6], d[7],
+d[8], d[9], d[10], d[11]);
+        }
+#endif
         if (_depthSource == kSimple) {
             M(SliderFloat("BGDist", &_cbKinect.fBgDist, 0.5f, 5.f));
             M(SliderFloat("FGDist", &_cbKinect.fFgDist, 0.5f, 5.f));

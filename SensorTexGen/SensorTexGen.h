@@ -1,4 +1,5 @@
 #pragma once
+#define VCAM_DEBUG 1
 #include "IRGBDStreamer.h"
 #include "LinearFrameAllocator.h"
 
@@ -61,6 +62,13 @@ private:
     DynAlloc* _pUploadCB;
     ByteAddressBuffer _gpuCB;
     StructuredBuffer _camMatrixBuf;
+#if VCAM_DEBUG
+    bool _showDebugData = true;
+    ReadBackBuffer _debugBuf;
+    uint64_t _debugFence = 0;
+    float _debugData[12];
+    float* _debugPtr = nullptr;
+#endif
 
     D3D12_VIEWPORT _depthInfraredViewport = {};
     D3D12_RECT _depthInfraredScissorRect = {};
