@@ -38,7 +38,7 @@ bool _streaming = true;
 bool _perFrameUpdate = true;
 bool _animateFakedDepth = false;
 bool _cbStaled = true;
-bool _recompie = false;
+bool _recompile = false;
 
 float _fAnimTOffset = 0.f;
 float _fAnimSpeed = 0.2f;
@@ -80,7 +80,6 @@ inline HRESULT _Compile(LPCWSTR shaderName,
 void _CreatePSOs(SensorTexGen::ColorMode CMode, SensorTexGen::DepthMode DMode,
     SensorTexGen::ProcessMode PMode, SensorTexGen::DepthSource DSrc)
 {
-    _recompie = false;
     HRESULT hr;
     ComPtr<ID3DBlob> quadVS;
     ComPtr<ID3DBlob> cpyDPS, cpyCPS, cpyDCS, cpyCCS;
@@ -311,7 +310,7 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             (pDepthOut || pDepthVisOut || pInfraredOut)) {
             ComputePSO& cptPSO =
                 _cptDepthPSO[_depthMode][_processMode][_depthSource];
-            if (_recompie || !cptPSO.GetPipelineStateObject()) {
+            if (_recompile || !cptPSO.GetPipelineStateObject()) {
                 _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
             }
             cptCtx.SetPipelineState(cptPSO);
@@ -339,7 +338,7 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
         }
         if (_colorMode != kNoColor && pColorOut) {
             ComputePSO& cptPSO = _cptColorPSO[_colorMode][_processMode];
-            if (_recompie || !cptPSO.GetPipelineStateObject()) {
+            if (_recompile || !cptPSO.GetPipelineStateObject()) {
                 _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
             }
             cptCtx.SetPipelineState(cptPSO);
@@ -385,7 +384,7 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             gfxCtx.SetScisors(1, &_depthInfraredScissorRect);
             GraphicsPSO& gfxPSO =
                 _gfxDepthPSO[_depthMode][_processMode][_depthSource];
-            if (_recompie || !gfxPSO.GetPipelineStateObject()) {
+            if (_recompile || !gfxPSO.GetPipelineStateObject()) {
                 _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
             }
             gfxCtx.SetPipelineState(gfxPSO);
@@ -411,13 +410,14 @@ SensorTexGen::OnRender(CommandContext& cmdCtx, ColorBuffer* pDepthOut,
             gfxCtx.SetViewports(1, &_colorViewport);
             gfxCtx.SetScisors(1, &_colorScissorRect);
             GraphicsPSO& gfxPSO = _gfxColorPSO[_colorMode][_processMode];
-            if (_recompie || !gfxPSO.GetPipelineStateObject()) {
+            if (_recompile || !gfxPSO.GetPipelineStateObject()) {
                 _CreatePSOs(_colorMode, _depthMode, _processMode, _depthSource);
             }
             gfxCtx.SetPipelineState(gfxPSO);
             gfxCtx.Draw(3);
         }
     }
+    _recompile = false;
     return needUpdate;
 }
 
@@ -432,7 +432,7 @@ SensorTexGen::RenderGui()
 #endif
     if (CollapsingHeader("SensorTexGen")) {
         if (Button("RecompileShaders##SensorTexGen")) {
-            _recompie = true;
+            _recompile = true;
         }
         Separator();
         Text("DepthMap Source:");
