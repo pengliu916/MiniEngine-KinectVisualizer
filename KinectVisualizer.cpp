@@ -292,8 +292,10 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     GraphicsContext& gfxCtx = cmdCtx.GetGraphicsContext();
     ComputeContext& cptCtx = cmdCtx.GetComputeContext();
     static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
-    //BeginTrans(cptCtx, Graphics::g_SceneDepthBuffer, DSV);
-    BeginTrans(cptCtx, *GetColBuf(VISUAL_NORMAL), UAV);
+
+    BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), RTV);
+    BeginTrans(cptCtx, *GetColBuf(TSDF_NORMAL), UAV);
+    BeginTrans(cptCtx, *GetColBuf(KINECT_NORMAL), UAV);
     Trans(cptCtx, *GetColBuf(WEIGHT), UAV);
 
     // Request depthmap for ICP
@@ -308,7 +310,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
             GetColBuf(VISUAL_DEPTH), GetColBuf(VISUAL_NORMAL));
         _tsdfVolume.RenderDebugGrid(
             gfxCtx, GetColBuf(VISUAL_NORMAL), GetDepBuf(VISUAL_DEPTH));
-        BeginTrans(gfxCtx, *GetColBuf(VISUAL_DEPTH), RTV);
     }
     BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
     // Generate normalmap for TSDF depthmap
@@ -352,11 +353,6 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
             _fastICP.OnSolving();
         }
     }
-    BeginTrans(cptCtx, *GetColBuf(WEIGHT), UAV);
-    BeginTrans(cptCtx, *GetColBuf(FILTERED_DEPTH), RTV);
-    BeginTrans(cptCtx, *GetColBuf(TSDF_DEPTH), RTV);
-    BeginTrans(cptCtx, *GetColBuf(TSDF_NORMAL), UAV);
-    BeginTrans(cptCtx, *GetColBuf(KINECT_NORMAL), UAV);
 }
 
 void
