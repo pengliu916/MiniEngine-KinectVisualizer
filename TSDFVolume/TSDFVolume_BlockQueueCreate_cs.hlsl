@@ -18,7 +18,7 @@ void AddToUpdateQueue(uint3 u3BlockIdx)
 //------------------------------------------------------------------------------
 // Pass_1 Update UpdateQueue from OccupiedBlock
 //------------------------------------------------------------------------------
-#if PASS_1
+#if UPDATE_FROM_OCCUPIEDQ
 StructuredBuffer<uint> buf_srvOccupiedBlocks : register(t0);
 ByteAddressBuffer buf_srvOccupiedBlocksBufCounter : register(t1);
 
@@ -87,12 +87,12 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     tex_uavFuseBlockVol[u3BlockIdx] = u3DTid.x << BLOCKSTATEMASK_IDXOFFSET
         | BLOCKSTATEMASK_UPDATE | BLOCKSTATEMASK_OCCUPIED;
 }
-#endif // PASS_1
+#endif // UPDATE_FROM_OCCUPIEDQ
 
 //------------------------------------------------------------------------------
 // Pass_2 Update UpdateQueue from DepthMap
 //------------------------------------------------------------------------------
-#if PASS_2
+#if UPDATE_FROM_DEPTHMAP
 Texture2D<float> tex_srvNormDepth : register(t0);
 Texture2D<float> tex_srvWeight : register(t1);
 
@@ -153,5 +153,5 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
         InterlockedAddToUpdateQueue(u3Block1Idx);
     }
 }
-#endif // PASS_2
+#endif // UPDATE_FROM_DEPTHMAP
 #pragma  warning(pop)

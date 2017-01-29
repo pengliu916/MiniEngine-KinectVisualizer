@@ -10,15 +10,14 @@ RWBuffer<float> tex_uavWeightVol : register(u1);
 Buffer<float> tex_srvTSDFVol : register(t1);
 Buffer<float> tex_srvWeightVol : register(t2);
 #endif // NO_TYPED_LOAD
-#endif // TYPED_UAV
-#if TEX3D_UAV
+#else
 RWTexture3D<float> tex_uavTSDFVol : register(u0);
 RWTexture3D<uint> tex_uavWeightVol : register(u1);
 #if NO_TYPED_LOAD
 Texture3D<float> tex_srvTSDFVol : register(t1);
 Texture3D<uint> tex_srvWeightVol : register(t2);
 #endif // NO_TYPED_LOAD
-#endif // TEX3D_UAV
+#endif // TYPED_UAV
 
 int2 GetProjectedUVDepth(uint3 u3DTid, out float fDepth)
 {

@@ -21,7 +21,13 @@ ctx.TransitionResource(res, state)
 ctx.BeginResourceTransition(res, state)
 
 namespace {
-typedef D3D12_RESOURCE_STATES State;
+using State = D3D12_RESOURCE_STATES;
+enum VSMode {
+    kInstance = 0,
+    kIndexed,
+    kNumVSMode,
+};
+
 const State UAV   = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 const State RTV   = D3D12_RESOURCE_STATE_RENDER_TARGET;
 const State DSV   = D3D12_RESOURCE_STATE_DEPTH_WRITE;
@@ -33,22 +39,34 @@ const State vsSRV = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 const UINT kBuf    = ManagedBuf::kNumType;
 const UINT kStruct = TSDFVolume::kNumStruct;
 const UINT kFilter = TSDFVolume::kNumFilter;
+const UINT kCam    = TSDFVolume::kNumCam;
 const UINT kTG     = TSDFVolume::kTG;
+
+DXGI_FORMAT ColorBufFormat;
+DXGI_FORMAT DepthBufFormat;
+DXGI_FORMAT DepthMapFormat;
 
 const UINT numSRVs = 4;
 const UINT numUAVs = 7;
 
 const DXGI_FORMAT _stepInfoTexFormat = DXGI_FORMAT_R16G16_FLOAT;
 
+VSMode _vsMode = kInstance;
 bool _typedLoadSupported = false;
 
 bool _useStepInfoTex = true;
 bool _stepInfoDebug = false;
 bool _blockVolumeUpdate = true;
 bool _readBackGPUBufStatus = true;
-bool _noInstance = false;
 
 bool _cbStaled = true;
+
+// Define the vertex input layout.
+D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
+    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
+    D3D12_APPEND_ALIGNED_ELEMENT,
+    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+};
 
 // define the geometry for a triangle.
 const XMFLOAT3 cubeVertices[] = {
@@ -72,30 +90,27 @@ std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> _nullUAVs;
 std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> _nullSRVs;
 
 // PSO for naive updating voxels
-ComputePSO _cptUpdatePSO[kBuf][kStruct];
+ComputePSO _cptPSOvoxelUpdate[kBuf][kStruct];
 // PSOs for block voxel updating
-ComputePSO _cptBlockVolUpdate_Pass1;
-ComputePSO _cptBlockVolUpdate_Pass2;
-ComputePSO _cptBlockVolUpdate_Resolve;
-ComputePSO _cptBlockVolUpdate_Pass3[kBuf][kTG];
-ComputePSO _cptBlockQUpdate_Prepare;
-ComputePSO _cptBlockQUpdate_Pass1;
-ComputePSO _cptBlockQUpdate_Pass2;
-ComputePSO _cptBlockQUpdate_Resolve;
+ComputePSO _cptPSOupdateQFromOccupiedQ;
+ComputePSO _cptPSOupdateQFromDepthMap;
+ComputePSO _cptPSOupdateQResolve;
+ComputePSO _cptPSOblockUpdate[kBuf][kTG];
+ComputePSO _cptPSOprepareNewFreeQ;
+ComputePSO _cptPSOfillFreeQ;
+ComputePSO _cptPSOappendOccupiedQ;
+ComputePSO _cptPSOoccupiedQResolve;
 // PSO for occupied queue defragmentation
-ComputePSO _cptBlockQDefragment;
+ComputePSO _cptPSOoccupiedQDefragment;
 // PSOs for rendering
-GraphicsPSO _gfxVCamRenderPSO[kBuf][kStruct][kFilter];
-GraphicsPSO _gfxSensorRenderPSO[kBuf][kStruct][kFilter];
-GraphicsPSO _gfxStepInfoVCamPSO[2]; // index is noInstance on/off
-GraphicsPSO _gfxStepInfoSensorPSO[2]; // index is noInstance on/off
-GraphicsPSO _gfxStepInfoDebugPSO;
-GraphicsPSO _gfxHelperWireframePSO;
+GraphicsPSO _gfxPSORaycast[kBuf][kStruct][kFilter][kCam];
+GraphicsPSO _gfxPSORayNearFar[kNumVSMode][kCam];
+GraphicsPSO _gfxPSODebugRayNearFar;
+GraphicsPSO _gfxPSOHelperWireframe;
 // PSOs for reseting
-ComputePSO _cptFuseBlockVolResetPSO;
-ComputePSO _cptFuseBlockVolRefreshPSO;
-ComputePSO _cptRenderBlockVolResetPSO;
-ComputePSO _cptTSDFBufResetPSO[kBuf];
+ComputePSO _cptPSOresetFuseBlockVol;
+ComputePSO _cptPSOresetRenderBlockVol;
+ComputePSO _cptPSOresetTSDFBuf[kBuf];
 
 StructuredBuffer _cubeVB;
 ByteAddressBuffer _cubeTriangleStripIB;
@@ -130,269 +145,175 @@ inline HRESULT _Compile(LPCWSTR shaderName,
         target, compilerFlag, 0, bolb);
 }
 
-void _CreatePSOs()
-{
-    HRESULT hr;
-    // Compile Shaders
-    ComPtr<ID3DBlob> quadVCamVS, quadSensorVS;
-    ComPtr<ID3DBlob> raycastVCamPS[kBuf][kStruct][kFilter];
-    ComPtr<ID3DBlob> raycastSensorPS[kBuf][kStruct][kFilter];
-    ComPtr<ID3DBlob> volUpdateCS[kBuf][kStruct];
-    ComPtr<ID3DBlob> blockUpdateCS[kBuf][kTG];
-    ComPtr<ID3DBlob> tsdfVolResetCS[kBuf];
-    ComPtr<ID3DBlob> fuseBlockVolResetCS;
-    ComPtr<ID3DBlob> renderBlockVolResetCS;
-
-    ComPtr<ID3DBlob> blockQCreate_Pass1CS;
-    ComPtr<ID3DBlob> blockQCreate_Pass2CS;
-    ComPtr<ID3DBlob> blockQCreate_ResolveCS;
-    ComPtr<ID3DBlob> blockQUpdate_PrepareCS;
-    ComPtr<ID3DBlob> blockQUpdate_Pass1CS;
-    ComPtr<ID3DBlob> blockQUpdate_Pass2CS;
-    ComPtr<ID3DBlob> blockQUpdate_ResolveCS;
-    ComPtr<ID3DBlob> blockQDefragmentCS;
-
-    D3D_SHADER_MACRO macro_[] = {
-        { "__hlsl", "1" },//0
-        { "PREPARE", "0" },//1
-        { "PASS_1", "0" },//2
-        { "PASS_2", "0" },//3
-        { "RESOLVE", "0" },//4
-        { nullptr, nullptr }
-    };
-
-    macro_[2].Definition = "1";
-    V(_Compile(L"BlockQueueCreate_cs", macro_, &blockQCreate_Pass1CS));
-    macro_[2].Definition = "0"; macro_[3].Definition = "1";
-    V(_Compile(L"BlockQueueCreate_cs", macro_, &blockQCreate_Pass2CS));
-    macro_[3].Definition = "0";
-    V(_Compile(L"BlockQueueResolve_cs", macro_, &blockQCreate_ResolveCS));
-    macro_[1].Definition = "1";
-    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_PrepareCS));
-    macro_[1].Definition = "0"; macro_[2].Definition = "1";
-    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_Pass1CS));
-    macro_[2].Definition = "0"; macro_[3].Definition = "1";
-    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_Pass2CS));
-    macro_[3].Definition = "0"; macro_[4].Definition = "1";
-    V(_Compile(L"OccupiedQueueUpdate_cs", macro_, &blockQUpdate_ResolveCS));
-    macro_[4].Definition = "0";
-    V(_Compile(L"QueueDefragment_cs", macro_, &blockQDefragmentCS));
-
-    D3D_SHADER_MACRO macro[] = {
-        { "__hlsl", "1" },//0
-        { "TYPED_UAV", "0" },//1
-        { "TEX3D_UAV", "0" },//2
-        { "FILTER_READ", "0" },//3
-        { "ENABLE_BRICKS", "0" },//4
-        { "NO_TYPED_LOAD", "0" },//5
-        { "TSDFVOL_RESET", "0" },//6
-        { "FUSEBLOCKVOL_RESET", "0" },//7
-        { "FOR_SENSOR", "0" },//8
-        { "FOR_VCAMERA", "0" },//9
-        { "THREAD_DIM", "8" },//10
-        { "RENDERBLOCKVOL_RESET", "0"},//11
-        { nullptr, nullptr }
-    };
-
-    if (!_typedLoadSupported) {
-        macro[5].Definition = "1";
-    }
-    macro[8].Definition = "1";
-    V(_Compile(L"RayCast_vs", macro, &quadSensorVS));
-    macro[8].Definition = "0"; macro[9].Definition = "1";
-    V(_Compile(L"RayCast_vs", macro, &quadVCamVS));
-    macro[9].Definition = "0"; macro[7].Definition = "1";
-    V(_Compile(L"VolumeReset_cs", macro, &fuseBlockVolResetCS));
-    macro[7].Definition = "0"; macro[11].Definition = "1";
-    V(_Compile(L"VolumeReset_cs", macro, &renderBlockVolResetCS));
-    macro[11].Definition = "0";
-    uint DefIdx;
-    bool compiledOnce = false;
-    for (int j = 0; j < kStruct; ++j) {
-        macro[4].Definition = j == TSDFVolume::kVoxel ? "0" : "1";
-        for (int i = 0; i < kBuf; ++i) {
-            switch ((ManagedBuf::Type)i) {
-            case ManagedBuf::kTypedBuffer: DefIdx = 1; break;
-            case ManagedBuf::k3DTexBuffer: DefIdx = 2; break;
-            }
-            macro[DefIdx].Definition = "1";
-            if (!compiledOnce) {
-                macro[6].Definition = "1";
-                V(_Compile(L"VolumeReset_cs", macro, &tsdfVolResetCS[i]));
-                macro[6].Definition = "0";
-                V(_Compile(L"BlocksUpdate_cs", macro,
-                    &blockUpdateCS[i][TSDFVolume::k512]));
-                macro[10].Definition = "4";
-                V(_Compile(L"BlocksUpdate_cs", macro,
-                    &blockUpdateCS[i][TSDFVolume::k64]));
-                macro[10].Definition = "8";
-            }
-            V(_Compile(L"VolumeUpdate_cs", macro, &volUpdateCS[i][j]));
-            macro[9].Definition = "1";
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastVCamPS[i][j][TSDFVolume::kNoFilter]));
-            macro[3].Definition = "1"; // FILTER_READ
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastVCamPS[i][j][TSDFVolume::kLinearFilter]));
-            macro[3].Definition = "2"; // FILTER_READ
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerLinear]));
-            macro[3].Definition = "3"; // FILTER_READ
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastVCamPS[i][j][TSDFVolume::kSamplerAniso]));
-            macro[3].Definition = "0"; // FILTER_READ
-            macro[9].Definition = "0"; macro[8].Definition = "1";
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastSensorPS[i][j][TSDFVolume::kNoFilter]));
-            macro[3].Definition = "1"; // FILTER_READ
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastSensorPS[i][j][TSDFVolume::kLinearFilter]));
-            macro[3].Definition = "2"; // FILTER_READ
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerLinear]));
-            macro[3].Definition = "3"; // FILTER_READ
-            V(_Compile(L"RayCast_ps",
-                macro, &raycastSensorPS[i][j][TSDFVolume::kSamplerAniso]));
-            macro[3].Definition = "0"; // FILTER_READ
-            macro[8].Definition = "0";
-            macro[DefIdx].Definition = "0";
-        }
-        compiledOnce = true;
-    }
-    // Create Rootsignature
-    _rootsig.Reset(4, 1);
-    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
-    _rootsig[0].InitAsConstantBuffer(0);
-    _rootsig[1].InitAsConstantBuffer(1);
-    _rootsig[2].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, numUAVs);
-    _rootsig[3].InitAsDescriptorRange(
-        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, numSRVs);
-    _rootsig.Finalize(L"TSDFVolume",
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
-
-    // Define the vertex input layout.
-    D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0,
-        D3D12_APPEND_ALIGNED_ELEMENT,
-        D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
-    };
-
-    // Create PSO for volume update and volume render
-    DXGI_FORMAT ColorBufFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
-    DXGI_FORMAT DepthBufFormat = Graphics::g_SceneDepthBuffer.GetFormat();
-    DXGI_FORMAT DepthMapFormat = DXGI_FORMAT_R16_UNORM;
-    //DXGI_FORMAT ExtractTexFormat = DXGI_FORMAT_R16_UINT;
-
-#define CreatePSO( ObjName, Shader)\
+#define CreatePSO(ObjName, Shader)\
 ObjName.SetRootSignature(_rootsig);\
 ObjName.SetComputeShader(Shader->GetBufferPointer(), Shader->GetBufferSize());\
 ObjName.Finalize();
 
-    CreatePSO(_cptFuseBlockVolResetPSO, fuseBlockVolResetCS);
-    CreatePSO(_cptRenderBlockVolResetPSO, renderBlockVolResetCS);
-    CreatePSO(_cptBlockVolUpdate_Pass1, blockQCreate_Pass1CS);
-    CreatePSO(_cptBlockVolUpdate_Pass2, blockQCreate_Pass2CS);
-    CreatePSO(_cptBlockVolUpdate_Resolve, blockQCreate_ResolveCS);
-    CreatePSO(_cptBlockQUpdate_Prepare, blockQUpdate_PrepareCS);
-    CreatePSO(_cptBlockQUpdate_Pass1, blockQUpdate_Pass1CS);
-    CreatePSO(_cptBlockQUpdate_Pass2, blockQUpdate_Pass2CS);
-    CreatePSO(_cptBlockQUpdate_Resolve, blockQUpdate_ResolveCS);
-    CreatePSO(_cptBlockQDefragment, blockQDefragmentCS);
+#define InitializePSO(ObjName)\
+ObjName.SetRootSignature(_rootsig);\
+ObjName.SetInputLayout(0, nullptr);\
+ObjName.SetRasterizerState(Graphics::g_RasterizerDefault);\
+ObjName.SetBlendState(Graphics::g_BlendDisable);\
+ObjName.SetDepthStencilState(Graphics::g_DepthStateDisabled);\
+ObjName.SetSampleMask(UINT_MAX);\
+ObjName.SetPrimitiveTopologyType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
-    compiledOnce = false;
-    for (int k = 0; k < kStruct; ++k) {
-        for (int i = 0; i < kBuf; ++i) {
-            for (int j = 0; j < kFilter; ++j) {
-                _gfxVCamRenderPSO[i][k][j].SetRootSignature(_rootsig);
-                _gfxVCamRenderPSO[i][k][j].SetInputLayout(0, nullptr);
-                _gfxVCamRenderPSO[i][k][j].SetRasterizerState(
-                    Graphics::g_RasterizerDefault);
-                _gfxVCamRenderPSO[i][k][j].SetBlendState(
-                    Graphics::g_BlendDisable);
-                _gfxVCamRenderPSO[i][k][j].SetDepthStencilState(
-                    Graphics::g_DepthStateReadWrite);
-                _gfxVCamRenderPSO[i][k][j].SetSampleMask(UINT_MAX);
-                _gfxVCamRenderPSO[i][k][j].SetPrimitiveTopologyType(
-                    D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-                _gfxVCamRenderPSO[i][k][j].SetRenderTargetFormats(
-                    1, &DepthMapFormat, DepthBufFormat);
-                _gfxVCamRenderPSO[i][k][j].SetPixelShader(
-                    raycastVCamPS[i][k][j]->GetBufferPointer(),
-                    raycastVCamPS[i][k][j]->GetBufferSize());
-                _gfxSensorRenderPSO[i][k][j] = _gfxVCamRenderPSO[i][k][j];
-                _gfxSensorRenderPSO[i][k][j].SetDepthStencilState(
-                    Graphics::g_DepthStateDisabled);
-                _gfxSensorRenderPSO[i][k][j].SetVertexShader(
-                    quadSensorVS->GetBufferPointer(),
-                    quadSensorVS->GetBufferSize());
-                _gfxSensorRenderPSO[i][k][j].SetRenderTargetFormats(
-                    1, &DepthMapFormat, DXGI_FORMAT_UNKNOWN);
-                _gfxSensorRenderPSO[i][k][j].SetPixelShader(
-                    raycastSensorPS[i][k][j]->GetBufferPointer(),
-                    raycastSensorPS[i][k][j]->GetBufferSize());
-                _gfxSensorRenderPSO[i][k][j].Finalize();
-                _gfxVCamRenderPSO[i][k][j].SetVertexShader(
-                    quadVCamVS->GetBufferPointer(),
-                    quadVCamVS->GetBufferSize());
-                _gfxVCamRenderPSO[i][k][j].Finalize();
-            }
-            CreatePSO(_cptUpdatePSO[i][k], volUpdateCS[i][k]);
-            if (!compiledOnce) {
-                CreatePSO(_cptTSDFBufResetPSO[i], tsdfVolResetCS[i]);
-                CreatePSO(_cptBlockVolUpdate_Pass3[i][TSDFVolume::k512],
-                    blockUpdateCS[i][TSDFVolume::k512]);
-                CreatePSO(_cptBlockVolUpdate_Pass3[i][TSDFVolume::k64],
-                    blockUpdateCS[i][TSDFVolume::k64]);
-            }
-        }
-        compiledOnce = true;
+void _CreateCptPSO_VoxelUpdate(
+    ManagedBuf::Type bufType, TSDFVolume::VolumeStruct structType) {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {      /*0*/ {"__hlsl",    "1"},
+        /*1*/ {"ENABLE_BRICKS", "0"}, /*2*/ {"TYPED_UAV", "0"},
+        /*3*/ {"NO_TYPED_LOAD", "0"}, {nullptr, nullptr}};
+    if (!_typedLoadSupported) macro[3].Definition = "1";
+    if (structType == TSDFVolume::kBlockVol) macro[1].Definition = "1";
+    if (bufType == ManagedBuf::kTypedBuffer) macro[2].Definition = "1";
+    V(_Compile(L"VolumeUpdate_cs", macro, &cs));
+    CreatePSO(_cptPSOvoxelUpdate[bufType][structType], cs);
+}
+
+void _CreateCptPSO_UpdateQFromOccupiedQ() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"},
+        {"UPDATE_FROM_OCCUPIEDQ", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"BlockQueueCreate_cs", macro, &cs));
+    CreatePSO(_cptPSOupdateQFromOccupiedQ, cs);
+}
+
+void _CreateCptPSO_UpdateQFromDepthMap() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"},
+       {"UPDATE_FROM_DEPTHMAP", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"BlockQueueCreate_cs", macro, &cs));
+    CreatePSO(_cptPSOupdateQFromDepthMap, cs);
+}
+
+void _CreateCptPSO_UpdateQResolve() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"BlockQueueResolve_cs", macro, &cs));
+    CreatePSO(_cptPSOupdateQResolve, cs);
+}
+
+void _CreateCptPSO_BlockUpdate(
+    ManagedBuf::Type bufType, TSDFVolume::ThreadGroup tg) {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {      /*0*/ {"__hlsl",        "1"},
+        /*1*/ {"TYPED_UAV",     "0"}, /*2*/ {"NO_TYPED_LOAD", "0"},
+        /*3*/ {"THREAD_DIM",    "4"}, {nullptr, nullptr}};
+    if (bufType == ManagedBuf::kTypedBuffer) macro[1].Definition = "1";
+    if (!_typedLoadSupported)                macro[2].Definition = "1";
+    if (tg == TSDFVolume::k512)              macro[3].Definition = "8";
+    V(_Compile(L"BlocksUpdate_cs", macro, &cs));
+    CreatePSO(_cptPSOblockUpdate[bufType][tg], cs);
+}
+
+void _CreateCptPSO_PrepareNewFreeQ() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = 
+        {{"__hlsl", "1"}, {"PREPARE", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro, &cs));
+    CreatePSO(_cptPSOprepareNewFreeQ, cs);
+}
+
+void _CreateCptPSO_FillFreeQ() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] =
+        {{"__hlsl", "1"}, {"FILL_FREEQ", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro, &cs));
+    CreatePSO(_cptPSOfillFreeQ, cs);
+}
+
+void _CreateCptPSO_AppendOccupiedQ() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] =
+        {{"__hlsl", "1"}, {"APPEND_OCCUPIEDQ", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro, &cs));
+    CreatePSO(_cptPSOappendOccupiedQ, cs);
+}
+
+void _CreateCptPSO_OccupiedQResolve() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] =
+        {{"__hlsl", "1"}, {"RESOLVE", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"OccupiedQueueUpdate_cs", macro, &cs));
+    CreatePSO(_cptPSOoccupiedQResolve, cs);
+}
+
+void _CreateCptPSO_OccupiedQDefragment() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"QueueDefragment_cs", macro, &cs));
+    CreatePSO(_cptPSOoccupiedQDefragment, cs);
+}
+
+void _CreateCptPSO_ResetFuseBlockVol() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"},
+        {"FUSEBLOCKVOL_RESET", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"VolumeReset_cs", macro, &cs));
+    CreatePSO(_cptPSOresetFuseBlockVol, cs);
+}
+
+void _CreateCptPSO_ResetRenderBlockVol() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"},
+    {"RENDERBLOCKVOL_RESET", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"VolumeReset_cs", macro, &cs));
+    CreatePSO(_cptPSOresetRenderBlockVol, cs);
+}
+
+void _CreateCptPSO_ResetTSDFBuf(ManagedBuf::Type buf) {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"}, {"TSDFVOL_RESET", "1"},
+        {"TYPED_UAV", "0"}, {nullptr, nullptr}};
+    if (buf == ManagedBuf::kTypedBuffer) macro[2].Definition = "1";
+    V(_Compile(L"VolumeReset_cs", macro, &cs));
+    CreatePSO(_cptPSOresetTSDFBuf[buf], cs);
+}
+
+void _CreateGfxPSO_RayCast(TSDFVolume::CamType cam, ManagedBuf::Type buf,
+    TSDFVolume::VolumeStruct stru, TSDFVolume::FilterType filter) {
+    HRESULT hr; ComPtr<ID3DBlob> vs, ps;
+    D3D_SHADER_MACRO macro[] = {      /*0*/ {"__hlsl",     "1"},
+        /*1*/ {"ENABLE_BRICKS", "0"}, /*2*/ {"TYPED_UAV",  "0"},
+        /*3*/ {"FILTER_READ",   "0"}, /*4*/ {"FOR_SENSOR", "0"},
+        /*5*/ {"FOR_VCAMERA",   "0"}, {nullptr, nullptr}};
+    if (stru == TSDFVolume::kBlockVol)   macro[1].Definition = "1";
+    if (buf == ManagedBuf::kTypedBuffer) macro[2].Definition = "1";
+    switch (filter) {
+    case TSDFVolume::kLinearFilter:      macro[3].Definition = "1"; break;
+    case TSDFVolume::kSamplerLinear:     macro[3].Definition = "2"; break;
+    case TSDFVolume::kSamplerAniso:      macro[3].Definition = "3"; break;
     }
-#undef  CreatePSO
+    switch (cam) {
+    case TSDFVolume::kVirtual:           macro[5].Definition = "1"; break;
+    case TSDFVolume::kSensor:            macro[4].Definition = "1"; break;
+    }
+    V(_Compile(L"RayCast_vs", macro, &vs));
+    V(_Compile(L"RayCast_ps", macro, &ps));
+    GraphicsPSO& PSO = _gfxPSORaycast[buf][stru][filter][cam];
+    InitializePSO(PSO);
+    PSO.SetDepthStencilState(cam == TSDFVolume::kSensor ?
+        Graphics::g_DepthStateDisabled : Graphics::g_DepthStateReadWrite);
+    PSO.SetRenderTargetFormats(1, &DepthMapFormat,
+        cam == TSDFVolume::kSensor ? DXGI_FORMAT_UNKNOWN : DepthBufFormat);
+    PSO.SetVertexShader(vs->GetBufferPointer(), vs->GetBufferSize());
+    PSO.SetPixelShader(ps->GetBufferPointer(), ps->GetBufferSize());
+    PSO.Finalize();
+}
 
-    // Create PSO for render near far plane
-    ComPtr<ID3DBlob> stepInfoPS, stepInfoDebugPS, wireframePS;
-    ComPtr<ID3DBlob> stepInfoVCamVS[2], stepInfoSensorVS[2], wireframeVS;
-    D3D_SHADER_MACRO macro1[] = {
-        {"__hlsl", "1"},
-        {"DEBUG_VIEW", "0"},
-        {"FOR_VCAMERA", "1"},
-        {"FOR_SENSOR", "0"},
-        {nullptr, nullptr}
-    };
-    V(_Compile(L"HelperWireframe_vs", macro1, &wireframeVS));
-    V(_Compile(L"HelperWireframe_ps", macro1, &wireframePS));
-    V(_Compile(L"StepInfo_ps", macro1, &stepInfoPS));
-    V(_Compile(L"StepInfo_vs", macro1, &stepInfoVCamVS[0]));
-    V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoVCamVS[1]));
-    macro1[2].Definition = "0"; macro1[3].Definition = "1";
-    V(_Compile(L"StepInfo_vs", macro1, &stepInfoSensorVS[0]));
-    V(_Compile(L"StepInfoNoInstance_vs", macro1, &stepInfoSensorVS[1]));
-    macro1[1].Definition = "1";
-    V(_Compile(L"StepInfo_ps", macro1, &stepInfoDebugPS));
-
-    _gfxStepInfoVCamPSO[0].SetRootSignature(_rootsig);
-    _gfxStepInfoVCamPSO[0].SetPrimitiveRestart(
-        D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
-    _gfxStepInfoVCamPSO[0].SetInputLayout(
-        _countof(inputElementDescs), inputElementDescs);
-    _gfxStepInfoVCamPSO[0].SetDepthStencilState(
-        Graphics::g_DepthStateDisabled);
-    _gfxStepInfoVCamPSO[0].SetSampleMask(UINT_MAX);
-    _gfxStepInfoVCamPSO[0].SetVertexShader(
-        stepInfoVCamVS[0]->GetBufferPointer(),
-        stepInfoVCamVS[0]->GetBufferSize());
-    _gfxStepInfoDebugPSO = _gfxStepInfoVCamPSO[0];
-    _gfxStepInfoDebugPSO.SetDepthStencilState(
-        Graphics::g_DepthStateReadOnly);
-    _gfxStepInfoVCamPSO[0].SetRasterizerState(
-        Graphics::g_RasterizerTwoSided);
-    D3D12_RASTERIZER_DESC rastDesc = Graphics::g_RasterizerTwoSided;
-    rastDesc.FillMode = D3D12_FILL_MODE_WIREFRAME;
-    _gfxStepInfoDebugPSO.SetRasterizerState(rastDesc);
-    _gfxStepInfoDebugPSO.SetBlendState(Graphics::g_BlendDisable);
+void _CreateGfxPSO_RayNearFar(VSMode vsMode, TSDFVolume::CamType cam) {
+    HRESULT hr; ComPtr<ID3DBlob> vs, ps;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"},
+        {"FOR_VCAMERA", "0"}, {"FOR_SENSOR", "0"}, {nullptr, nullptr}};
+    std::wstring vsName;
+    vsName = vsMode == kInstance ? L"StepInfo_vs" : L"StepInfoNoInstance_vs";
+    if (cam == TSDFVolume::kVirtual)    macro[1].Definition = "1";
+    if (cam == TSDFVolume::kSensor)     macro[2].Definition = "1";
+    V(_Compile(vsName.c_str(), macro, &vs));
+    V(_Compile(L"StepInfo_ps", macro, &ps));
+    GraphicsPSO& PSO = _gfxPSORayNearFar[vsMode][cam];
     D3D12_BLEND_DESC blendDesc = {};
     blendDesc.AlphaToCoverageEnable = false;
     blendDesc.IndependentBlendEnable = false;
@@ -405,50 +326,71 @@ ObjName.Finalize();
     blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
     blendDesc.RenderTarget[0].RenderTargetWriteMask =
         D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN;
-    _gfxStepInfoVCamPSO[0].SetBlendState(blendDesc);
-    _gfxStepInfoVCamPSO[0].SetPrimitiveTopologyType(
-        D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-    _gfxStepInfoDebugPSO.SetPrimitiveTopologyType(
-        D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
-    _gfxStepInfoDebugPSO.SetRenderTargetFormats(
-        1, &ColorBufFormat, DepthBufFormat);
-    _gfxHelperWireframePSO = _gfxStepInfoDebugPSO;
-    _gfxHelperWireframePSO.SetVertexShader(
-        wireframeVS->GetBufferPointer(), wireframeVS->GetBufferSize());
-    _gfxHelperWireframePSO.SetPixelShader(
-        wireframePS->GetBufferPointer(), wireframePS->GetBufferSize());
-    _gfxHelperWireframePSO.Finalize();
-    _gfxStepInfoVCamPSO[0].SetRenderTargetFormats(
-        1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
-    _gfxStepInfoVCamPSO[0].SetPixelShader(
-        stepInfoPS->GetBufferPointer(), stepInfoPS->GetBufferSize());
-    _gfxStepInfoDebugPSO.SetPixelShader(
-        stepInfoDebugPS->GetBufferPointer(),
-        stepInfoDebugPS->GetBufferSize());
-    _gfxStepInfoSensorPSO[0] = _gfxStepInfoVCamPSO[0];
-    _gfxStepInfoSensorPSO[1] = _gfxStepInfoSensorPSO[0];
-    _gfxStepInfoSensorPSO[1].SetInputLayout(0, nullptr);
-    _gfxStepInfoSensorPSO[0].SetVertexShader(
-        stepInfoSensorVS[0]->GetBufferPointer(),
-        stepInfoSensorVS[0]->GetBufferSize());
-    _gfxStepInfoSensorPSO[1].SetVertexShader(
-        stepInfoSensorVS[1]->GetBufferPointer(),
-        stepInfoSensorVS[1]->GetBufferSize());
-    _gfxStepInfoSensorPSO[0].Finalize();
-    _gfxStepInfoSensorPSO[1].Finalize();
-    _gfxStepInfoVCamPSO[1] = _gfxStepInfoVCamPSO[0];
-    _gfxStepInfoVCamPSO[1].SetInputLayout(0, nullptr);
-    _gfxStepInfoVCamPSO[1].SetVertexShader(
-        stepInfoVCamVS[1]->GetBufferPointer(),
-        stepInfoVCamVS[1]->GetBufferSize());
-    _gfxStepInfoVCamPSO[0].Finalize();
-    _gfxStepInfoVCamPSO[1].Finalize();
-    _gfxStepInfoDebugPSO.Finalize();
+    InitializePSO(PSO);
+    PSO.SetRasterizerState(Graphics::g_RasterizerTwoSided);
+    PSO.SetBlendState(blendDesc);
+    PSO.SetPrimitiveRestart(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
+    if (vsMode == kInstance) {
+        PSO.SetInputLayout(_countof(inputElementDescs), inputElementDescs);
+    }
+    PSO.SetRenderTargetFormats(1, &_stepInfoTexFormat, DXGI_FORMAT_UNKNOWN);
+    PSO.SetVertexShader(vs->GetBufferPointer(), vs->GetBufferSize());
+    PSO.SetPixelShader(ps->GetBufferPointer(), ps->GetBufferSize());
+    PSO.Finalize();
 }
+
+void _CreateGfxPSO_DebugRayNearFar() {
+    HRESULT hr; ComPtr<ID3DBlob> vs, ps;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"}, {"FOR_VCAMERA", "1"},
+        {"DEBUG_VIEW", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"StepInfo_vs", macro, &vs));
+    V(_Compile(L"StepInfo_ps", macro, &ps));
+    GraphicsPSO& PSO = _gfxPSODebugRayNearFar;
+    D3D12_RASTERIZER_DESC rastDesc = Graphics::g_RasterizerTwoSided;
+    rastDesc.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    InitializePSO(PSO);
+    PSO.SetRasterizerState(rastDesc);
+    PSO.SetPrimitiveTopologyType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
+    PSO.SetPrimitiveRestart(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
+    PSO.SetInputLayout(_countof(inputElementDescs), inputElementDescs);
+    PSO.SetDepthStencilState(Graphics::g_DepthStateReadOnly);
+    PSO.SetRenderTargetFormats(1, &ColorBufFormat, DepthBufFormat);
+    PSO.SetVertexShader(vs->GetBufferPointer(), vs->GetBufferSize());
+    PSO.SetPixelShader(ps->GetBufferPointer(), ps->GetBufferSize());
+    PSO.Finalize();
+}
+
+void _CreateGfxPSO_HelperWireframe() {
+    HRESULT hr; ComPtr<ID3DBlob> vs, ps;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"HelperWireframe_vs", macro, &vs));
+    V(_Compile(L"HelperWireframe_ps", macro, &ps));
+    GraphicsPSO& PSO = _gfxPSOHelperWireframe;
+    D3D12_RASTERIZER_DESC rastDesc = Graphics::g_RasterizerTwoSided;
+    rastDesc.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    InitializePSO(PSO);
+    PSO.SetRasterizerState(rastDesc);
+    PSO.SetPrimitiveRestart(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF);
+    PSO.SetPrimitiveTopologyType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
+    PSO.SetDepthStencilState(Graphics::g_DepthStateReadOnly);
+    PSO.SetInputLayout(_countof(inputElementDescs), inputElementDescs);
+    PSO.SetRenderTargetFormats(1, &ColorBufFormat, DepthBufFormat);
+    PSO.SetVertexShader(vs->GetBufferPointer(), vs->GetBufferSize());
+    PSO.SetPixelShader(ps->GetBufferPointer(), ps->GetBufferSize());
+    PSO.Finalize();
+}
+#undef InitializePSO
+#undef CreatePSO
 
 void _CreateResource()
 {
     HRESULT hr;
+
+    // Create PSO for volume update and volume render
+    ColorBufFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+    DepthBufFormat = Graphics::g_SceneDepthBuffer.GetFormat();
+    DepthMapFormat = DXGI_FORMAT_R16_UNORM;
+
     // Feature support checking
     D3D12_FEATURE_DATA_D3D12_OPTIONS FeatureData = {};
     V(Graphics::g_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS,
@@ -496,7 +438,19 @@ void _CreateResource()
             NULL, &SRVDesc, _nullSRVs[i]);
     }
 
-    _CreatePSOs();
+    // Create Rootsignature
+    _rootsig.Reset(4, 1);
+    _rootsig.InitStaticSampler(0, Graphics::g_SamplerLinearClampDesc);
+    _rootsig[0].InitAsConstantBuffer(0);
+    _rootsig[1].InitAsConstantBuffer(1);
+    _rootsig[2].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 0, numUAVs);
+    _rootsig[3].InitAsDescriptorRange(
+        D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 0, numSRVs);
+    _rootsig.Finalize(L"TSDFVolume",
+        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS);
 
     const uint32_t vertexBufferSize = sizeof(cubeVertices);
     _cubeVB.Create(L"Vertex Buffer", ARRAYSIZE(cubeVertices),
@@ -514,8 +468,7 @@ void _CreateResource()
 
 TSDFVolume::TSDFVolume()
     : _volBuf(XMUINT3(512, 512, 512)),
-    _nearFarForVisual(XMVectorSet(MAX_DEPTH, 0, 0, 0)),
-    _nearFarForProcess(XMVectorSet(MAX_DEPTH, 0, 0, 0))
+    _nearFarTex{XMVectorSet(MAX_DEPTH, 0, 0, 0),XMVectorSet(MAX_DEPTH, 0, 0, 0)}
 {
     _volParam = &_cbPerCall.vParam;
     _volParam->fMaxWeight = 20.f;
@@ -588,8 +541,8 @@ TSDFVolume::CreateResource(
     _depthSissorRect.right = static_cast<LONG>(depthReso.x);
     _depthSissorRect.bottom = static_cast<LONG>(depthReso.y);
 
-    _nearFarForProcess.Create(L"StepInfoTex_Proc", depthReso.x, depthReso.y, 0,
-        _stepInfoTexFormat);
+    _nearFarTex[kSensor].Create(L"NearFarTex_Sensor",
+        depthReso.x, depthReso.y, 0, _stepInfoTexFormat);
 
     const uint3 reso = _volBuf.GetReso();
     _submittedReso = reso;
@@ -615,8 +568,8 @@ TSDFVolume::Destory()
     _volBuf.Destroy();
     _fuseBlockVol.Destroy();
     _renderBlockVol.Destroy();
-    _nearFarForVisual.Destroy();
-    _nearFarForProcess.Destroy();
+    _nearFarTex[kSensor].Destroy();
+    _nearFarTex[kVirtual].Destroy();
     _cubeVB.Destroy();
     _cubeTriangleStripIB.Destroy();
     _cubeLineStripIB.Destroy();
@@ -639,8 +592,8 @@ TSDFVolume::ResizeVisualSurface(uint32_t width, uint32_t height)
     _depthVisSissorRect.right = static_cast<LONG>(width);
     _depthVisSissorRect.bottom = static_cast<LONG>(height);
 
-    _nearFarForVisual.Destroy();
-    _nearFarForVisual.Create(L"StepInfoTex_Visual", width, height, 1,
+    _nearFarTex[kVirtual].Destroy();
+    _nearFarTex[kVirtual].Create(L"NearFarTex_VCam", width, height, 1,
         _stepInfoTexFormat);
 }
 
@@ -653,8 +606,7 @@ TSDFVolume::ResetAllResource()
     Trans(cptCtx, _occupiedBlocksBuf, UAV);
     Trans(cptCtx, _newFuseBlocksBuf, UAV);
     Trans(cptCtx, _freedFuseBlocksBuf, UAV);
-    _RefreshFuseBlockVol(cptCtx);
-    _CleanTSDFVols(cptCtx, _curBufInterface);
+    _CleanTSDFVols(cptCtx, _curBuf);
     _CleanFuseBlockVol(cptCtx);
     _CleanRenderBlockVol(cptCtx);
     _ClearBlockQueues(cptCtx);
@@ -669,7 +621,7 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
     _UpdateRenderCamData(mVCamProj_T, mVCamView_T);
     _UpdateSensorData(mSensor_T);
     ManagedBuf::BufInterface newBufInterface = _volBuf.GetResource();
-    _curBufInterface = newBufInterface;
+    _curBuf = newBufInterface;
 
     const uint3& reso = _volBuf.GetReso();
     if (_IsResolutionChanged(reso, _curReso)) {
@@ -693,7 +645,9 @@ TSDFVolume::DefragmentActiveBlockQueue(ComputeContext& cptCtx)
     Trans(cptCtx, _indirectParams, IARG);
     {
         GPU_PROFILE(cptCtx, L"Defragment");
-        cptCtx.SetPipelineState(_cptBlockQDefragment);
+        if (!_cptPSOoccupiedQDefragment.GetPipelineStateObject())
+            _CreateCptPSO_OccupiedQDefragment();
+        cptCtx.SetPipelineState(_cptPSOoccupiedQDefragment);
         cptCtx.SetRootSignature(_rootsig);
         std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
         UAVs[0] = _occupiedBlocksBuf.GetUAV();
@@ -717,11 +671,11 @@ TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
     cptCtx.SetRootSignature(_rootsig);
     _UpdateAndBindConstantBuffer(cptCtx);
     BeginTrans(cptCtx, _renderBlockVol, UAV);
-    Trans(cptCtx, *_curBufInterface.resource[0], UAV);
-    Trans(cptCtx, *_curBufInterface.resource[1], UAV);
-    _UpdateVolume(cptCtx, _curBufInterface, pDepthTex, pWeightTex);
-    BeginTrans(cptCtx, *_curBufInterface.resource[0], psSRV);
-    BeginTrans(cptCtx, *_curBufInterface.resource[1], UAV);
+    Trans(cptCtx, *_curBuf.resource[0], UAV);
+    Trans(cptCtx, *_curBuf.resource[1], UAV);
+    _UpdateVolume(cptCtx, _curBuf, pDepthTex, pWeightTex);
+    BeginTrans(cptCtx, *_curBuf.resource[0], psSRV);
+    BeginTrans(cptCtx, *_curBuf.resource[1], UAV);
     if (_useStepInfoTex) {
         BeginTrans(cptCtx, _renderBlockVol, vsSRV | psSRV);
     }
@@ -735,8 +689,8 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
     if (pVisDepthOut) Trans(gfxCtx, *pVisDepthOut, RTV);
     if (pVisDepthOut && pVisDepthBuf) Trans(gfxCtx, *pVisDepthBuf, DSV);
     if (_useStepInfoTex) {
-        if (pDepthOut) Trans(gfxCtx, _nearFarForProcess, RTV);
-        if (pVisDepthOut) Trans(gfxCtx, _nearFarForVisual, RTV);
+        if (pDepthOut) Trans(gfxCtx, _nearFarTex[kSensor], RTV);
+        if (pVisDepthOut) Trans(gfxCtx, _nearFarTex[kVirtual], RTV);
         gfxCtx.FlushResourceBarriers();
     } else {
         gfxCtx.FlushResourceBarriers();
@@ -751,9 +705,9 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
         gfxCtx.SetViewport(_depthViewPort);
         gfxCtx.SetScisor(_depthSissorRect);
         GPU_PROFILE(gfxCtx, L"NearFar_Proc");
-        gfxCtx.ClearColor(_nearFarForProcess);
-        gfxCtx.SetRenderTarget(_nearFarForProcess.GetRTV());
-        _RenderNearFar(gfxCtx, true);
+        gfxCtx.ClearColor(_nearFarTex[kSensor]);
+        gfxCtx.SetRenderTarget(_nearFarTex[kSensor].GetRTV());
+        _RenderNearFar(gfxCtx, kSensor);
         // Early submit to keep GPU busy
         gfxCtx.Flush();
         gfxCtx.SetRootSignature(_rootsig);
@@ -763,35 +717,35 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
     if (pVisDepthOut && _useStepInfoTex) {
         gfxCtx.SetViewport(_depthVisViewPort);
         gfxCtx.SetScisor(_depthVisSissorRect);
-        BeginTrans(gfxCtx, _nearFarForProcess, psSRV);
+        BeginTrans(gfxCtx, _nearFarTex[kSensor], psSRV);
         GPU_PROFILE(gfxCtx, L"NearFar_Visu");
-        gfxCtx.ClearColor(_nearFarForVisual);
-        gfxCtx.SetRenderTarget(_nearFarForVisual.GetRTV());
-        _RenderNearFar(gfxCtx);
+        gfxCtx.ClearColor(_nearFarTex[kVirtual]);
+        gfxCtx.SetRenderTarget(_nearFarTex[kVirtual].GetRTV());
+        _RenderNearFar(gfxCtx, kVirtual);
     }
     if (pDepthOut) {
         if (_useStepInfoTex) {
-            BeginTrans(gfxCtx, _nearFarForVisual, psSRV);
-            Trans(gfxCtx, _nearFarForProcess, psSRV);
+            BeginTrans(gfxCtx, _nearFarTex[kVirtual], psSRV);
+            Trans(gfxCtx, _nearFarTex[kSensor], psSRV);
         }
-        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
+        Trans(gfxCtx, *_curBuf.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Proc");
             gfxCtx.ClearColor(*pDepthOut);
             gfxCtx.SetViewport(_depthViewPort);
             gfxCtx.SetScisor(_depthSissorRect);
             gfxCtx.SetRenderTarget(pDepthOut->GetRTV());
-            _RenderVolume(gfxCtx, _curBufInterface, true);
+            _RenderVolume(gfxCtx, _curBuf, kSensor);
         }
         if (_useStepInfoTex) {
-            BeginTrans(gfxCtx, _nearFarForProcess, RTV);
+            BeginTrans(gfxCtx, _nearFarTex[kSensor], RTV);
         }
     }
     if (pVisDepthOut) {
         if (_useStepInfoTex) {
-            Trans(gfxCtx, _nearFarForVisual, psSRV);
+            Trans(gfxCtx, _nearFarTex[kVirtual], psSRV);
         }
-        Trans(gfxCtx, *_curBufInterface.resource[0], psSRV);
+        Trans(gfxCtx, *_curBuf.resource[0], psSRV);
         {
             GPU_PROFILE(gfxCtx, L"Volume_Visu");
             gfxCtx.ClearColor(*pVisDepthOut);
@@ -804,13 +758,13 @@ TSDFVolume::ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pDepthOut,
             } else {
                 gfxCtx.SetRenderTarget(pVisDepthOut->GetRTV());
             }
-            _RenderVolume(gfxCtx, _curBufInterface);
+            _RenderVolume(gfxCtx, _curBuf, kVirtual);
         }
         if (_useStepInfoTex) {
-            BeginTrans(gfxCtx, _nearFarForVisual, RTV);
+            BeginTrans(gfxCtx, _nearFarTex[kVirtual], RTV);
         }
     }
-    BeginTrans(gfxCtx, *_curBufInterface.resource[0], UAV);
+    BeginTrans(gfxCtx, *_curBuf.resource[0], UAV);
 }
 
 void
@@ -844,7 +798,26 @@ TSDFVolume::RenderGui()
         return;
     }
     if (Button("RecompileShaders##TSDFVolume")) {
-        _CreatePSOs();
+        VolumeStruct stru = _useStepInfoTex ? kBlockVol : kVoxel;
+        _CreateCptPSO_VoxelUpdate(_curBuf.type, stru);
+        _CreateCptPSO_UpdateQFromOccupiedQ();
+        _CreateCptPSO_UpdateQFromDepthMap();
+        _CreateCptPSO_UpdateQResolve();
+        _CreateCptPSO_BlockUpdate(_curBuf.type, _TGSize);
+        _CreateCptPSO_PrepareNewFreeQ();
+        _CreateCptPSO_FillFreeQ();
+        _CreateCptPSO_AppendOccupiedQ();
+        _CreateCptPSO_OccupiedQResolve();
+        _CreateCptPSO_OccupiedQDefragment();
+        _CreateCptPSO_ResetFuseBlockVol();
+        _CreateCptPSO_ResetRenderBlockVol();
+        _CreateCptPSO_ResetTSDFBuf(_curBuf.type);
+        _CreateGfxPSO_RayCast(kSensor, _curBuf.type, stru, _filterType);
+        _CreateGfxPSO_RayCast(kVirtual, _curBuf.type, stru, _filterType);
+        _CreateGfxPSO_RayNearFar(_vsMode, kSensor);
+        _CreateGfxPSO_RayNearFar(_vsMode, kVirtual);
+        _CreateGfxPSO_DebugRayNearFar();
+        _CreateGfxPSO_HelperWireframe();
     }
     SameLine();
     if (Button("ResetVolume##TSDFVolume")) {
@@ -874,8 +847,10 @@ TSDFVolume::RenderGui()
         ProgressBar(data, ImVec2(-1.f, 0.f), buf);
     }
     Separator();
+    RadioButton("Instance Cube", (int*)&_vsMode, kInstance); SameLine();
+    RadioButton("Vertex Cube", (int*)&_vsMode, kIndexed);
+    Separator();
     Checkbox("StepInfoTex", &_useStepInfoTex); SameLine();
-    Checkbox("NoInstance", &_noInstance); SameLine();
     Checkbox("DebugGrid", &_stepInfoDebug);
     Separator();
     static int iFilterType = (int)_filterType;
@@ -1108,7 +1083,9 @@ void
 TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
     const ManagedBuf::BufInterface& buf)
 {
-    cptCtx.SetPipelineState(_cptTSDFBufResetPSO[buf.type]);
+    if (!_cptPSOresetTSDFBuf[buf.type].GetPipelineStateObject())
+        _CreateCptPSO_ResetTSDFBuf(buf.type);
+    cptCtx.SetPipelineState(_cptPSOresetTSDFBuf[buf.type]);
     Bind(cptCtx, 2, 0, 2, buf.UAV);
     const uint3 xyz = _volParam->u3VoxelReso;
     cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
@@ -1117,22 +1094,9 @@ TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
 void
 TSDFVolume::_CleanFuseBlockVol(ComputeContext& cptCtx)
 {
-    cptCtx.SetPipelineState(_cptFuseBlockVolResetPSO);
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
-    UAVs[1] = _fuseBlockVol.GetUAV();
-    Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
-    Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
-    const uint3 xyz = _volParam->u3VoxelReso;
-    const uint ratio = _volParam->uVoxelFuseBlockRatio;
-    cptCtx.Dispatch3D(xyz.x / ratio, xyz.y / ratio, xyz.z / ratio,
-        THREAD_X, THREAD_Y, THREAD_Z);
-}
-
-void
-TSDFVolume::_RefreshFuseBlockVol(ComputeContext& cptCtx)
-{
-    cptCtx.SetPipelineState(_cptFuseBlockVolRefreshPSO);
+    if (!_cptPSOresetFuseBlockVol.GetPipelineStateObject())
+        _CreateCptPSO_ResetFuseBlockVol();
+    cptCtx.SetPipelineState(_cptPSOresetFuseBlockVol);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     UAVs[1] = _fuseBlockVol.GetUAV();
@@ -1147,7 +1111,9 @@ TSDFVolume::_RefreshFuseBlockVol(ComputeContext& cptCtx)
 void
 TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 {
-    cptCtx.SetPipelineState(_cptRenderBlockVolResetPSO);
+    if (!_cptPSOresetRenderBlockVol.GetPipelineStateObject())
+        _CreateCptPSO_ResetRenderBlockVol();
+    cptCtx.SetPipelineState(_cptPSOresetRenderBlockVol);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     UAVs[0] = _renderBlockVol.GetUAV();
@@ -1174,7 +1140,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _indirectParams, IARG);
         {
             GPU_PROFILE(cptCtx, L"Occupied2UpdateQ");
-            cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass1);
+            if (!_cptPSOupdateQFromOccupiedQ.GetPipelineStateObject())
+                _CreateCptPSO_UpdateQFromOccupiedQ();
+            cptCtx.SetPipelineState(_cptPSOupdateQFromOccupiedQ);
             cptCtx.ResetCounter(_updateBlocksBuf);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _updateBlocksBuf.GetUAV();
@@ -1195,7 +1163,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _updateBlocksBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"Depth2UpdateQ");
-            cptCtx.SetPipelineState(_cptBlockVolUpdate_Pass2);
+            if (!_cptPSOupdateQFromDepthMap.GetPipelineStateObject())
+                _CreateCptPSO_UpdateQFromDepthMap();
+            cptCtx.SetPipelineState(_cptPSOupdateQFromDepthMap);
             // UAV barrier for _updateBlocksBuf is omit since the order of ops
             // on it does not matter before reading it during UpdateVoxel
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
@@ -1216,7 +1186,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _updateBlocksBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"UpdateQResolve");
-            cptCtx.SetPipelineState(_cptBlockVolUpdate_Resolve);
+            if (!_cptPSOupdateQResolve.GetPipelineStateObject())
+                _CreateCptPSO_UpdateQResolve();
+            cptCtx.SetPipelineState(_cptPSOupdateQResolve);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _indirectParams.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
@@ -1236,8 +1208,10 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _indirectParams, IARG);
         {
             GPU_PROFILE(cptCtx, L"UpdateVoxels");
-            cptCtx.SetPipelineState(
-                _cptBlockVolUpdate_Pass3[buf.type][_TGSize]);
+            ComputePSO& PSO = _cptPSOblockUpdate[buf.type][_TGSize];
+            if (!PSO.GetPipelineStateObject())
+                _CreateCptPSO_BlockUpdate(buf.type,_TGSize);
+            cptCtx.SetPipelineState(PSO);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs;
             UAVs[0] = buf.UAV[0];
             UAVs[1] = buf.UAV[1];
@@ -1283,7 +1257,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _jobParamBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"OccupiedQPrepare");
-            cptCtx.SetPipelineState(_cptBlockQUpdate_Prepare);
+            if (!_cptPSOprepareNewFreeQ.GetPipelineStateObject())
+                _CreateCptPSO_PrepareNewFreeQ();
+            cptCtx.SetPipelineState(_cptPSOprepareNewFreeQ);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _newFuseBlocksBuf.GetCounterUAV(cptCtx);
             UAVs[1] = _freedFuseBlocksBuf.GetCounterUAV(cptCtx);
@@ -1304,7 +1280,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _indirectParams, IARG);
         {
             GPU_PROFILE(cptCtx, L"FreedQFillIn");
-            cptCtx.SetPipelineState(_cptBlockQUpdate_Pass1);
+            if (!_cptPSOfillFreeQ.GetPipelineStateObject())
+                _CreateCptPSO_FillFreeQ();
+            cptCtx.SetPipelineState(_cptPSOfillFreeQ);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _occupiedBlocksBuf.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
@@ -1318,7 +1296,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         // Appending new occupied blocks to OccupiedBlockQueue
         {
             GPU_PROFILE(cptCtx, L"OccupiedQAppend");
-            cptCtx.SetPipelineState(_cptBlockQUpdate_Pass2);
+            if (!_cptPSOappendOccupiedQ.GetPipelineStateObject())
+                _CreateCptPSO_AppendOccupiedQ();
+            cptCtx.SetPipelineState(_cptPSOappendOccupiedQ);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _occupiedBlocksBuf.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
@@ -1336,7 +1316,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _indirectParams, UAV);
         {
             GPU_PROFILE(cptCtx, L"OccupiedQResolve");
-            cptCtx.SetPipelineState(_cptBlockQUpdate_Resolve);
+            if (!_cptPSOoccupiedQResolve.GetPipelineStateObject())
+                _CreateCptPSO_OccupiedQResolve();
+            cptCtx.SetPipelineState(_cptPSOoccupiedQResolve);
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
             UAVs[0] = _indirectParams.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
@@ -1348,7 +1330,10 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
     } else {
         GPU_PROFILE(cptCtx, L"Volume Updating");
         _CleanRenderBlockVol(cptCtx);
-        cptCtx.SetPipelineState(_cptUpdatePSO[buf.type][type]);
+        ComputePSO& PSO = _cptPSOvoxelUpdate[buf.type][type];
+        if (!PSO.GetPipelineStateObject())
+            _CreateCptPSO_VoxelUpdate(buf.type,type);
+        cptCtx.SetPipelineState(PSO);
 
         std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
         UAVs[0] = buf.UAV[0];
@@ -1365,11 +1350,11 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
 }
 
 void
-TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
+TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, const CamType& cam)
 {
-    gfxCtx.SetPipelineState(toSurface
-        ? _gfxStepInfoSensorPSO[_noInstance]
-        : _gfxStepInfoVCamPSO[_noInstance]);
+    if (!_gfxPSORayNearFar[_vsMode][cam].GetPipelineStateObject())
+        _CreateGfxPSO_RayNearFar(_vsMode, cam);
+    gfxCtx.SetPipelineState(_gfxPSORayNearFar[_vsMode][cam]);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
@@ -1380,7 +1365,7 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
     const uint3 xyz = _volParam->u3VoxelReso;
     const uint ratio = _volParam->uVoxelRenderBlockRatio;
     uint BrickCount = xyz.x * xyz.y * xyz.z / ratio / ratio / ratio;
-    if (_noInstance) {
+    if (_vsMode == kIndexed) {
         gfxCtx.Draw(BrickCount * 16);
     } else {
         gfxCtx.SetIndexBuffer(_cubeTriangleStripIB.IndexBufferView());
@@ -1391,38 +1376,41 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, bool toSurface)
 
 void
 TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
-    const ManagedBuf::BufInterface& buf, bool toOutTex)
+    const ManagedBuf::BufInterface& buf, const TSDFVolume::CamType& cam)
 {
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
-    gfxCtx.SetPipelineState(toOutTex
-        ? _gfxSensorRenderPSO[buf.type][type][_filterType]
-        : _gfxVCamRenderPSO[buf.type][type][_filterType]);
+    GraphicsPSO& PSO = _gfxPSORaycast[buf.type][type][_filterType][cam];
+    if (!PSO.GetPipelineStateObject())
+        _CreateGfxPSO_RayCast(cam, buf.type, type, _filterType);
+    gfxCtx.SetPipelineState(PSO);
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
     SRVs[0] = buf.SRV[0];
     if (_useStepInfoTex) {
-        SRVs[1] = toOutTex ?
-            _nearFarForProcess.GetSRV() : _nearFarForVisual.GetSRV();
+        SRVs[1] = _nearFarTex[cam].GetSRV();
         SRVs[2] = _renderBlockVol.GetSRV();
     }
     Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
     Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
-
     gfxCtx.Draw(3);
 }
 
 void
 TSDFVolume::_RenderHelperWireframe(GraphicsContext& gfxCtx)
 {
-    gfxCtx.SetPipelineState(_gfxHelperWireframePSO);
+    if (!_gfxPSOHelperWireframe.GetPipelineStateObject())
+        _CreateGfxPSO_HelperWireframe();
+    gfxCtx.SetPipelineState(_gfxPSOHelperWireframe);
     gfxCtx.DrawIndexedInstanced(CUBE_LINESTRIP_LENGTH, 3, 0, 0, 0);
 }
 
 void
 TSDFVolume::_RenderBrickGrid(GraphicsContext& gfxCtx)
 {
-    gfxCtx.SetPipelineState(_gfxStepInfoDebugPSO);
+    if (!_gfxPSODebugRayNearFar.GetPipelineStateObject())
+        _CreateGfxPSO_DebugRayNearFar();
+    gfxCtx.SetPipelineState(_gfxPSODebugRayNearFar);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
     SRVs[1] = _renderBlockVol.GetSRV();

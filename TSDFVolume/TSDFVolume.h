@@ -18,6 +18,12 @@ public:
         kNumFilter
     };
 
+    enum CamType {
+        kVirtual = 0,
+        kSensor,
+        kNumCam
+    };
+
     // k64 : Threadgroup size is 4x4x4
     // k512: Threadgroup size is 8x8x8
     enum ThreadGroup {
@@ -61,14 +67,13 @@ private:
     void _CleanTSDFVols(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf);
     void _CleanFuseBlockVol(ComputeContext& cptCtx);
-    void _RefreshFuseBlockVol(ComputeContext& cptCtx);
     void _CleanRenderBlockVol(ComputeContext& cptCtx);
     void _UpdateVolume(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf,
         ColorBuffer* pDepthTex, ColorBuffer* pWeightTex);
     void _RenderVolume(GraphicsContext& gfxCtx,
-        const ManagedBuf::BufInterface& buf, bool toOutTex = false);
-    void _RenderNearFar(GraphicsContext& gfxCtx, bool toSurface = false);
+        const ManagedBuf::BufInterface& buf, const CamType& cam);
+    void _RenderNearFar(GraphicsContext& gfxCtx, const CamType& cam);
     void _RenderHelperWireframe(GraphicsContext& gfxCtx);
     void _RenderBrickGrid(GraphicsContext& gfxCtx);
     void _UpdatePerCallCB(CommandContext& cmdCtx);
@@ -111,8 +116,7 @@ private:
     int _renderBlockVoxelRatio = 8;
 
     // Texture2D for ray casting range
-    ColorBuffer _nearFarForVisual;
-    ColorBuffer _nearFarForProcess;
+    ColorBuffer _nearFarTex[kNumCam];
 
     // 32bit element buffer for blocks need to be updated, and its element size
     // [0-1] not used
@@ -175,5 +179,5 @@ private:
     VolumeParam* _volParam;
 
     // Pointers/handlers currently available
-    ManagedBuf::BufInterface _curBufInterface;
+    ManagedBuf::BufInterface _curBuf;
 };

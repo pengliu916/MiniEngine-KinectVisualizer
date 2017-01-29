@@ -1,4 +1,3 @@
-
 #include "TSDFVolume.inl"
 
 #if PREPARE // Split new/free queue into 2 part
@@ -53,7 +52,7 @@ void main(uint uGIdx : SV_GroupIndex)
 }
 #endif
 
-#if PASS_1 // Fill in Free queue
+#if FILL_FREEQ // Fill in Free queue
 RWStructuredBuffer<uint> buf_uavOccupiedBlocksBuf : register(u0);
 StructuredBuffer<uint> buf_srvNewOccupiedBlockBuf : register(t0);
 StructuredBuffer<uint> buf_srvFreedOccupiedBlocksBuf : register(t1);
@@ -71,9 +70,9 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     uint uIdx = buf_srvFreedOccupiedBlocksBuf[u3DTid.x + uOffset];
     buf_uavOccupiedBlocksBuf[uIdx] = buf_srvNewOccupiedBlockBuf[u3DTid.x];
 }
-#endif
+#endif //FILL_FREEQ
 
-#if PASS_2 // Append to Occupied queue
+#if APPEND_OCCUPIEDQ // Append to Occupied queue
 RWStructuredBuffer<uint> buf_uavOccupiedBlocksBuf : register(u0);
 StructuredBuffer<uint> buf_srvNewOccupiedBlockBuf : register(t0);
 ByteAddressBuffer buf_srvIndirectJobParams : register(t1);
@@ -92,7 +91,7 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     uint uIdx = buf_uavOccupiedBlocksBuf.IncrementCounter();
     buf_uavOccupiedBlocksBuf[uIdx] = uPackedBlockIdx;
 }
-#endif
+#endif //APPEND_OCCUPIEDQ
 
 #if RESOLVE // Based on OccupiedBlock ctr, update indirect param for dispatch
 RWByteAddressBuffer buf_uavIndirectParam : register(u0);

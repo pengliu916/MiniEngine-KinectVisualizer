@@ -77,7 +77,7 @@ float InterpolatedRead(float3 f3Idx)
     v2 = tex_srvTSDFVol[BUFFER_INDEX(i3Idx000 + uint3(1, 1, 1))];
     res2 = (1.f - f3d.y) * res2 + f3d.y * ((1.f - f3d.x) * v1 + f3d.x * v2);
     return (1.f - f3d.z) * res1 + f3d.z * res2;
-#elif TEX3D_UAV && FILTER_READ > 1
+#elif !TYPED_UAV && FILTER_READ > 1
     return tex_srvTSDFVol.SampleLevel(
         samp_Linear, f3Idx / vParam.u3VoxelReso, 0);
 #else

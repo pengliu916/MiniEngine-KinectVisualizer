@@ -1,9 +1,9 @@
-#if TEX3D_UAV
-#define BUFFER_INDEX(idx) idx
-#define BufIdx uint3
-#else
+#if TYPED_UAV
 #define BUFFER_INDEX(idx) FlatIdx(idx, vParam.u3VoxelReso)
 #define BufIdx uint
+#else
+#define BUFFER_INDEX(idx) idx
+#define BufIdx uint3
 #endif
 
 float nan() {
