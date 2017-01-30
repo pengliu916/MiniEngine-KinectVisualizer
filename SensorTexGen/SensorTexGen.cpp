@@ -215,12 +215,13 @@ SensorTexGen::OnCreateResource(LinearAllocator& uploadHeapAlloc)
 
     // GPU buffer for fake scene camera matrix
     float cameraMatrix[12] = {
-        1.f,   0.f,   0.f,   0.f,
-        0.f,   1.f,   0.f,   0.f,
-        0.f,   0.f,   1.f,   0.f,
+        1.f,   0.f,   0.f,
+        0.f,   1.f,   0.f,
+        0.f,   0.f,   1.f,
+        0.f,   0.f,   0.f,
     };
     _camMatrixBuf.Create(L"FakeSceneCameraMatrix",
-        3, 4 * sizeof(float), (void*)cameraMatrix);
+        4, 3 * sizeof(float), (void*)cameraMatrix);
 
 #if VCAM_DEBUG
     _debugBuf.Create(L"VCamDebugBuf", 12, sizeof(float));
@@ -452,13 +453,10 @@ SensorTexGen::RenderGui()
         if (_depthSource == kProcedual) {
             _showDebugData = true;
             float* d = _debugData;
-            Text("\
-%8.3f,%8.3f,%8.3f,%8.3f\n\
-%8.3f,%8.3f,%8.3f,%8.3f\n\
-%8.3f,%8.3f,%8.3f,%8.3f\n",
-d[0], d[1], d[2], d[3],
-d[4], d[5], d[6], d[7],
-d[8], d[9], d[10], d[11]);
+            Text("R:    %8.3f,%8.3f,%8.3f\n\
+      %8.3f,%8.3f,%8.3f\n      %8.3f,%8.3f,%8.3f",
+                d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8]);
+            Text("T:    %8.3f,%8.3f,%8.3f", d[9], d[10], d[11]);
         }
 #endif
         if (_depthSource == kSimple) {

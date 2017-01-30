@@ -46,44 +46,42 @@ float udCross(float3 f3Pos, float3 f3Param)
 }
 //------------------------------------------------------------------
 
-float map(in float3 pos)
+float map(float3 f3Pos)
 {
     float3 offset = float3(0.f, 0.75f, 0.f);
     float3 scale = float3(0.1f, 0.75f, 0.1f);
-    float dist = opUnion(sdPlane(pos), udCross(pos - offset, scale));
+    float dist = opUnion(sdPlane(f3Pos), udCross(f3Pos - offset, scale));
     offset = float3(1.f, 0.25f, 1.f);
     scale = float3(0.25f, 0.25f, 0.25f);
-    dist = opUnion(dist, sdBox(pos - offset, scale));
+    dist = opUnion(dist, sdBox(f3Pos - offset, scale));
     offset = float3(-1.f, 0.25f, -1.f);
-    dist = opUnion(dist, sdSphere(pos - offset, 0.25f));
+    dist = opUnion(dist, sdSphere(f3Pos - offset, 0.25f));
     offset = float3(1.f, 0.5f, -1.f);
-    dist = opUnion(dist, sdPryamid4(pos - offset, float3(0.8f, 0.6f, 0.25f)));
+    dist = opUnion(dist, sdPryamid4(f3Pos - offset, float3(0.8f, 0.6f, 0.25f)));
     offset = float3(-1.f, 0.5f, 1.f);
-    dist = opUnion(dist, sdHexPrism(pos - offset, float2(0.25f, 0.05f)));
+    dist = opUnion(dist, sdHexPrism(f3Pos - offset, float2(0.25f, 0.05f)));
     return dist;
 }
 
-float castRay(in float3 ro, in float3 rd)
+float castRay(float3 f3RayOrig, float3 f3RayDir)
 {
     float tmin = .2f;
     float tmax = 10.f;
-
     float t = tmin;
-    for (int i = 0; i < 64; i++)
-    {
-        float precis = 0.0005 * t;
-        float res = map(ro + rd * t);
+    for (int i = 0; i < 64; i++) {
+        float precis = 0.0005f * t;
+        float res = map(f3RayOrig + f3RayDir * t);
         if (res < precis || t > tmax) break;
         t += res;
     }
     return t;
 }
 
-float3 calcNormal(in float3 pos)
+float3 calcNormal(float3 f3Pos)
 {
-    float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
-    return normalize(e.xyy * map(pos + e.xyy) + e.yyx * map(pos + e.yyx) +
-        e.yxy * map(pos + e.yxy) + e.xxx * map(pos + e.xxx));
+    float2 e = float2(1.0f, -1.0f) * 0.5773f * 0.0005f;
+    return normalize(e.xyy * map(f3Pos + e.xyy) + e.yyx * map(f3Pos + e.yyx) +
+        e.yxy * map(f3Pos + e.yxy) + e.xxx * map(f3Pos + e.xxx));
     /*
     float3 eps = float3( 0.0005, 0.0, 0.0 );
     float3 nor = float3(
@@ -94,22 +92,23 @@ float3 calcNormal(in float3 pos)
     */
 }
 
-float3 render(in float3 ro, in float3 rd)
+float3 render(float3 f3RayOrig, float3 f3RayDir)
 {
-    float t = castRay(ro, rd);
+    float t = castRay(f3RayOrig, f3RayDir);
     if (t > 10.f) t = 0.f;
-    float3 pos = ro + t * rd;
-
+    float3 pos = f3RayOrig + t * f3RayDir;
     //float3 nor = calcNormal(pos);
     return pos;
 }
 
-float3x3 setCamera(in float3 ro, in float3 ta, float cr)
+float3x3 setCamera(float3 f3RayOrig, float3 f3Target, float fUpParam)
 {
-    float3 f3z = -normalize(ro - ta);
-    float3 f3up = float3(sin(cr), cos(cr), 0.0);
+    // Camera is looking along -z axis so f3RayOrig - f3Target
+    float3 f3z = normalize(f3RayOrig - f3Target);
+    float3 f3up = float3(sin(fUpParam), cos(fUpParam), 0.f);
     float3 f3x = normalize(cross(f3up, f3z));
     float3 f3y = normalize(cross(f3z, f3x));
+    // Row1: f3x, Row2: f3y, Row3: f3z
     return float3x3(f3x, f3y, f3z);
 }
 
@@ -169,7 +168,7 @@ static const float4 f4k = DEPTH_K;
 Buffer<uint> DepBuffer : register(t0);
 
 #   if DEPTH_SOURCE != 0 // !kKinect
-RWStructuredBuffer<float4> camMatrixBuf : register(u4);
+RWStructuredBuffer<float3> camMatrixBuf : register(u4);
 
 float GetFakedNormDepth(uint2 u2uv)
 {
@@ -183,18 +182,20 @@ float GetFakedNormDepth(uint2 u2uv)
     // https://www.desmos.com/calculator/zrv7kxlhvc
     float x = 0.5f * sin(t * 0.5f) + 2.f * sin(-t);
     float z = 0.5f * cos(t * 0.5f) + 2.f * cos(-t);
-    float y = sqrt(6.25f - x * x + z * z);
-    float3 ro = float3(x, 0.7 * y, z);
+    float y = sqrt(6.25f - x * x - z * z);
+    float3 ro = float3(x, y, z);
     float3 ta = float3(0.f, 1.f, 0.f);
     // camera-to-world transformation
     float3x3 ca = setCamera(ro, ta, 0.f);
     // Arbitrary chosen thread to write to that buffer
     if (all(u2uv == uint2(50, 50))) {
-        camMatrixBuf[0] = float4(ca[0], x);
-        camMatrixBuf[1] = float4(ca[1], y);
-        camMatrixBuf[2] = float4(ca[2], z);
+        // Each row is the base for camera matrix (mRViewInv)
+        camMatrixBuf[0] = ca[0];
+        camMatrixBuf[1] = ca[1];
+        camMatrixBuf[2] = ca[2];
+        camMatrixBuf[3] = float3(x, y ,z);
     }
-    float3 rd = mul(transpose(ca), normalize(float3(f2ab, 1.f)));
+    float3 rd = mul(transpose(ca), normalize(float3(f2ab, -1.f)));
 
     float3 pos =  render(ro, rd);
     float fDepth = dot(pos - ro, normalize(ta - ro));
