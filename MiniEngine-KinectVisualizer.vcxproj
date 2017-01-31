@@ -173,6 +173,7 @@
     <CustomBuild Include="TSDFVolume\TSDFVolume_BlocksUpdate_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_HelperWireframe_vs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_HelperWireframe_ps.hlsl" />
+    <CustomBuild Include="TSDFVolume\TSDFVolume_PrepareMatrixBuf_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_OccupiedQueueUpdate_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_QueueDefragment_cs.hlsl" />
     <CustomBuild Include="TSDFVolume\TSDFVolume_RayCast_ps.hlsl" />

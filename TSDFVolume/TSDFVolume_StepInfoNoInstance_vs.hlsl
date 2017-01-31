@@ -10,6 +10,8 @@
 //#define MAGICFORX 0x287a
 //#define MAGICFORY 0x02af
 //#define MAGICFORZ 0x31e3
+// Index 0: viewMatrixInv, Index 1: viewMatrix
+StructuredBuffer<matrix> buf_srvSensorMatrices : register(t0);
 Texture3D<int> tex_srvRenderBlockVol : register(t1);
 
 void main(uint uVertID : SV_VertexID,
@@ -34,7 +36,8 @@ void main(uint uVertID : SV_VertexID,
         float fVecLength = length(mul(mView, f4Pos).xyz);
 #endif // FOR_VCAMERA
 #if FOR_SENSOR
-        float4 f4Temp = mul(mDepthView, f4Pos);
+        float4 f4Temp = mul(buf_srvSensorMatrices[1], f4Pos);
+        //float4 f4Temp = mul(mDepthView, f4Pos);
         float2 f2HalfReso = i2DepthReso >> 1;
         float2 f2xy = (f4Temp.xy / f4Temp.z * DEPTH_F + DEPTH_C
             - f2HalfReso) / f2HalfReso;

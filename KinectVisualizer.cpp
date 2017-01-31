@@ -323,6 +323,7 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
         GetColBuf(KINECT_COLOR), GetColBuf(KINECT_INFRA),
         GetColBuf(KINECT_DEPTH_VIS));
     cmdCtx.Flush();
+    _tsdfVolume.UpdateGPUMatrixBuf(cptCtx, _sensorTexGen.GetVCamMatrixBuf());
     // Bilateral filtering
     _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw",
         GetColBuf(KINECT_DEPTH), GetColBuf(FILTERED_DEPTH), GetColBuf(WEIGHT));

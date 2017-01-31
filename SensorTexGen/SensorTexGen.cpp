@@ -440,13 +440,13 @@ SensorTexGen::RenderGui()
         RadioButton("Kinect##Src", (int*)&_depthSource, 0); SameLine();
         RadioButton("Procedual##Src", (int*)&_depthSource, 1); SameLine();
         RadioButton("Simple##Src", (int*)&_depthSource, 2);
-        Checkbox("Animate", &_animateFakedDepth);
+        Checkbox("Anim", &_animateFakedDepth);
         if (_depthSource != kKinect) {
             SameLine();
             if (!_animateFakedDepth) {
-                M(DragFloat("TimeSlider", &_fAnimTOffset, 0.1f));
+                M(DragFloat("Time", &_fAnimTOffset, 0.01f));
             } else {
-                M(SliderFloat("AnimSpeed", &_fAnimSpeed, 0.1f, 2.f));
+                M(SliderFloat("Speed", &_fAnimSpeed, 0.1f, 2.f));
             }
         }
 #if VCAM_DEBUG

@@ -74,13 +74,15 @@ struct VolumeParam {
 
 CBUFFER_ALIGN STRUCT(cbuffer) PerFrameDataCB REGISTER(b0)
 {
-    // For depth sensor, doing Fusion
-    matrix mDepthView;
-    matrix mDepthViewInv;
+    // For depth sensor, doing Fusion (replaced with GPU matrix)
+    //matrix mDepthView;
+    //matrix mDepthViewInv;
     // For free virtual camera, doing visualization
     matrix mProjView;
     matrix mView;
     matrix mViewInv;
+    float fTime;
+    float3 f3NIU;
 #if !__hlsl
     void* operator new(size_t i) {
         return _aligned_malloc(i,

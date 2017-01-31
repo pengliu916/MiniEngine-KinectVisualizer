@@ -1,6 +1,8 @@
 #include "TSDFVolume.inl"
 #include "TSDFVolume.hlsli"
 
+// Index 0: viewMatrixInv, Index 1: viewMatrix
+StructuredBuffer<matrix> buf_srvSensorMatrices : register(t0);
 #if FOR_SENSOR
 #include "CalibData.inl"
 
@@ -19,7 +21,8 @@ void main(uint uVertexID : SV_VertexID, out float3 f3Pos : POSITION1,
     float4 f4Pos =
         float4(lerp(f2TLCorner, f2BRCorner, f2Tex), f2DepthRange.x, 1.f);
 
-    f3Pos = mul(mDepthViewInv, f4Pos).xyz;
+    f3Pos = mul(buf_srvSensorMatrices[0], f4Pos).xyz;
+    //f3Pos = mul(mDepthViewInv, f4Pos).xyz;
 }
 #endif // FOR_SENSOR
 

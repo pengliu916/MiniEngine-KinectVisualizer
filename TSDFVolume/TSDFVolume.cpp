@@ -46,7 +46,7 @@ DXGI_FORMAT ColorBufFormat;
 DXGI_FORMAT DepthBufFormat;
 DXGI_FORMAT DepthMapFormat;
 
-const UINT numSRVs = 4;
+const UINT numSRVs = 5;
 const UINT numUAVs = 7;
 
 const DXGI_FORMAT _stepInfoTexFormat = DXGI_FORMAT_R16G16_FLOAT;
@@ -89,6 +89,8 @@ RootSignature _rootsig;
 std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> _nullUAVs;
 std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> _nullSRVs;
 
+// PSO for prepare GPU matrix buffer
+ComputePSO _cptPSOprepareMatrix;
 // PSO for naive updating voxels
 ComputePSO _cptPSOvoxelUpdate[kBuf][kStruct];
 // PSOs for block voxel updating
@@ -158,6 +160,13 @@ ObjName.SetBlendState(Graphics::g_BlendDisable);\
 ObjName.SetDepthStencilState(Graphics::g_DepthStateDisabled);\
 ObjName.SetSampleMask(UINT_MAX);\
 ObjName.SetPrimitiveTopologyType(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+
+void _CreateCptPSO_PrepareMatrix() {
+    HRESULT hr; ComPtr<ID3DBlob> cs;
+    D3D_SHADER_MACRO macro[] = {{"__hlsl", "1"}, {nullptr, nullptr}};
+    V(_Compile(L"PrepareMatrixBuf_cs", macro, &cs));
+    CreatePSO(_cptPSOprepareMatrix, cs);
+}
 
 void _CreateCptPSO_VoxelUpdate(
     ManagedBuf::Type bufType, TSDFVolume::VolumeStruct structType) {
@@ -544,6 +553,10 @@ TSDFVolume::CreateResource(
     _nearFarTex[kSensor].Create(L"NearFarTex_Sensor",
         depthReso.x, depthReso.y, 0, _stepInfoTexFormat);
 
+    // Create matrix buffer
+    matrix m[] = {XMMatrixIdentity(), XMMatrixIdentity()};
+    _sensorMatrixBuf.Create(L"MatrixBuffer", 2, sizeof(matrix), (void*)m);
+
     const uint3 reso = _volBuf.GetReso();
     _submittedReso = reso;
     _UpdateVolumeSettings(reso, _volParam->fVoxelSize);
@@ -573,6 +586,7 @@ TSDFVolume::Destory()
     _cubeVB.Destroy();
     _cubeTriangleStripIB.Destroy();
     _cubeLineStripIB.Destroy();
+    _sensorMatrixBuf.Destroy();
 }
 
 void
@@ -618,8 +632,10 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
     const DirectX::XMMATRIX& mVCamView_T,
     const DirectX::XMMATRIX& mSensor_T)
 {
+    static float fAnimTime = 0.f;
+    fAnimTime += (float)Core::g_deltaTime;
+    _cbPerFrame.fTime = fAnimTime;
     _UpdateRenderCamData(mVCamProj_T, mVCamView_T);
-    _UpdateSensorData(mSensor_T);
     ManagedBuf::BufInterface newBufInterface = _volBuf.GetResource();
     _curBuf = newBufInterface;
 
@@ -634,6 +650,26 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
             _volBuf.GetReso(), _renderBlockVoxelRatio);
         _CreateFuseBlockVolAndRelatedBuf(reso, _fuseBlockVoxelRatio);
     }
+}
+
+void
+TSDFVolume::UpdateGPUMatrixBuf(ComputeContext& cptCtx, StructuredBuffer* buf)
+{
+    GPU_PROFILE(cptCtx, L"UpdateGPUMatrix");
+    Trans(cptCtx, _sensorMatrixBuf, UAV);
+    Trans(cptCtx, *buf, csSRV);
+    if (!_cptPSOprepareMatrix.GetPipelineStateObject())
+        _CreateCptPSO_PrepareMatrix();
+    cptCtx.SetPipelineState(_cptPSOprepareMatrix);
+    cptCtx.SetRootSignature(_rootsig);
+    _UpdateAndBindConstantBuffer(cptCtx);
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
+    UAVs[0] = _sensorMatrixBuf.GetUAV();
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    SRVs[0] = buf->GetSRV();
+    Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
+    cptCtx.Dispatch1D(1);
 }
 
 void
@@ -818,6 +854,7 @@ TSDFVolume::RenderGui()
         _CreateGfxPSO_RayNearFar(_vsMode, kVirtual);
         _CreateGfxPSO_DebugRayNearFar();
         _CreateGfxPSO_HelperWireframe();
+        _CreateCptPSO_PrepareMatrix();
     }
     SameLine();
     if (Button("ResetVolume##TSDFVolume")) {
@@ -1019,13 +1056,6 @@ TSDFVolume::_UpdateRenderCamData(const DirectX::XMMATRIX& mProj_T,
 }
 
 void
-TSDFVolume::_UpdateSensorData(const DirectX::XMMATRIX& mSensor_T)
-{
-    _cbPerFrame.mDepthViewInv = mSensor_T;
-    _cbPerFrame.mDepthView = XMMatrixInverse(nullptr, mSensor_T);
-}
-
-void
 TSDFVolume::_UpdateVolumeSettings(const uint3 reso, const float voxelSize)
 {
     _cbStaled = true;
@@ -1086,7 +1116,12 @@ TSDFVolume::_CleanTSDFVols(ComputeContext& cptCtx,
     if (!_cptPSOresetTSDFBuf[buf.type].GetPipelineStateObject())
         _CreateCptPSO_ResetTSDFBuf(buf.type);
     cptCtx.SetPipelineState(_cptPSOresetTSDFBuf[buf.type]);
-    Bind(cptCtx, 2, 0, 2, buf.UAV);
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
+    UAVs[0] = buf.UAV[0];
+    UAVs[1] = buf.UAV[1];
+    Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
     const uint3 xyz = _volParam->u3VoxelReso;
     cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
 }
@@ -1138,6 +1173,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         Trans(cptCtx, _fuseBlockVol, UAV);
         Trans(cptCtx, _occupiedBlocksBuf, csSRV);
         Trans(cptCtx, _indirectParams, IARG);
+        Trans(cptCtx, _sensorMatrixBuf, csSRV);
         {
             GPU_PROFILE(cptCtx, L"Occupied2UpdateQ");
             if (!_cptPSOupdateQFromOccupiedQ.GetPipelineStateObject())
@@ -1148,8 +1184,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             UAVs[0] = _updateBlocksBuf.GetUAV();
             UAVs[1] = _fuseBlockVol.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-            SRVs[0] = _occupiedBlocksBuf.GetSRV();
-            SRVs[1] = _occupiedBlocksBuf.GetCounterSRV(cptCtx);
+            SRVs[0] = _sensorMatrixBuf.GetSRV();
+            SRVs[1] = _occupiedBlocksBuf.GetSRV();
+            SRVs[2] = _occupiedBlocksBuf.GetCounterSRV(cptCtx);
             Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 0);
@@ -1172,8 +1209,9 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             UAVs[0] = _updateBlocksBuf.GetUAV();
             UAVs[1] = _fuseBlockVol.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-            SRVs[0] = pDepthTex->GetSRV();
-            SRVs[1] = pWeightTex->GetSRV();
+            SRVs[0] = _sensorMatrixBuf.GetSRV();
+            SRVs[1] = pDepthTex->GetSRV();
+            SRVs[2] = pWeightTex->GetSRV();
             Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch2D(
@@ -1221,10 +1259,11 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             UAVs[5] = _occupiedBlocksBuf.GetUAV();
             UAVs[6] = _renderBlockVol.GetUAV();
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-            SRVs[0] = pDepthTex->GetSRV();
-            SRVs[1] = buf.SRV[0];
-            SRVs[2] = buf.SRV[1];
-            SRVs[3] = _updateBlocksBuf.GetSRV();
+            SRVs[0] = _sensorMatrixBuf.GetSRV();
+            SRVs[1] = pDepthTex->GetSRV();
+            SRVs[2] = buf.SRV[0];
+            SRVs[3] = buf.SRV[1];
+            SRVs[4] = _updateBlocksBuf.GetSRV();
             Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 12);
@@ -1340,9 +1379,10 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         UAVs[1] = buf.UAV[1];
         UAVs[2] = _renderBlockVol.GetUAV();
         std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-        SRVs[0] = pDepthTex->GetSRV();
-        SRVs[1] = buf.SRV[0];
-        SRVs[2] = buf.SRV[1];
+        SRVs[0] = _sensorMatrixBuf.GetSRV();
+        SRVs[1] = pDepthTex->GetSRV();
+        SRVs[2] = buf.SRV[0];
+        SRVs[3] = buf.SRV[1];
         Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
         Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
         cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);
@@ -1358,6 +1398,7 @@ TSDFVolume::_RenderNearFar(GraphicsContext& gfxCtx, const CamType& cam)
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    SRVs[0] = _sensorMatrixBuf.GetSRV();
     SRVs[1] = _renderBlockVol.GetSRV();
     Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
     Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
@@ -1386,10 +1427,11 @@ TSDFVolume::_RenderVolume(GraphicsContext& gfxCtx,
     gfxCtx.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
-    SRVs[0] = buf.SRV[0];
+    SRVs[0] = _sensorMatrixBuf.GetSRV();
+    SRVs[1] = buf.SRV[0];
     if (_useStepInfoTex) {
-        SRVs[1] = _nearFarTex[cam].GetSRV();
-        SRVs[2] = _renderBlockVol.GetSRV();
+        SRVs[2] = _nearFarTex[cam].GetSRV();
+        SRVs[3] = _renderBlockVol.GetSRV();
     }
     Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
     Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
@@ -1402,6 +1444,12 @@ TSDFVolume::_RenderHelperWireframe(GraphicsContext& gfxCtx)
     if (!_gfxPSOHelperWireframe.GetPipelineStateObject())
         _CreateGfxPSO_HelperWireframe();
     gfxCtx.SetPipelineState(_gfxPSOHelperWireframe);
+    Trans(gfxCtx, _sensorMatrixBuf, vsSRV);
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numUAVs> UAVs = _nullUAVs;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
+    SRVs[0] = _sensorMatrixBuf.GetSRV();
+    Bind(gfxCtx, 2, 0, numUAVs, UAVs.data());
+    Bind(gfxCtx, 3, 0, numSRVs, SRVs.data());
     gfxCtx.DrawIndexedInstanced(CUBE_LINESTRIP_LENGTH, 3, 0, 0, 0);
 }
 

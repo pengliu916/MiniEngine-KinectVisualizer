@@ -6,7 +6,7 @@ RWStructuredBuffer<uint> buf_uavNewOccupiedBlocksBuf : register(u3);
 RWStructuredBuffer<uint> buf_uavFreedOccupiedBlocksBuf : register(u4);
 RWStructuredBuffer<uint> buf_uavOccupiedBlocksBuf : register(u5);
 RWTexture3D<uint> tex_uavRenderBlockVol : register(u6);
-StructuredBuffer<uint> buf_srvUpdateBlockQueue : register(t3);
+StructuredBuffer<uint> buf_srvUpdateBlockQueue : register(t4);
 
 //------------------------------------------------------------------------------
 // Compute Shader

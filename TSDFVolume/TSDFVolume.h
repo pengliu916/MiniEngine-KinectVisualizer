@@ -42,6 +42,7 @@ public:
     void PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
         const DirectX::XMMATRIX& mVCamView_T,
         const DirectX::XMMATRIX& mSensor_T);
+    void UpdateGPUMatrixBuf(ComputeContext& cptCtx, StructuredBuffer* buf);
     void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
     void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
         ColorBuffer* pWeightTex);
@@ -59,7 +60,6 @@ private:
     // Data update
     void _UpdateRenderCamData(const DirectX::XMMATRIX& mVCamProj_T,
         const DirectX::XMMATRIX& mVCamView_T);
-    void _UpdateSensorData(const DirectX::XMMATRIX& mSensor_T);
     void _UpdateVolumeSettings(const uint3 reso, const float voxelSize);
     void _UpdateBlockSettings(const uint fuseBlockVoxelRatio,
         const uint renderBlockVoxelRatio);
@@ -160,6 +160,11 @@ private:
     // 24 - 35 bytes for OccupiedBlockUpdate_Pass2, X = numFreeSlots / WARP_SIZ
     // 36 - 47 bytes for OccupiedBlockUpdate_Pass3, X = numLeftOver / WARP_SIZE
     IndirectArgsBuffer _indirectParams;
+
+    // Buffer for matrix, intend to put sensor matrix in GPU memory so that
+    // GPU could update it directly if possible to avoid CPU-GPU sync for update
+    // sensor pose
+    StructuredBuffer _sensorMatrixBuf;
 
     // Debug buffer for queue buffer size
     ReadBackBuffer _debugBuf;

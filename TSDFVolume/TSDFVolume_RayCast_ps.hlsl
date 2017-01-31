@@ -4,20 +4,23 @@
 // Compiler falsely emit x4000 if I do early out return
 #pragma warning(disable: 4000)
 
+// Index 0: viewMatrixInv, Index 1: viewMatrix
+StructuredBuffer<matrix> buf_srvSensorMatrices : register(t0);
+
 #if TYPED_UAV
-Buffer<float> tex_srvTSDFVol : register(t0);
+Buffer<float> tex_srvTSDFVol : register(t1);
 #else // TEX3D_UAV
-Texture3D<float> tex_srvTSDFVol : register(t0);
+Texture3D<float> tex_srvTSDFVol : register(t1);
 #endif
 #if ENABLE_BRICKS
-Texture2D<float2> tex_srvNearFar : register(t1);
-Texture3D<uint> tex_srvRenderBlockVol : register(t2);
+Texture2D<float2> tex_srvNearFar : register(t2);
+Texture3D<uint> tex_srvRenderBlockVol : register(t3);
 #endif // ENABLE_BRICKS
 SamplerState samp_Linear : register(s0);
 
 #if FOR_SENSOR
-#define CAMPOS mDepthViewInv._m03_m13_m23
-#define CAMVIEW mDepthView
+#define CAMPOS buf_srvSensorMatrices[0]._m03_m13_m23
+#define CAMVIEW buf_srvSensorMatrices[1]
 #endif
 
 #if FOR_VCAMERA
