@@ -46,7 +46,7 @@ DXGI_FORMAT ColorBufFormat;
 DXGI_FORMAT DepthBufFormat;
 DXGI_FORMAT DepthMapFormat;
 
-const UINT numSRVs = 5;
+const UINT numSRVs = 6;
 const UINT numUAVs = 7;
 
 const DXGI_FORMAT _stepInfoTexFormat = DXGI_FORMAT_R16G16_FLOAT;
@@ -1066,8 +1066,8 @@ TSDFVolume::_UpdateVolumeSettings(const uint3 reso, const float voxelSize)
     }
     xyz = reso;
     _volParam->fVoxelSize = voxelSize;
-    // TruncDist should be larger than (1 + 1/sqrt(2)) * voxelSize
-    _volParam->fTruncDist = 1.7072f * voxelSize;
+    // TruncDist should be larger than (1 + sqrt(3)/2) * voxelSize
+    _volParam->fTruncDist = 1.875f * voxelSize;
     _volParam->fInvVoxelSize = 1.f / voxelSize;
     _volParam->i3ResoVector = int3(1, reso.x, reso.x * reso.y);
     _volParam->f3HalfVoxelReso =
@@ -1263,7 +1263,8 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             SRVs[1] = pDepthTex->GetSRV();
             SRVs[2] = buf.SRV[0];
             SRVs[3] = buf.SRV[1];
-            SRVs[4] = _updateBlocksBuf.GetSRV();
+            SRVs[4] = pWeightTex->GetSRV();
+            SRVs[5] = _updateBlocksBuf.GetSRV();
             Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.DispatchIndirect(_indirectParams, 12);
@@ -1383,6 +1384,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         SRVs[1] = pDepthTex->GetSRV();
         SRVs[2] = buf.SRV[0];
         SRVs[3] = buf.SRV[1];
+        SRVs[4] = pWeightTex->GetSRV();
         Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
         Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
         cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);

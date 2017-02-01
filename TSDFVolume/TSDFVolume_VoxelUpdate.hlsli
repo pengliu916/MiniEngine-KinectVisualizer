@@ -20,6 +20,7 @@ Texture3D<float> tex_srvTSDFVol : register(t2);
 Texture3D<uint> tex_srvWeightVol : register(t3);
 #endif // NO_TYPED_LOAD
 #endif // TYPED_UAV
+Texture2D<float> tex_srvWeight : register(t4);
 
 int2 GetProjectedUVDepth(uint3 u3DTid, out float fDepth)
 {
@@ -45,7 +46,7 @@ bool GetValidDepthUV(uint3 u3VolIdx, out float fDepth, out int2 i2uv)
     return bResult;
 }
 
-void FuseVoxel(BufIdx bufIdx, float fTSD, out bool bEmpty)
+void FuseVoxel(BufIdx bufIdx, float fTSD, float fWeight, out bool bEmpty)
 {
 #if NO_TYPED_LOAD
     float fPreWeight = (float)tex_srvWeightVol[bufIdx];
@@ -54,7 +55,7 @@ void FuseVoxel(BufIdx bufIdx, float fTSD, out bool bEmpty)
     float fPreWeight = (float)tex_uavWeightVol[bufIdx];
     float fPreTSD = tex_uavTSDFVol[bufIdx];
 #endif
-    float fNewWeight = 1.f + fPreWeight;
+    float fNewWeight = fWeight + fPreWeight;
     float fTSDF = fTSD + fPreTSD * fPreWeight;
     fTSDF = fTSDF / fNewWeight;
     bEmpty = (fTSDF < 0.99f) ? false : true;
@@ -66,16 +67,20 @@ bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
 {
     bEmpty = false;
     bool bResult = false;
-    BufIdx bufIdx = BUFFER_INDEX(u3DTid);
+    BufIdx bufIdx = BUFFER_INDEX(u3DTid); 
     int2 i2uv;
     float fVoxelCenterDepth;
     if (GetValidDepthUV(u3DTid, fVoxelCenterDepth, i2uv)) {
+        float fWeight = tex_srvWeight.Load(int3(i2uv, 0));
+        if (fWeight < 0.5f) {
+            return bResult;
+        }
         float fSurfaceDepth = tex_srvNormDepth.Load(int3(i2uv, 0)) * 10.f;
         float fSD = fSurfaceDepth + fVoxelCenterDepth;
         // Discard voxels if it's far behind surface
         if (fSD > -vParam.fTruncDist) {
             float fTSD = min(fSD / vParam.fTruncDist, 1.f);
-            FuseVoxel(bufIdx, fTSD, bEmpty);
+            FuseVoxel(bufIdx, fTSD, fWeight, bEmpty);
             bResult = true;
         }
     }

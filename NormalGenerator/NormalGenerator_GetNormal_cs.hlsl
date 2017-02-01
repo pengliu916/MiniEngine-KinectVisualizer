@@ -2,7 +2,7 @@
 #include "CalibData.inl"
 //==============================================================================
 // Note: the normal is calculated in a way that truly represent normal for the 
-//       position in the 'center' of for neighboring points.
+//       position in the 'center' of four neighboring points.
 //==============================================================================
 Texture2D<float> tex_srvNormDepth : register(t0);
 RWTexture2D<float4> tex_uavNormal : register(u0);

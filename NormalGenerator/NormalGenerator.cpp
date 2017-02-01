@@ -226,7 +226,7 @@ NormalGenerator::RenderGui()
     }
     Checkbox("Output Weight", &_bOutWeight);
 #define M(x) _scbStaled |= x
-    M(SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.5f));
+    M(SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.9f));
     M(SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f, "%.2fm"));
 #undef M
 }
