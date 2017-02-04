@@ -1,7 +1,9 @@
 #include "TSDFVolume.inl"
 #include "TSDFVolume.hlsli"
 #include "CalibData.inl"
-
+#pragma warning(push)
+// Compiler falsely emit x4000 if I do early out return
+#pragma warning(disable: 4000)
 // Index 0: viewMatrixInv, Index 1: viewMatrix
 StructuredBuffer<matrix> buf_srvSensorMatrices : register(t0);
 Texture2D<float> tex_srvNormDepth : register(t1);
@@ -86,3 +88,4 @@ bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
     }
     return bResult;
 }
+#pragma warning(pop)
