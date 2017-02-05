@@ -6,14 +6,19 @@
 
 Texture2D<float> tex_srvNormInput : register(t0);
 StructuredBuffer<float> buf_srvGaussianWeight : register(t1);
-RWTexture2D<float> tex_uavWeight : register(u0);
+// Confidence Texture:
+// .r: related to dot(surfNor, -viewDir)
+// .g: related to 1.f / dot(idx.xy, idx.xy)
+// .b: related to 1.f / depth
+// .a: overall confidence
+RWTexture2D<float4> tex_uavConfidence : register(u0);
 
 float main(float2 Tex : TEXCOORD0) : SV_Target
 {
     int3 i3CurrentUVIdx = int3(Tex.xy,0);
     float fCenterNormDepth = tex_srvNormInput.Load(i3CurrentUVIdx);
     if (fCenterNormDepth == 0.f) {
-        tex_uavWeight[Tex.xy] = 0;
+        tex_uavConfidence[Tex.xy] = 0.f;
         return 0.f;
     }
 
@@ -32,12 +37,12 @@ float main(float2 Tex : TEXCOORD0) : SV_Target
         // absolute value is diff of norm depth so threshold need * 0.1f
         if (fSampleNormDepth == 0.f ||
             abs(fSampleNormDepth - fCenterNormDepth) > fEdgeThreshold * 0.1f) {
-            tex_uavWeight[Tex.xy] = 0.f;
+            tex_uavConfidence[Tex.xy] = 0.f;
             return 0.f;
         }
 #else
         if (fSampleNormDepth == 0.f) {
-            tex_uavWeight[Tex.xy] = 0.f;
+            tex_uavConfidence[Tex.xy] = 0.f;
             return 0.f;
         }
 #endif // EdgeRemoval

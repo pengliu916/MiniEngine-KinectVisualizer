@@ -123,13 +123,13 @@ FastICP::OnDestory()
 
 void
 FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
-    ColorBuffer* pWeight,
+    ColorBuffer* pConfidence,
     ColorBuffer* pTSDFDepth, ColorBuffer* pTSDFNormal,
     ColorBuffer* pKinectDepth, ColorBuffer* pKinectNormal)
 {
     wchar_t profilerName[32];
-    uint16_t w = pWeight->GetWidth();
-    uint16_t h = pWeight->GetHeight();
+    uint16_t w = pConfidence->GetWidth();
+    uint16_t h = pConfidence->GetHeight();
     ASSERT(w == pTSDFDepth->GetWidth() && h == pTSDFDepth->GetHeight());
     ASSERT(w == pTSDFNormal->GetWidth() && h == pTSDFNormal->GetHeight());
     ASSERT(w == pKinectDepth->GetWidth() && h == pKinectDepth->GetHeight());
@@ -145,7 +145,7 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
     for (int i = 0; i < DATABUF_COUNT; ++i) {
         Trans(cptCtx, _dataPackBuf[i], UAV);
     }
-    Trans(cptCtx, *pWeight, SRV);
+    Trans(cptCtx, *pConfidence, SRV);
     Trans(cptCtx, *pTSDFDepth, SRV);
     Trans(cptCtx, *pTSDFNormal, SRV);
     Trans(cptCtx, *pKinectDepth, SRV);
@@ -160,7 +160,7 @@ FastICP::OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
         Bind(cptCtx, 2, 1, 1, &pTSDFDepth->GetSRV());
         Bind(cptCtx, 2, 2, 1, &pKinectNormal->GetSRV());
         Bind(cptCtx, 2, 3, 1, &pTSDFNormal->GetSRV());
-        Bind(cptCtx, 2, 4, 1, &pWeight->GetSRV());
+        Bind(cptCtx, 2, 4, 1, &pConfidence->GetSRV());
         for (int i = 0; i < DATABUF_COUNT; ++i) {
             Bind(cptCtx, 1, i, 1, &_dataPackBuf[i].GetUAV());
         }

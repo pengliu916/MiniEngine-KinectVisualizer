@@ -100,7 +100,12 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
 //------------------------------------------------------------------------------
 #if UPDATE_FROM_DEPTHMAP
 Texture2D<float> tex_srvNormDepth : register(t1);
-Texture2D<float> tex_srvWeight : register(t2);
+// Confidence Texture:
+// .r: related to dot(surfNor, -viewDir)
+// .g: related to 1.f / dot(idx.xy, idx.xy)
+// .b: related to 1.f / depth
+// .a: overall confidence
+Texture2D<float4> tex_srvConfidence : register(t2);
 
 uint3 GetBlockIdx(float3 f3Pos)
 {
@@ -122,7 +127,7 @@ bool GetValidReprojectedPoint(uint2 u2Idx, out float3 f3Pos)
 {
     f3Pos = 0.f;
     if (any(int2(u2Idx) >= i2DepthReso) ||
-        tex_srvWeight.Load(uint3(u2Idx, 0)) <= 0.05f) {
+        tex_srvConfidence.Load(uint3(u2Idx, 0)).a <= 0.05f) {
         return false;
     }
     float z = tex_srvNormDepth.Load(uint3(u2Idx.xy, 0)) * -10.f;
@@ -148,8 +153,8 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     if (!GetValidReprojectedPoint(u3DTid.xy, f3Pos)) {
         return;
     }
-    float3 f3Step =
-        vParam.fTruncDist * normalize(f3Pos - buf_srvSensorMatrices[0]._m03_m13_m23);
+    float3 f3Step = vParam.fTruncDist *
+        normalize(f3Pos - buf_srvSensorMatrices[0]._m03_m13_m23);
     //  vParam.fTruncDist * normalize(f3Pos - mDepthViewInv._m03_m13_m23);
     uint3 u3Block0Idx = GetBlockIdx(f3Pos - f3Step);
     if (!(tex_uavFuseBlockVol[u3Block0Idx] & BLOCKSTATEMASK_UPDATE)) {

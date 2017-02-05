@@ -6,15 +6,20 @@
 //==============================================================================
 Texture2D<float> tex_srvNormDepth : register(t0);
 RWTexture2D<float4> tex_uavNormal : register(u0);
-#if WEIGHT_OUT
-RWTexture2D<float> tex_uavWeight : register(u1);
+// Confidence Texture:
+// .r: related to dot(surfNor, -viewDir)
+// .g: related to 1.f / dot(idx.xy, idx.xy)
+// .b: related to 1.f / depth
+// .a: overall confidence
+#if CONFIDENCE_OUT
+RWTexture2D<float4> tex_uavConfidence : register(u1);
 #if NO_TYPED_LOAD
-Texture2D<float> tex_srvWeight : register(t1);
-#define WEIGHT_TEX tex_srvWeight
+Texture2D<float4> tex_srvConfidence : register(t1);
+#define CONFIDENCE_TEX tex_srvConfidence
 #else
-#define WEIGHT_TEX tex_uavWeight
+#define CONFIDENCE_TEX tex_uavConfidence
 #endif // NO_TYPED_LOAD
-#endif // WEIGHT_OUT
+#endif // CONFIDENCE_OUT
 SamplerState samp_linear : register(s0);
 
 cbuffer Reso : register (b0)
@@ -27,13 +32,16 @@ cbuffer Reso : register (b0)
 
 bool ValidSample(uint2 u2uv)
 {
-#if WEIGHT_OUT
-    float4 f4Weights = {WEIGHT_TEX[u2uv], WEIGHT_TEX[u2uv + uint2(1, 0)],
-        WEIGHT_TEX[u2uv + uint2(0, 1)], WEIGHT_TEX[u2uv + 1]};
-    if (any(f4Weights < 0.05f)) {
+#if CONFIDENCE_OUT
+    float4 f4Confidences = {
+        CONFIDENCE_TEX[u2uv].a,
+        CONFIDENCE_TEX[u2uv + uint2(1, 0)].a,
+        CONFIDENCE_TEX[u2uv + uint2(0, 1)].a,
+        CONFIDENCE_TEX[u2uv + 1].a};
+    if (any(f4Confidences < 0.05f)) {
         return false;
     }
-#endif // WEIGHT_OUT
+#endif // CONFIDENCE_OUT
     return true;
 }
 
@@ -42,6 +50,9 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
 {
     if (!ValidSample(u3DTid.xy)) {
         tex_uavNormal[u3DTid.xy] = 0;
+#if CONFIDENCE_OUT
+        tex_uavConfidence[u3DTid.xy] = 0.f;
+#endif
         return;
     }
     float4 f4zs =
@@ -50,8 +61,8 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     float fMin = min(f4zs.w, min(f4zs.z, min(f4zs.x, f4zs.y)));
     if (fMin == 0.f || fMax - fMin > 0.1f * fDistThreshold) {
         tex_uavNormal[u3DTid.xy] = 0;
-#if WEIGHT_OUT
-        tex_uavWeight[u3DTid.xy] = 0;
+#if CONFIDENCE_OUT
+        tex_uavConfidence[u3DTid.xy] = 0.f;
 #endif
         return;
     }
@@ -64,15 +75,24 @@ void main(uint3 u3DTid : SV_DispatchThreadID)
     float3 f3v0 = float3(f4xs.y - f4xs.w, f4ys.y - f4ys.w, f4zs.y - f4zs.w);
     float3 f3v1 = float3(f4xs.z - f4xs.x, f4ys.z - f4ys.x, f4zs.z - f4zs.x);
     float3 f3Norm = normalize(cross(f3v0, f3v1));
-#if WEIGHT_OUT
+#if CONFIDENCE_OUT
     float3 f3View = normalize(float3(f4xs.x, f4ys.x, f4zs.x));
-    float fWeight = dot(-f3View, f3Norm);
-    if (fWeight <= fAngleThreshold) {
-        tex_uavWeight[u3DTid.xy] = 0;
-        tex_uavNormal[u3DTid.xy] = 0;
+    float fAngleConfidence = dot(-f3View, f3Norm);
+    if (fAngleConfidence <= fAngleThreshold) {
+        tex_uavConfidence[u3DTid.xy] = 0.f;
+        tex_uavNormal[u3DTid.xy] = 0.f;
         return;
     }
-    tex_uavWeight[u3DTid.xy] = fWeight;
+    fAngleConfidence =
+        (fAngleConfidence - fAngleThreshold) / (1.f - fAngleThreshold);
+    float2 f2UV = u3DTid.xy - DEPTH_C;
+    float fImgRadiusConfidence =
+        saturate((float)(DEPTH_C.y * DEPTH_C.y) / (dot(f2UV, f2UV) + 1.f));
+    fImgRadiusConfidence = fImgRadiusConfidence * fImgRadiusConfidence;
+    float fDepthConfidence = saturate(1.5f / (fMax * 10.f));
+    tex_uavConfidence[u3DTid.xy] =
+        float4(fAngleConfidence, fImgRadiusConfidence, fDepthConfidence,
+            min(fAngleConfidence, min(fImgRadiusConfidence, fDepthConfidence)));
 #endif
     tex_uavNormal[u3DTid.xy] = float4(f3Norm * .5f + .5f, 1.f);
 }

@@ -12,8 +12,8 @@ ctx.SetDynamicDescriptors(rootIdx, offset, count, resource)
 
 namespace {
 enum OutMode {
-    kNoWeight = 0,
-    kWithWeight = 1,
+    kWithoutConfidence = 0,
+    kWithConfidence = 1,
     kOutMode = 2,
 };
 
@@ -28,9 +28,13 @@ D3D12_CPU_DESCRIPTOR_HANDLE _nullUAVDescrptor;
 RootSignature _rootsig;
 ComputePSO _cptGetNormalPSO[kOutMode];
 std::once_flag _psoCompiled_flag;
-bool _bOutWeight = true;
+bool _bOutputConfidence = true;
 
-float _fAngleThreshold = 0.1f;
+// When the angle between surface normal and view direction is larger than
+// acos(voxelSize/truncDist), voxel on each size of surface may not contain
+// opposite sign, thus we will miss surface from some point of view
+const float _fMinAngleThreshold = 0.5359f;
+float _fAngleThreshold = _fMinAngleThreshold;
 float _fDistThreshold = 0.1f;
 bool _scbStaled = true;
 bool _typedLoadSupported = false;
@@ -64,27 +68,27 @@ void _CreatePSO()
     ComPtr<ID3DBlob> getNormalCS[kOutMode];
     D3D_SHADER_MACRO macros[] = {
         {"__hlsl", "1"},
-        {"WEIGHT_OUT", "1"},
+        {"CONFIDENCE_OUT", "1"},
         {"NO_TYPED_LOAD", "1"},
         {nullptr, nullptr}
     };
     if (_typedLoadSupported) {
         macros[2].Definition = "0";
     }
-    V(_Compile(L"GetNormal_cs", macros, &getNormalCS[kWithWeight]));
+    V(_Compile(L"GetNormal_cs", macros, &getNormalCS[kWithConfidence]));
     macros[1].Definition = "0";
-    V(_Compile(L"GetNormal_cs", macros, &getNormalCS[kNoWeight]));
+    V(_Compile(L"GetNormal_cs", macros, &getNormalCS[kWithoutConfidence]));
 
-    _cptGetNormalPSO[kWithWeight].SetRootSignature(_rootsig);
-    _cptGetNormalPSO[kWithWeight].SetComputeShader(
-        getNormalCS[kWithWeight]->GetBufferPointer(),
-        getNormalCS[kWithWeight]->GetBufferSize());
-    _cptGetNormalPSO[kWithWeight].Finalize();
-    _cptGetNormalPSO[kNoWeight].SetRootSignature(_rootsig);
-    _cptGetNormalPSO[kNoWeight].SetComputeShader(
-        getNormalCS[kNoWeight]->GetBufferPointer(),
-        getNormalCS[kNoWeight]->GetBufferSize());
-    _cptGetNormalPSO[kNoWeight].Finalize();
+    _cptGetNormalPSO[kWithConfidence].SetRootSignature(_rootsig);
+    _cptGetNormalPSO[kWithConfidence].SetComputeShader(
+        getNormalCS[kWithConfidence]->GetBufferPointer(),
+        getNormalCS[kWithConfidence]->GetBufferSize());
+    _cptGetNormalPSO[kWithConfidence].Finalize();
+    _cptGetNormalPSO[kWithoutConfidence].SetRootSignature(_rootsig);
+    _cptGetNormalPSO[kWithoutConfidence].SetComputeShader(
+        getNormalCS[kWithoutConfidence]->GetBufferPointer(),
+        getNormalCS[kWithoutConfidence]->GetBufferSize());
+    _cptGetNormalPSO[kWithoutConfidence].Finalize();
 }
 
 void _CreateStaticResource()
@@ -171,9 +175,9 @@ NormalGenerator::OnDestory()
 }
 
 void
-NormalGenerator::OnProcessing(
-    ComputeContext& cptCtx, const std::wstring& procName,
-    ColorBuffer* pInputTex, ColorBuffer* pOutputTex, ColorBuffer* pWeightTex)
+NormalGenerator::OnProcessing(ComputeContext& cptCtx,
+    const std::wstring& procName, ColorBuffer* pInputTex,
+    ColorBuffer* pOutputTex, ColorBuffer* pConfidenceTex)
 {
     ASSERT(pOutputTex->GetWidth() == pInputTex->GetWidth());
     ASSERT(pOutputTex->GetHeight() == pInputTex->GetHeight());
@@ -191,20 +195,20 @@ NormalGenerator::OnProcessing(
     Trans(cptCtx, *pOutputTex, UAV);
     GPU_PROFILE(cptCtx, procName.c_str());
     cptCtx.SetRootSignature(_rootsig);
-    if (pWeightTex) {
-        if (_bOutWeight) {
-            Trans(cptCtx, *pWeightTex, UAV);
-            Bind(cptCtx, 2, 1, 1, &pWeightTex->GetUAV());
+    if (pConfidenceTex) {
+        if (_bOutputConfidence) {
+            Trans(cptCtx, *pConfidenceTex, UAV);
+            Bind(cptCtx, 2, 1, 1, &pConfidenceTex->GetUAV());
             if (!_typedLoadSupported) {
-                Bind(cptCtx, 3, 1, 1, &pWeightTex->GetSRV());
+                Bind(cptCtx, 3, 1, 1, &pConfidenceTex->GetSRV());
             }
-            cptCtx.SetPipelineState(_cptGetNormalPSO[kWithWeight]);
+            cptCtx.SetPipelineState(_cptGetNormalPSO[kWithConfidence]);
         } else {
-            cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
+            cptCtx.SetPipelineState(_cptGetNormalPSO[kWithoutConfidence]);
         }
     } else {
         Bind(cptCtx, 2, 1, 1, &_nullUAVDescrptor);
-        cptCtx.SetPipelineState(_cptGetNormalPSO[kNoWeight]);
+        cptCtx.SetPipelineState(_cptGetNormalPSO[kWithoutConfidence]);
     }
     cptCtx.SetConstants(0, DWParam(1.f / pOutputTex->GetWidth()),
         DWParam(1.f / pOutputTex->GetHeight()));
@@ -224,9 +228,10 @@ NormalGenerator::RenderGui()
     if (Button("RecompileShaders##NormalGenerator")) {
         _CreatePSO();
     }
-    Checkbox("Output Weight", &_bOutWeight);
+    Checkbox("Output Confidence", &_bOutputConfidence);
 #define M(x) _scbStaled |= x
-    M(SliderFloat("Angle Threshold", &_fAngleThreshold, 0.05f, 0.9f));
+    M(SliderFloat("Angle Threshold",
+        &_fAngleThreshold, _fMinAngleThreshold, 0.9f));
     M(SliderFloat("Dist Threshold", &_fDistThreshold, 0.05f, 0.5f, "%.2fm"));
 #undef M
 }

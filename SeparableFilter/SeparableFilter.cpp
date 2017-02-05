@@ -198,8 +198,9 @@ SeperableFilter::OnDestory()
 }
 
 void
-SeperableFilter::OnRender(GraphicsContext& gfxCtx, const std::wstring procName,
-    ColorBuffer* pInputTex, ColorBuffer* pOutputTex, ColorBuffer* pWeightTex)
+SeperableFilter::OnRender(GraphicsContext& gfxCtx,
+    const std::wstring procName, ColorBuffer* pInputTex,
+    ColorBuffer* pOutputTex, ColorBuffer* pConfidenceTex)
 {
     uint2 u2Reso = uint2(pOutputTex->GetWidth(), pOutputTex->GetHeight());
     ASSERT(pInputTex->GetWidth() == u2Reso.x);
@@ -226,7 +227,7 @@ SeperableFilter::OnRender(GraphicsContext& gfxCtx, const std::wstring procName,
     }
     Trans(gfxCtx, *pInputTex, psSRV | csSRV);
     Trans(gfxCtx, _intermediateBuf, RTV);
-    Trans(gfxCtx, *pWeightTex, UAV);
+    Trans(gfxCtx, *pConfidenceTex, UAV);
     GPU_PROFILE(gfxCtx, procName.c_str());
     gfxCtx.SetRootSignature(_rootSignature);
     gfxCtx.SetPipelineState(_hPassPSO[_edgeRemoval]);
@@ -237,16 +238,16 @@ SeperableFilter::OnRender(GraphicsContext& gfxCtx, const std::wstring procName,
     gfxCtx.SetConstantBuffer(0, _gpuCB.RootConstantBufferView());
     Bind(gfxCtx, 1, 0, 1, &pInputTex->GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
-    Bind(gfxCtx, 2, 0, 1, &pWeightTex->GetUAV());
+    Bind(gfxCtx, 2, 0, 1, &pConfidenceTex->GetUAV());
     gfxCtx.Draw(3);
     Trans(gfxCtx, *pOutputTex, RTV);
     Trans(gfxCtx, _intermediateBuf, psSRV);
-    Trans(gfxCtx, *pWeightTex, UAV);
+    Trans(gfxCtx, *pConfidenceTex, UAV);
     gfxCtx.SetPipelineState(_vPassPSO[_edgeRemoval]);
     gfxCtx.SetRenderTargets(1, &pOutputTex->GetRTV());
     Bind(gfxCtx, 1, 0, 1, &_intermediateBuf.GetSRV());
     Bind(gfxCtx, 1, 1, 1, &_gaussianWeightBuf.GetSRV());
-    Bind(gfxCtx, 2, 0, 1, &pWeightTex->GetUAV());
+    Bind(gfxCtx, 2, 0, 1, &pConfidenceTex->GetUAV());
     gfxCtx.Draw(3);
     BeginTrans(gfxCtx, _intermediateBuf, RTV);
 }

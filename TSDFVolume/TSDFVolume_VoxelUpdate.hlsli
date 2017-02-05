@@ -9,10 +9,10 @@ StructuredBuffer<matrix> buf_srvSensorMatrices : register(t0);
 Texture2D<float> tex_srvNormDepth : register(t1);
 #if TYPED_UAV
 RWBuffer<float> tex_uavTSDFVol : register(u0);
-RWBuffer<float> tex_uavWeightVol : register(u1);
+RWBuffer<uint> tex_uavWeightVol : register(u1);
 #if NO_TYPED_LOAD
 Buffer<float> tex_srvTSDFVol : register(t2);
-Buffer<float> tex_srvWeightVol : register(t3);
+Buffer<uint> tex_srvWeightVol : register(t3);
 #endif // NO_TYPED_LOAD
 #else
 RWTexture3D<float> tex_uavTSDFVol : register(u0);
@@ -22,7 +22,12 @@ Texture3D<float> tex_srvTSDFVol : register(t2);
 Texture3D<uint> tex_srvWeightVol : register(t3);
 #endif // NO_TYPED_LOAD
 #endif // TYPED_UAV
-Texture2D<float> tex_srvWeight : register(t4);
+// Confidence Texture:
+// .r: related to dot(surfNor, -viewDir)
+// .g: related to 1.f / dot(idx.xy, idx.xy)
+// .b: related to 1.f / depth
+// .a: overall confidence
+Texture2D<float4> tex_srvConfidence : register(t4);
 
 int2 GetProjectedUVDepth(uint3 u3DTid, out float fDepth)
 {
@@ -48,21 +53,36 @@ bool GetValidDepthUV(uint3 u3VolIdx, out float fDepth, out int2 i2uv)
     return bResult;
 }
 
-void FuseVoxel(BufIdx bufIdx, float fTSD, float fWeight, out bool bEmpty)
+void FuseVoxel(BufIdx bufIdx, float fTSD, float4 f4Confidence, out bool bEmpty)
 {
+    // Given dir range, separate them into 4 levels: higher level means
+    // SDF value is acquired by rays more perpendicular to surface, thus
+    // more reliable. In this update scheme, voxel only fuse new SDF when
+    // it is from at least the same level or higher
+    uint uDirConfidence = f4Confidence.r * 4.f;
 #if NO_TYPED_LOAD
-    float fPreWeight = (float)tex_srvWeightVol[bufIdx];
+    uint uPreConfWeight = tex_srvWeightVol[bufIdx];
     float fPreTSD = tex_srvTSDFVol[bufIdx];
 #else
-    float fPreWeight = (float)tex_uavWeightVol[bufIdx];
+    uint uPreConfWeight = tex_uavWeightVol[bufIdx];
     float fPreTSD = tex_uavTSDFVol[bufIdx];
 #endif
-    float fNewWeight = fWeight + fPreWeight;
-    float fTSDF = fTSD + fPreTSD * fPreWeight;
-    fTSDF = fTSDF / fNewWeight;
+    uint uPreConfidenceLevel = uPreConfWeight >> VOLUMECONFIDENCELEVEL_OFFSET;
+    uint uPreWeight = (uPreConfWeight & 0x3f);
+    if (uPreConfidenceLevel > uDirConfidence) {
+        bEmpty = (fPreTSD < 0.99f) ? false : true;
+        return;
+    }
+    // The following rule will give candidate sdf weight 2 if
+    // f4Confidence.a > 0.7 and weight 1 if 0.2 < f4Confidence.a < 0.7
+    uint uWeight = (f4Confidence.a + 0.3) * 2;
+    uint uNewWeight = uWeight + uPreWeight;
+    float fTSDF = fTSD * (float)uWeight + fPreTSD * (float)uPreWeight;
+    fTSDF = fTSDF / (float)uNewWeight;
     bEmpty = (fTSDF < 0.99f) ? false : true;
     tex_uavTSDFVol[bufIdx] = fTSDF;
-    tex_uavWeightVol[bufIdx] = (uint)min(fNewWeight, vParam.fMaxWeight);
+    tex_uavWeightVol[bufIdx] = (uDirConfidence << VOLUMECONFIDENCELEVEL_OFFSET)
+        | min(uNewWeight, vParam.iMaxWeight);
 }
 
 bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
@@ -73,8 +93,8 @@ bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
     int2 i2uv;
     float fVoxelCenterDepth;
     if (GetValidDepthUV(u3DTid, fVoxelCenterDepth, i2uv)) {
-        float fWeight = tex_srvWeight.Load(int3(i2uv, 0));
-        if (fWeight < 0.5f) {
+        float4 f4Confidence = tex_srvConfidence.Load(int3(i2uv, 0));
+        if (f4Confidence.a < 0.2f) {
             return bResult;
         }
         float fSurfaceDepth = tex_srvNormDepth.Load(int3(i2uv, 0)) * 10.f;
@@ -82,7 +102,7 @@ bool UpdateVoxel(uint3 u3DTid, out bool bEmpty)
         // Discard voxels if it's far behind surface
         if (fSD > -vParam.fTruncDist) {
             float fTSD = min(fSD / vParam.fTruncDist, 1.f);
-            FuseVoxel(bufIdx, fTSD, fWeight, bEmpty);
+            FuseVoxel(bufIdx, fTSD, f4Confidence, bEmpty);
             bResult = true;
         }
     }

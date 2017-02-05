@@ -11,7 +11,7 @@ public:
     void OnDestory();
     void OnProcessing(ComputeContext& cptCtx, const std::wstring& procName,
         ColorBuffer* pInputTex, ColorBuffer* pOutputTex,
-        ColorBuffer* pWeightTex = nullptr);
+        ColorBuffer* pConfidenceTex = nullptr);
 
 private:
     DynAlloc* _pUploadCB;

@@ -10,7 +10,7 @@ public:
     void OnCreateResource(uint2 inputReso);
     void OnDestory();
     void OnProcessing(ComputeContext& cptCtx, uint8_t iteration,
-        ColorBuffer* pWeight,
+        ColorBuffer* pConfidence,
         ColorBuffer* pTSDFDepth, ColorBuffer* pTSDFNormal,
         ColorBuffer* pKinectDepth, ColorBuffer* pKinectNormal);
     void OnSolving();

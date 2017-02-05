@@ -12,7 +12,7 @@ public:
     void OnDestory();
     void OnRender(GraphicsContext& gfxContext, const std::wstring procName,
         ColorBuffer* pInputTex, ColorBuffer* pOutputTex,
-        ColorBuffer* pWeightTex);
+        ColorBuffer* pConfidenceTex);
     bool IsEnabled();
 
 private:

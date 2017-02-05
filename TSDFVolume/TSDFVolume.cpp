@@ -480,7 +480,7 @@ TSDFVolume::TSDFVolume()
     _nearFarTex{XMVectorSet(MAX_DEPTH, 0, 0, 0),XMVectorSet(MAX_DEPTH, 0, 0, 0)}
 {
     _volParam = &_cbPerCall.vParam;
-    _volParam->fMaxWeight = 20.f;
+    _volParam->iMaxWeight = 20;
     _volParam->fVoxelSize = 1.f / 100.f;
     _cbPerCall.f2DepthRange = float2(-0.2f, -12.f);
     _cbPerCall.iDefragmentThreshold = 200000;
@@ -702,14 +702,14 @@ TSDFVolume::DefragmentActiveBlockQueue(ComputeContext& cptCtx)
 
 void
 TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
-    ColorBuffer* pWeightTex)
+    ColorBuffer* pConfidenceTex)
 {
     cptCtx.SetRootSignature(_rootsig);
     _UpdateAndBindConstantBuffer(cptCtx);
     BeginTrans(cptCtx, _renderBlockVol, UAV);
     Trans(cptCtx, *_curBuf.resource[0], UAV);
     Trans(cptCtx, *_curBuf.resource[1], UAV);
-    _UpdateVolume(cptCtx, _curBuf, pDepthTex, pWeightTex);
+    _UpdateVolume(cptCtx, _curBuf, pDepthTex, pConfidenceTex);
     BeginTrans(cptCtx, *_curBuf.resource[0], psSRV);
     BeginTrans(cptCtx, *_curBuf.resource[1], UAV);
     if (_useStepInfoTex) {
@@ -992,7 +992,9 @@ TSDFVolume::RenderGui()
     } else {
         uiReso = _submittedReso;
     }
-    _cbStaled |= SliderFloat("MaxWeight", &_volParam->fMaxWeight, 1.f, 500.f);
+    // since weight vol use 2 bit to store angular level, so max weight
+    // only have 6 bits thus 64 is the maximum
+    _cbStaled |= SliderInt("MaxWeight", &_volParam->iMaxWeight, 1, 64);
     static float fVoxelSize = _volParam->fVoxelSize;
     if (SliderFloat("VoxelSize",
         &fVoxelSize, 1.f / 256.f, 10.f / 256.f)) {
@@ -1163,7 +1165,7 @@ TSDFVolume::_CleanRenderBlockVol(ComputeContext& cptCtx)
 void
 TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
     const ManagedBuf::BufInterface& buf,
-    ColorBuffer* pDepthTex, ColorBuffer* pWeightTex)
+    ColorBuffer* pDepthTex, ColorBuffer* pConfidenceTex)
 {
     VolumeStruct type = _useStepInfoTex ? kBlockVol : kVoxel;
     const uint3 xyz = _volParam->u3VoxelReso;
@@ -1196,7 +1198,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         // Add blocks to UpdateBlockQueue from DepthMap
         Trans(cptCtx, _fuseBlockVol, UAV);
         Trans(cptCtx, *pDepthTex, psSRV | csSRV);
-        Trans(cptCtx, *pWeightTex, csSRV);
+        Trans(cptCtx, *pConfidenceTex, csSRV);
         Trans(cptCtx, _updateBlocksBuf, UAV);
         {
             GPU_PROFILE(cptCtx, L"Depth2UpdateQ");
@@ -1211,7 +1213,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             std::array<D3D12_CPU_DESCRIPTOR_HANDLE, numSRVs> SRVs = _nullSRVs;
             SRVs[0] = _sensorMatrixBuf.GetSRV();
             SRVs[1] = pDepthTex->GetSRV();
-            SRVs[2] = pWeightTex->GetSRV();
+            SRVs[2] = pConfidenceTex->GetSRV();
             Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
             cptCtx.Dispatch2D(
@@ -1263,7 +1265,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
             SRVs[1] = pDepthTex->GetSRV();
             SRVs[2] = buf.SRV[0];
             SRVs[3] = buf.SRV[1];
-            SRVs[4] = pWeightTex->GetSRV();
+            SRVs[4] = pConfidenceTex->GetSRV();
             SRVs[5] = _updateBlocksBuf.GetSRV();
             Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
             Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
@@ -1384,7 +1386,7 @@ TSDFVolume::_UpdateVolume(ComputeContext& cptCtx,
         SRVs[1] = pDepthTex->GetSRV();
         SRVs[2] = buf.SRV[0];
         SRVs[3] = buf.SRV[1];
-        SRVs[4] = pWeightTex->GetSRV();
+        SRVs[4] = pConfidenceTex->GetSRV();
         Bind(cptCtx, 2, 0, numUAVs, UAVs.data());
         Bind(cptCtx, 3, 0, numSRVs, SRVs.data());
         cptCtx.Dispatch3D(xyz.x, xyz.y, xyz.z, THREAD_X, THREAD_Y, THREAD_Z);

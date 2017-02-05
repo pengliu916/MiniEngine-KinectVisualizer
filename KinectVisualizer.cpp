@@ -107,6 +107,7 @@ void InitialSurfBuffer(SurfBufId id) {
     if (_surfBufs[id].colorFormat == DXGI_FORMAT_R11G11B10_FLOAT ||
         _surfBufs[id].colorFormat == DXGI_FORMAT_R8_UNORM ||
         _surfBufs[id].colorFormat == DXGI_FORMAT_R16_UNORM ||
+        _surfBufs[id].colorFormat == DXGI_FORMAT_R8G8B8A8_UNORM ||
         _surfBufs[id].colorFormat == DXGI_FORMAT_R10G10B10A2_UNORM) {
         _surfDebugShow.push_back({id, false});
     }
@@ -294,11 +295,11 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     static FLOAT ClearVal[4] = {1.f, 1.f, 1.f, 1.f};
 
 
-    Trans(cptCtx, *GetColBuf(WEIGHT), UAV);
+    Trans(cptCtx, *GetColBuf(CONFIDENCE), UAV);
     // Request depthmap for ICP
     _tsdfVolume.ExtractSurface(gfxCtx, GetColBuf(TSDF_DEPTH),
         _vis ? GetColBuf(VISUAL_DEPTH) : nullptr, GetDepBuf(VISUAL_DEPTH));
-    cptCtx.ClearUAV(*GetColBuf(WEIGHT), ClearVal);
+    cptCtx.ClearUAV(*GetColBuf(CONFIDENCE), ClearVal);
     if (_vis) {
         // Generate normalmap for visualized depthmap
         _normalGen.OnProcessing(cptCtx, L"Norm_Vis",
@@ -317,25 +318,25 @@ KinectVisualizer::OnRender(CommandContext & cmdCtx)
     cmdCtx.Flush();
     _tsdfVolume.UpdateGPUMatrixBuf(cptCtx, _sensorTexGen.GetVCamMatrixBuf());
     // Bilateral filtering
-    _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw",
-        GetColBuf(KINECT_DEPTH), GetColBuf(FILTERED_DEPTH), GetColBuf(WEIGHT));
+    _bilateralFilter.OnRender(gfxCtx, L"Filter_Raw", GetColBuf(KINECT_DEPTH),
+        GetColBuf(FILTERED_DEPTH), GetColBuf(CONFIDENCE));
 
     // Generate normalmap for Kinect depthmap
     _normalGen.OnProcessing(cptCtx, L"Norm_Raw",
         _bilateralFilter.IsEnabled() ? GetColBuf(FILTERED_DEPTH)
                                      : GetColBuf(KINECT_DEPTH),
-        GetColBuf(KINECT_NORMAL), GetColBuf(WEIGHT));
+        GetColBuf(KINECT_NORMAL), GetColBuf(CONFIDENCE));
 
     // TSDF volume updating
     _tsdfVolume.UpdateVolume(
-        cptCtx, GetColBuf(KINECT_DEPTH), GetColBuf(WEIGHT));
+        cptCtx, GetColBuf(KINECT_DEPTH), GetColBuf(CONFIDENCE));
 
     // Defragment active block queue in TSDF
     _tsdfVolume.DefragmentActiveBlockQueue(cptCtx);
     {
         GPU_PROFILE(cptCtx, L"ICP");
         for (uint8_t i = 0; i < 10; ++i) {
-            _fastICP.OnProcessing(cptCtx, i, GetColBuf(WEIGHT),
+            _fastICP.OnProcessing(cptCtx, i, GetColBuf(CONFIDENCE),
                 GetColBuf(TSDF_DEPTH), GetColBuf(TSDF_NORMAL),
                 GetColBuf(FILTERED_DEPTH), GetColBuf(KINECT_NORMAL));
             _fastICP.OnSolving();

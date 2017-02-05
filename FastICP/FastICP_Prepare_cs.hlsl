@@ -4,7 +4,12 @@ Texture2D<float> tex_srvKinectNormDepth : register(t0);
 Texture2D<float> tex_srvTSDFNormDepth : register(t1);
 Texture2D<float4> tex_srvKinectNormal : register(t2);
 Texture2D<float4> tex_srvTSDFNormal : register(t3);
-Texture2D<float> tex_srvWeight : register(t4);
+// Confidence Texture:
+// .r: related to dot(surfNor, -viewDir)
+// .g: related to 1.f / dot(idx.xy, idx.xy)
+// .b: related to 1.f / depth
+// .a: overall confidence
+Texture2D<float4> tex_srvConfidence : register(t4);
 
 SamplerState samp_Linear : register(s0);
 
@@ -43,7 +48,7 @@ float GetNormalMatchedDepth(Texture2D<float> tex_srvNormDepth, uint3 DTid)
 void main(uint3 DTid : SV_DispatchThreadID)
 {
     uint uIdx = DTid.x + DTid.y * u2AlignedReso.x;
-    if (tex_srvWeight.Load(DTid) < 0.05f) {
+    if (tex_srvConfidence.Load(DTid).a < 0.05f) {
         AllZero(uIdx);
         return;
     }

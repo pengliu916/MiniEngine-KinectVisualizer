@@ -45,7 +45,7 @@ public:
     void UpdateGPUMatrixBuf(ComputeContext& cptCtx, StructuredBuffer* buf);
     void DefragmentActiveBlockQueue(ComputeContext& cptCtx);
     void UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
-        ColorBuffer* pWeightTex);
+        ColorBuffer* pConfidenceTex);
     void ExtractSurface(GraphicsContext& gfxCtx, ColorBuffer* pTSDFDepthOut,
         ColorBuffer* pTSDFDepthVisOut = nullptr,
         DepthBuffer* pTSDFDepthBuf = nullptr);
@@ -70,7 +70,7 @@ private:
     void _CleanRenderBlockVol(ComputeContext& cptCtx);
     void _UpdateVolume(ComputeContext& cptCtx,
         const ManagedBuf::BufInterface& buf,
-        ColorBuffer* pDepthTex, ColorBuffer* pWeightTex);
+        ColorBuffer* pDepthTex, ColorBuffer* pConfidenceTex);
     void _RenderVolume(GraphicsContext& gfxCtx,
         const ManagedBuf::BufInterface& buf, const CamType& cam);
     void _RenderNearFar(GraphicsContext& gfxCtx, const CamType& cam);

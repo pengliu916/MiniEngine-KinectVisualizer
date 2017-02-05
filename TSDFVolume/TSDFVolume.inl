@@ -20,6 +20,10 @@
 
 #define BLOCKFREEDMASK 0x40000000
 
+// Each weight volume voxel store its confidence level (first 2 bits) and its
+// weight (last 6 bits)
+#define VOLUMECONFIDENCELEVEL_OFFSET 6
+
 // IndirectJobParam layout:
 // 0:FreeQueueStart, 4:FreeQueueCtr, 8:AddqueueStart, 12:AddqueueCtr
 #define FREEQUEUE_STARTOFFSET 0
@@ -69,7 +73,7 @@ struct VolumeParam {
     float3 f3BoxMax;
     float fTruncDist;
     float3 f3HalfVolSize;
-    float fMaxWeight;
+    int iMaxWeight;
 };
 
 CBUFFER_ALIGN STRUCT(cbuffer) PerFrameDataCB REGISTER(b0)
