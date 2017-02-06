@@ -58,6 +58,7 @@ bool _useStepInfoTex = true;
 bool _stepInfoDebug = false;
 bool _blockVolumeUpdate = true;
 bool _readBackGPUBufStatus = true;
+bool _fuseNewData = true;
 
 bool _cbStaled = true;
 
@@ -655,6 +656,9 @@ TSDFVolume::PreProcessing(const DirectX::XMMATRIX& mVCamProj_T,
 void
 TSDFVolume::UpdateGPUMatrixBuf(ComputeContext& cptCtx, StructuredBuffer* buf)
 {
+    if (!_fuseNewData) {
+        return;
+    }
     GPU_PROFILE(cptCtx, L"UpdateGPUMatrix");
     Trans(cptCtx, _sensorMatrixBuf, UAV);
     Trans(cptCtx, *buf, csSRV);
@@ -704,6 +708,9 @@ void
 TSDFVolume::UpdateVolume(ComputeContext& cptCtx, ColorBuffer* pDepthTex,
     ColorBuffer* pConfidenceTex)
 {
+    if (!_fuseNewData) {
+        return;
+    }
     cptCtx.SetRootSignature(_rootsig);
     _UpdateAndBindConstantBuffer(cptCtx);
     BeginTrans(cptCtx, _renderBlockVol, UAV);
@@ -860,6 +867,8 @@ TSDFVolume::RenderGui()
     if (Button("ResetVolume##TSDFVolume")) {
         ResetAllResource();
     }
+    SameLine();
+    Checkbox("Fuse", &_fuseNewData);
     Separator();
     Checkbox("Block Volume Update", &_blockVolumeUpdate);
     SameLine();

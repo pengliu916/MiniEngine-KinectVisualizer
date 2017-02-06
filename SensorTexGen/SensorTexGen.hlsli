@@ -197,7 +197,7 @@ float GetFakedNormDepth(uint2 u2uv)
     }
     float3 rd = mul(transpose(ca), normalize(float3(f2ab, -1.f)));
 
-    float3 pos =  render(ro, rd);
+    float3 pos = render(ro, rd);
     float fDepth = dot(pos - ro, normalize(ta - ro));
     return fDepth > .2f ? fDepth * 0.1f : 0.f;
 #       endif // kProcedual
